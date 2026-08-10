@@ -329,8 +329,8 @@
 
             .login-form {
                 display: grid;
-                gap: 14px;
-                padding: 30px 42px 28px;
+                gap: 10px;
+                padding: 22px 36px 20px;
                 text-align: left;
                 background: rgba(255,255,255,.96);
                 color: var(--kip-ink);
@@ -339,7 +339,7 @@
             .login-form-brand {
                 display: flex;
                 justify-content: center;
-                margin-bottom: 4px;
+                margin-bottom: 6px;
             }
 
             .login-form-brand .brand {
@@ -707,7 +707,7 @@
                                 <svg class="icon-collapse" viewBox="0 0 24 24" fill="none" aria-hidden="true">
                                     <path d="m6 9 6 6 6-6" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/>
                                 </svg>
-                                <span class="login-toggle-text">{{ $shouldOpenLogin ? 'Masuk ke E-SISMAN' : 'Login' }}</span>
+                                <span class="login-toggle-text">{{ $shouldOpenLogin ? 'Login' : 'Login' }}</span>
                             </button>
 
                             <div class="login-form-wrap">

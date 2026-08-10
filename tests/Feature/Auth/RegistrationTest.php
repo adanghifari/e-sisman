@@ -14,7 +14,7 @@ class RegistrationTest extends TestCase
     public function test_new_users_can_not_self_register(): void
     {
         $this->post('/register', [
-            'nama' => 'John Doe',
+            'name' => 'John Doe',
             'nik' => '12345678',
             'email' => 'test@example.com',
             'password' => 'Password123!',

@@ -31,7 +31,7 @@ class DatabaseSeeder extends Seeder
         User::factory()->create([
             'm_department_id' => DB::table('departments')->where('kode_department', 'DEFAULT')->value('id'),
             'nik' => '000000',
-            'nama' => 'Test User',
+            'name' => 'Test User',
             'email' => 'test@example.com',
             'password' => 'Password123!',
         ]);
