@@ -23,8 +23,8 @@ class AuthenticationTest extends TestCase
         $user = User::factory()->create();
 
         $response = $this->post(route('login.store'), [
-            'email' => $user->email,
-            'password' => 'password',
+            'nik' => $user->nik,
+            'password' => 'Password123!',
         ]);
 
         $response
@@ -39,11 +39,11 @@ class AuthenticationTest extends TestCase
         $user = User::factory()->create();
 
         $response = $this->post(route('login.store'), [
-            'email' => $user->email,
+            'nik' => $user->nik,
             'password' => 'wrong-password',
         ]);
 
-        $response->assertSessionHasErrorsIn('email');
+        $response->assertSessionHasErrorsIn('nik');
 
         $this->assertGuest();
     }
@@ -60,8 +60,8 @@ class AuthenticationTest extends TestCase
         $user = User::factory()->withTwoFactor()->create();
 
         $response = $this->post(route('login.store'), [
-            'email' => $user->email,
-            'password' => 'password',
+            'nik' => $user->nik,
+            'password' => 'Password123!',
         ]);
 
         $response->assertRedirect(route('two-factor.login'));
