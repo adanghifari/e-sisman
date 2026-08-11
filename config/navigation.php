@@ -12,7 +12,7 @@ return [
     ],
 
     'Reporting' => [
-        ['label' => 'Buat Laporan', 'route' => 'reports.index', 'icon' => 'chart-bar'],
+        ['label' => 'Overview', 'route' => 'reports.index', 'icon' => 'chart-bar'],
     ],
 
     'Administrasi' => [
