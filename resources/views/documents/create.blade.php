@@ -1,3 +1,19 @@
-<x-ui.placeholder-page
-    title="Tambah Dokumen"
-/>
+<x-layouts::app :title="__('Tambah Dokumen')">
+    @php
+        $documentLevels = config('document-levels');
+    @endphp
+
+    <div class="space-y-20">
+        <x-ui.page-header title="Tambah Dokumen" />
+
+        <div class="mx-auto grid w-full max-w-4xl gap-5">
+            @foreach ($documentLevels as $level)
+                <x-documents.level-card
+                    :level="$level['badge']"
+                    :title="$level['name']"
+                    :description="$level['create_description']"
+                />
+            @endforeach
+        </div>
+    </div>
+</x-layouts::app>
