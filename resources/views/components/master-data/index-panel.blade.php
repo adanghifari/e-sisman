@@ -1,0 +1,37 @@
+@props([
+    'title',
+    'description',
+    'searchLabel',
+    'searchPlaceholder',
+    'statusOptions',
+    'status',
+    'createAction' => 'create',
+])
+
+<x-ui.panel :title="$title" :description="$description" :padded="false">
+    <x-slot:actions>
+        <x-ui.action-button type="button" wire:click="{{ $createAction }}" class="gap-2">
+            <flux:icon name="plus" class="size-4" />
+            Tambah Data
+        </x-ui.action-button>
+    </x-slot:actions>
+
+    <div class="grid gap-4 border-b border-slate-200 p-5 md:grid-cols-[minmax(260px,1fr)_minmax(180px,260px)]">
+        <x-ui.input
+            :label="$searchLabel"
+            name="search"
+            wire:model.live.debounce.300ms="search"
+            :placeholder="$searchPlaceholder"
+        />
+
+        <x-ui.select
+            label="Status"
+            name="status"
+            wire:model.live="status"
+            :value="$status"
+            :options="$statusOptions"
+        />
+    </div>
+
+    {{ $slot }}
+</x-ui.panel>
