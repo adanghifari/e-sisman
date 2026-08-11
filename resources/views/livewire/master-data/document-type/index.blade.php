@@ -1,69 +1,66 @@
 <div class="space-y-6">
-    <x-ui.page-header title="Proses Bisnis" />
+    <x-ui.page-header title="Jenis Dokumen" />
 
     <x-master-data.index-panel
-        title="List Proses Bisnis"
-        description="Menampilkan {{ $businessProcesses->count() }} data dari total {{ $businessProcesses->total() }} proses bisnis."
-        search-label="Cari Proses Bisnis"
-        search-placeholder="Cari kode atau proses bisnis..."
+        title="List Jenis Dokumen"
+        description="Menampilkan {{ $documentTypes->count() }} data dari total {{ $documentTypes->total() }} jenis dokumen."
+        search-label="Cari Jenis Dokumen"
+        search-placeholder="Cari jenis dokumen..."
         :status-options="$statusOptions"
         :status="$status"
     >
         <x-ui.scrollable-table max-height="620px" min-width="100%" :horizontal="false" class="table-fixed text-base">
             <colgroup>
+                <col class="w-[62%]">
                 <col class="w-[16%]">
-                <col class="w-[49%]">
-                <col class="w-[15%]">
-                <col class="w-[20%]">
+                <col class="w-[22%]">
             </colgroup>
 
             <thead class="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
-                    <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Kode</th>
-                    <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Nama Proses Bisnis</th>
+                    <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Nama Jenis Dokumen</th>
                     <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Status</th>
                     <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Aksi</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-                @forelse ($businessProcesses as $businessProcess)
+                @forelse ($documentTypes as $documentType)
                     <tr class="hover:bg-slate-50/70">
-                        <td class="px-5 py-4 font-semibold text-slate-800">{{ $businessProcess->kode }}</td>
-                        <td class="px-5 py-4 text-slate-700">{{ $businessProcess->nama_proses_bisnis }}</td>
+                        <td class="px-5 py-4 font-semibold text-slate-800">{{ $documentType->nama_types }}</td>
                         <td class="px-5 py-4">
                             <x-ui.status-badge
-                                :label="$businessProcess->is_active ? 'Active' : 'Inactive'"
-                                :tone="$businessProcess->is_active ? 'sky' : 'slate'"
+                                :label="$documentType->is_active ? 'Active' : 'Inactive'"
+                                :tone="$documentType->is_active ? 'sky' : 'slate'"
                             />
                         </td>
                         <td class="px-5 py-4">
                             <div class="flex items-center justify-start gap-3">
                                 <x-ui.icon-button
                                     icon="pencil"
-                                    label="Edit proses bisnis"
+                                    label="Edit jenis dokumen"
                                     size="sm"
-                                    wire:click="edit({{ $businessProcess->id }})"
+                                    wire:click="edit({{ $documentType->id }})"
                                 />
 
                                 <x-ui.inline-status-toggle
-                                    :active="$businessProcess->is_active"
-                                    wire:click="toggleStatus({{ $businessProcess->id }})"
-                                    aria-label="{{ $businessProcess->is_active ? 'Nonaktifkan proses bisnis' : 'Aktifkan proses bisnis' }}"
+                                    :active="$documentType->is_active"
+                                    wire:click="toggleStatus({{ $documentType->id }})"
+                                    aria-label="{{ $documentType->is_active ? 'Nonaktifkan jenis dokumen' : 'Aktifkan jenis dokumen' }}"
                                 />
 
                                 <x-ui.icon-button
                                     icon="trash"
-                                    label="Hapus proses bisnis"
+                                    label="Hapus jenis dokumen"
                                     size="sm"
-                                    wire:click="confirmDelete({{ $businessProcess->id }})"
+                                    wire:click="confirmDelete({{ $documentType->id }})"
                                 />
                             </div>
                         </td>
                     </tr>
                 @empty
                     <tr>
-                        <td colspan="4" class="px-5 py-10 text-center text-sm text-slate-500">
-                            Tidak ada proses bisnis yang cocok dengan filter.
+                        <td colspan="3" class="px-5 py-10 text-center text-sm text-slate-500">
+                            Tidak ada jenis dokumen yang cocok dengan filter.
                         </td>
                     </tr>
                 @endforelse
@@ -71,38 +68,30 @@
         </x-ui.scrollable-table>
 
         <div class="border-t border-slate-100 px-5 py-4">
-            {{ $businessProcesses->links() }}
+            {{ $documentTypes->links() }}
         </div>
     </x-master-data.index-panel>
 
     @if ($showForm)
         <x-ui.modal
-            :title="$editingId ? 'Edit Proses Bisnis' : 'Tambah Proses Bisnis'"
-            description="Lengkapi kode, nama, dan status proses bisnis."
+            :title="$editingId ? 'Edit Jenis Dokumen' : 'Tambah Jenis Dokumen'"
+            description="Lengkapi nama dan status jenis dokumen."
             close-action="cancel"
+            max-width="lg"
         >
             <form wire:submit="save" class="space-y-5 px-6 py-5">
-                <div class="grid gap-4 md:grid-cols-[160px_1fr]">
-                    <x-ui.form-input
-                        label="Kode"
-                        name="kode"
-                        wire:model="kode"
-                        placeholder="Contoh: MRI"
-                    />
-
-                    <x-ui.form-input
-                        label="Nama Proses Bisnis"
-                        name="nama_proses_bisnis"
-                        wire:model="nama_proses_bisnis"
-                        placeholder="Nama proses bisnis"
-                    />
-                </div>
+                <x-ui.form-input
+                    label="Nama Jenis Dokumen"
+                    name="nama_types"
+                    wire:model="nama_types"
+                    placeholder="Contoh: Instruksi Kerja"
+                />
 
                 <x-ui.status-toggle
                     :active="$is_active"
                     name="is_active"
                     wire:model.live="is_active"
-                    active-description="Data aktif dan bisa dipilih di dokumen."
+                    active-description="Data aktif dan bisa dipilih saat pengajuan dokumen."
                     inactive-description="Data nonaktif tidak ditampilkan sebagai pilihan aktif."
                 />
 
@@ -121,9 +110,9 @@
 
     @if ($showDeleteModal)
         <x-ui.confirm-modal
-            title="Hapus Proses Bisnis"
+            title="Hapus Jenis Dokumen"
             description="Data yang belum digunakan dokumen akan dihapus permanen."
-            message="Yakin ingin menghapus proses bisnis ini?"
+            message="Yakin ingin menghapus jenis dokumen ini?"
             confirm-action="delete"
             cancel-action="cancelDelete"
             error-key="delete"

@@ -1,6 +1,8 @@
 <?php
 
 use App\Livewire\MasterData\BusinessProcess\Index as BusinessProcessIndex;
+use App\Livewire\MasterData\Department\Index as DepartmentIndex;
+use App\Livewire\MasterData\DocumentType\Index as DocumentTypeIndex;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
@@ -16,8 +18,8 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('document-templates', 'document-templates.index')->name('document-templates.index');
     Route::view('master-data/process-functions', 'master-data.process-functions')->name('master-data.process-functions');
     Route::livewire('master-data/business-processes', BusinessProcessIndex::class)->name('master-data.business-processes');
-    Route::view('master-data/departments', 'master-data.departments')->name('master-data.departments');
-    Route::view('master-data/document-types', 'master-data.document-types')->name('master-data.document-types');
+    Route::livewire('master-data/departments', DepartmentIndex::class)->name('master-data.departments');
+    Route::livewire('master-data/document-types', DocumentTypeIndex::class)->name('master-data.document-types');
     Route::view('activity-log', 'activity-log.index')->name('activity-log.index');
 });
 

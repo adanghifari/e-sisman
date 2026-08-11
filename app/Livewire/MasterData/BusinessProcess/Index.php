@@ -6,6 +6,7 @@ use App\Actions\MasterData\BusinessProcess\CreateBusinessProcess;
 use App\Actions\MasterData\BusinessProcess\DeleteBusinessProcess;
 use App\Actions\MasterData\BusinessProcess\ToggleBusinessProcessStatus;
 use App\Actions\MasterData\BusinessProcess\UpdateBusinessProcess;
+use App\Livewire\MasterData\Concerns\HandlesMasterDataCrudState;
 use App\Models\BusinessProcess;
 use Illuminate\Contracts\View\View;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -17,45 +18,12 @@ use Livewire\WithPagination;
 #[Title('Proses Bisnis')]
 class Index extends Component
 {
+    use HandlesMasterDataCrudState;
     use WithPagination;
-
-    public string $search = '';
-
-    public string $status = '';
-
-    public int $perPage = 10;
-
-    public ?int $editingId = null;
-
-    public bool $showForm = false;
-
-    public bool $showDeleteModal = false;
-
-    public ?int $deletingId = null;
 
     public string $kode = '';
 
     public string $nama_proses_bisnis = '';
-
-    public bool $is_active = true;
-
-    public function updatingSearch(): void
-    {
-        $this->resetPage();
-    }
-
-    public function updatingStatus(): void
-    {
-        $this->resetPage();
-    }
-
-    public function create(): void
-    {
-        $this->resetForm();
-
-        $this->showForm = true;
-        $this->is_active = true;
-    }
 
     public function edit(int $id): void
     {
@@ -102,15 +70,6 @@ class Index extends Component
         $toggleBusinessProcessStatus->handle($businessProcess);
     }
 
-    public function confirmDelete(int $id): void
-    {
-        BusinessProcess::findOrFail($id);
-
-        $this->resetErrorBag('delete');
-        $this->deletingId = $id;
-        $this->showDeleteModal = true;
-    }
-
     /**
      * @throws ValidationException
      */
@@ -126,20 +85,6 @@ class Index extends Component
 
         $this->cancelDelete();
         $this->resetPage();
-    }
-
-    public function cancelDelete(): void
-    {
-        $this->resetErrorBag('delete');
-        $this->reset([
-            'deletingId',
-            'showDeleteModal',
-        ]);
-    }
-
-    public function cancel(): void
-    {
-        $this->resetForm();
     }
 
     public function getBusinessProcessesProperty(): LengthAwarePaginator
@@ -171,15 +116,16 @@ class Index extends Component
         ]);
     }
 
-    private function resetForm(): void
+    protected function masterDataModelClass(): string
     {
-        $this->reset([
-            'editingId',
-            'showForm',
+        return BusinessProcess::class;
+    }
+
+    protected function resetForm(): void
+    {
+        $this->resetMasterDataForm([
             'kode',
             'nama_proses_bisnis',
         ]);
-
-        $this->is_active = true;
     }
 }

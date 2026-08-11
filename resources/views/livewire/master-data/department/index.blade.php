@@ -1,11 +1,11 @@
 <div class="space-y-6">
-    <x-ui.page-header title="Proses Bisnis" />
+    <x-ui.page-header title="Department" />
 
     <x-master-data.index-panel
-        title="List Proses Bisnis"
-        description="Menampilkan {{ $businessProcesses->count() }} data dari total {{ $businessProcesses->total() }} proses bisnis."
-        search-label="Cari Proses Bisnis"
-        search-placeholder="Cari kode atau proses bisnis..."
+        title="List Department"
+        description="Menampilkan {{ $departments->count() }} data dari total {{ $departments->total() }} department."
+        search-label="Cari Department"
+        search-placeholder="Cari kode atau department..."
         :status-options="$statusOptions"
         :status="$status"
     >
@@ -20,42 +20,42 @@
             <thead class="bg-slate-50 text-xs uppercase text-slate-500">
                 <tr>
                     <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Kode</th>
-                    <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Nama Proses Bisnis</th>
+                    <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Nama Department</th>
                     <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Status</th>
                     <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Aksi</th>
                 </tr>
             </thead>
             <tbody class="divide-y divide-slate-100">
-                @forelse ($businessProcesses as $businessProcess)
+                @forelse ($departments as $department)
                     <tr class="hover:bg-slate-50/70">
-                        <td class="px-5 py-4 font-semibold text-slate-800">{{ $businessProcess->kode }}</td>
-                        <td class="px-5 py-4 text-slate-700">{{ $businessProcess->nama_proses_bisnis }}</td>
+                        <td class="px-5 py-4 font-semibold text-slate-800">{{ $department->kode_department }}</td>
+                        <td class="px-5 py-4 text-slate-700">{{ $department->nama_department }}</td>
                         <td class="px-5 py-4">
                             <x-ui.status-badge
-                                :label="$businessProcess->is_active ? 'Active' : 'Inactive'"
-                                :tone="$businessProcess->is_active ? 'sky' : 'slate'"
+                                :label="$department->is_active ? 'Active' : 'Inactive'"
+                                :tone="$department->is_active ? 'sky' : 'slate'"
                             />
                         </td>
                         <td class="px-5 py-4">
                             <div class="flex items-center justify-start gap-3">
                                 <x-ui.icon-button
                                     icon="pencil"
-                                    label="Edit proses bisnis"
+                                    label="Edit department"
                                     size="sm"
-                                    wire:click="edit({{ $businessProcess->id }})"
+                                    wire:click="edit({{ $department->id }})"
                                 />
 
                                 <x-ui.inline-status-toggle
-                                    :active="$businessProcess->is_active"
-                                    wire:click="toggleStatus({{ $businessProcess->id }})"
-                                    aria-label="{{ $businessProcess->is_active ? 'Nonaktifkan proses bisnis' : 'Aktifkan proses bisnis' }}"
+                                    :active="$department->is_active"
+                                    wire:click="toggleStatus({{ $department->id }})"
+                                    aria-label="{{ $department->is_active ? 'Nonaktifkan department' : 'Aktifkan department' }}"
                                 />
 
                                 <x-ui.icon-button
                                     icon="trash"
-                                    label="Hapus proses bisnis"
+                                    label="Hapus department"
                                     size="sm"
-                                    wire:click="confirmDelete({{ $businessProcess->id }})"
+                                    wire:click="confirmDelete({{ $department->id }})"
                                 />
                             </div>
                         </td>
@@ -63,7 +63,7 @@
                 @empty
                     <tr>
                         <td colspan="4" class="px-5 py-10 text-center text-sm text-slate-500">
-                            Tidak ada proses bisnis yang cocok dengan filter.
+                            Tidak ada department yang cocok dengan filter.
                         </td>
                     </tr>
                 @endforelse
@@ -71,30 +71,30 @@
         </x-ui.scrollable-table>
 
         <div class="border-t border-slate-100 px-5 py-4">
-            {{ $businessProcesses->links() }}
+            {{ $departments->links() }}
         </div>
     </x-master-data.index-panel>
 
     @if ($showForm)
         <x-ui.modal
-            :title="$editingId ? 'Edit Proses Bisnis' : 'Tambah Proses Bisnis'"
-            description="Lengkapi kode, nama, dan status proses bisnis."
+            :title="$editingId ? 'Edit Department' : 'Tambah Department'"
+            description="Lengkapi kode, nama, dan status department."
             close-action="cancel"
         >
             <form wire:submit="save" class="space-y-5 px-6 py-5">
                 <div class="grid gap-4 md:grid-cols-[160px_1fr]">
                     <x-ui.form-input
                         label="Kode"
-                        name="kode"
-                        wire:model="kode"
-                        placeholder="Contoh: MRI"
+                        name="kode_department"
+                        wire:model="kode_department"
+                        placeholder="Contoh: HSSE"
                     />
 
                     <x-ui.form-input
-                        label="Nama Proses Bisnis"
-                        name="nama_proses_bisnis"
-                        wire:model="nama_proses_bisnis"
-                        placeholder="Nama proses bisnis"
+                        label="Nama Department"
+                        name="nama_department"
+                        wire:model="nama_department"
+                        placeholder="Nama department"
                     />
                 </div>
 
@@ -102,7 +102,7 @@
                     :active="$is_active"
                     name="is_active"
                     wire:model.live="is_active"
-                    active-description="Data aktif dan bisa dipilih di dokumen."
+                    active-description="Data aktif dan bisa dipilih pada dokumen atau user."
                     inactive-description="Data nonaktif tidak ditampilkan sebagai pilihan aktif."
                 />
 
@@ -121,9 +121,9 @@
 
     @if ($showDeleteModal)
         <x-ui.confirm-modal
-            title="Hapus Proses Bisnis"
-            description="Data yang belum digunakan dokumen akan dihapus permanen."
-            message="Yakin ingin menghapus proses bisnis ini?"
+            title="Hapus Department"
+            description="Data yang belum digunakan user atau dokumen akan dihapus permanen."
+            message="Yakin ingin menghapus department ini?"
             confirm-action="delete"
             cancel-action="cancelDelete"
             error-key="delete"
