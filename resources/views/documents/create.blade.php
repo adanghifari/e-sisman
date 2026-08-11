@@ -1,34 +1,17 @@
 <x-layouts::app :title="__('Tambah Dokumen')">
     @php
-        $documentLevels = [
-            [
-                'title' => 'Dokumen Level I : Manual SKMBS',
-                'description' => 'Dokumen utama yang umumnya menjelaskan dan memberikan informasi tentang ruang lingkup Sistem Manajemen terintegrasi sesuai persyaratan ISO dan PP No. 50 tahun 2012, proses bisnis, diagram hubungan antar fungsi dan penjelasan fungsi.',
-            ],
-            [
-                'title' => 'Dokumen Level II : Prosedur SKMBS',
-                'description' => 'Dokumen yang menjabarkan proses didalam context diagram yang lebih jelas terhadap pemenuhan persyaratan Sistem Manajemen KBS yang terkait dengan fungsi-fungsi kegiatan bisnis Perusahaan dalam dokumen level I (Manual).',
-            ],
-            [
-                'title' => 'Dokumen Level III : Instruksi Kerja (Internal)',
-                'description' => 'Dokumen yang menguraikan secara rinci tahapan teknis dalam pelaksanaan suatu kegiatan yang tertuang didalam dokumen level II dan tidak hanya garis besar saja namun menjelaskan instruksi pekerjaan dari awal sampai akhir.',
-            ],
-            [
-                'title' => 'Dokumen Level III : Instruksi Kerja (Lintas Department)',
-                'description' => 'Dokumen yang menguraikan secara rinci tahapan teknis dalam pelaksanaan suatu kegiatan yang tertuang didalam dokumen level II dan tidak hanya garis besar saja namun menjelaskan instruksi pekerjaan dari awal sampai akhir.',
-            ],
-        ];
+        $documentLevels = config('document-levels');
     @endphp
 
-    <div class="space-y-6">
+    <div class="space-y-20">
         <x-ui.page-header title="Tambah Dokumen" />
 
-        <div class="grid gap-5 xl:grid-cols-2">
+        <div class="mx-auto grid w-full max-w-4xl gap-5">
             @foreach ($documentLevels as $level)
                 <x-documents.level-card
-                    :title="$level['title']"
-                    :description="$level['description']"
-                    href="#"
+                    :level="$level['badge']"
+                    :title="$level['name']"
+                    :description="$level['create_description']"
                 />
             @endforeach
         </div>
