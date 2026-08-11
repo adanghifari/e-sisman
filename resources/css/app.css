@@ -61,6 +61,30 @@ select:focus[data-flux-control] {
     @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-accent-foreground;
 }
 
+.ui-data-table tbody > tr:nth-child(even) {
+    background-color: #f8fafc;
+}
+
+.ui-data-table tbody.is-row-group:nth-of-type(odd) > tr:not(.is-child-row) {
+    background-color: #ffffff;
+}
+
+.ui-data-table tbody.is-row-group:nth-of-type(even) > tr:not(.is-child-row) {
+    background-color: #f8fafc;
+}
+
+.ui-data-table tbody > tr:hover {
+    background-color: #f1f5f9;
+}
+
+.ui-data-table tbody > tr.is-child-row {
+    background-color: #f8fafc;
+}
+
+.ui-data-table tbody > tr.is-child-row:hover {
+    background-color: #f1f5f9;
+}
+
 .app-scrollbar,
 .sidebar-scrollbar {
     scrollbar-color: #cbd5e1 transparent;
