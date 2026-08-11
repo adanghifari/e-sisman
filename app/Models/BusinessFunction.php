@@ -6,10 +6,10 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 
-#[Fillable(['kode', 'nama_proses_bisnis', 'is_active'])]
-class ProsesBisnis extends Model
+#[Fillable(['kode', 'nama_proses_fungsi', 'is_active'])]
+class BusinessFunction extends Model
 {
-    protected $table = 'm_proses_bisnis';
+    protected $table = 'm_proses_fungsi';
 
     public $timestamps = false;
 
