@@ -22,7 +22,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property int $id
  * @property int|null $m_department_id
  * @property string|null $nik
- * @property string $nama
+ * @property string $name
  * @property string $email
  * @property Carbon|null $email_verified_at
  * @property string $password
@@ -34,7 +34,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['m_department_id', 'nik', 'nama', 'email', 'password', 'jabatan'])]
+#[Fillable(['m_department_id', 'nik', 'name', 'email', 'password', 'jabatan'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
 {
@@ -94,7 +94,7 @@ class User extends Authenticatable implements PasskeyUser
      */
     public function initials(): string
     {
-        $initials = Str::initials($this->nama, true);
+        $initials = Str::initials($this->name, true);
 
         return Str::length($initials) > 1
             ? Str::substr($initials, 0, 1).Str::substr($initials, -1)
