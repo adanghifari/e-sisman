@@ -1,6 +1,6 @@
 <?php
 
-namespace App\Actions\MasterData;
+namespace App\Actions\MasterData\BusinessProcess;
 
 use App\Models\BusinessProcess;
 
