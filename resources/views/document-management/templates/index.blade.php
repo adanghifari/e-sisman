@@ -2,5 +2,6 @@
     <x-document-templates.builder
         :document-levels="config('document-levels')"
         :can-edit="auth()->user()->isAdmin()"
+        :upload-limits="config('document-templates.upload')"
     />
 </x-layouts::app>

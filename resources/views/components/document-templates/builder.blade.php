@@ -1,7 +1,16 @@
 @props([
     'documentLevels',
     'canEdit' => false,
+    'uploadLimits' => [],
 ])
+
+@php
+    $maxFiles = $uploadLimits['max_files'] ?? 10;
+    $maxFileSizeKb = $uploadLimits['max_file_size_kb'] ?? 10240;
+    $maxFileSizeMb = (int) ceil($maxFileSizeKb / 1024);
+    $allowedExtensions = $uploadLimits['allowed_extensions'] ?? ['pdf', 'doc', 'docx'];
+    $allowedExtensionText = strtoupper(implode(', ', $allowedExtensions));
+@endphp
 
 <div class="space-y-6" data-template-builder data-can-edit="{{ $canEdit ? 'true' : 'false' }}">
     <x-ui.page-header
@@ -82,29 +91,22 @@
                 <form class="mt-5 hidden space-y-5" data-template-edit-form>
                     <input type="hidden" name="document_level" data-template-level-input>
 
-                    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_220px]">
-                        <x-ui.input
-                            label="Judul Template"
-                            name="title"
-                            placeholder="Contoh: Template Instruksi Kerja"
-                            data-template-title
-                            readonly
-                        />
-
-                        <x-ui.select
-                            label="Format File"
-                            name="format"
-                            :options="['' => 'Pilih Format', 'pdf' => 'PDF', 'word' => 'Word']"
-                            data-template-format
-                            disabled
-                        />
-                    </div>
+                    <x-ui.input
+                        label="Judul Template"
+                        name="title"
+                        placeholder="Contoh: Template Instruksi Kerja"
+                        data-template-title
+                        readonly
+                    />
 
                     <x-ui.file-upload
                         label="File Template"
-                        name="template_file"
+                        name="template_files[]"
                         accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                        hint="Format yang didukung: PDF, DOC, DOCX. Gunakan file resmi yang siap dipakai untuk pengajuan dokumen."
+                        hint="Format: {{ $allowedExtensionText }}. Maksimal {{ $maxFiles }} file, ukuran maksimal {{ $maxFileSizeMb }} MB per file."
+                        :multiple="true"
+                        :max-files="$maxFiles"
+                        :max-file-size-kb="$maxFileSizeKb"
                         disabled
                         data-template-file
                     />
@@ -119,10 +121,6 @@
                     />
 
                     <div class="hidden justify-end gap-2 border-t border-slate-100 pt-5" data-template-actions>
-                        <x-ui.action-button type="button" variant="secondary" data-template-reset>
-                            Reset
-                        </x-ui.action-button>
-
                         <x-ui.action-button type="button" data-template-save>
                             Simpan Template
                         </x-ui.action-button>
@@ -142,7 +140,6 @@
                 const levelTitle = builder.querySelector('[data-template-level-title]');
                 const levelInput = builder.querySelector('[data-template-level-input]');
                 const titleInput = builder.querySelector('[data-template-title]');
-                const formatInput = builder.querySelector('[data-template-format]');
                 const notesInput = builder.querySelector('[data-template-notes]');
                 const fileInput = builder.querySelector('[data-template-file]');
                 const actions = builder.querySelector('[data-template-actions]');
@@ -159,19 +156,23 @@
                 let activeLevelKey = null;
                 let isEditing = false;
 
-                const selectedFile = () => fileInput.files?.[0] || null;
+                const selectedFiles = () => Array.from(fileInput.files || []);
 
                 const updateReadPanel = () => {
-                    const file = selectedFile();
+                    const files = selectedFiles();
                     const hasStoredFile = false;
-                    const hasFile = Boolean(file || hasStoredFile);
+                    const hasFile = files.length > 0 || hasStoredFile;
 
                     filePreview.classList.toggle('hidden', ! hasFile);
                     noFile.classList.toggle('hidden', hasFile);
 
-                    if (file) {
-                        fileName.textContent = file.name;
-                        fileMeta.textContent = `${formatInput.value ? formatInput.value.toUpperCase() : 'File'} - ${Math.ceil(file.size / 1024)} KB`;
+                    if (files.length > 0) {
+                        const totalSizeKb = files.reduce((total, file) => total + Math.ceil(file.size / 1024), 0);
+
+                        fileName.textContent = files.length > 1
+                            ? `${files.length} file template dipilih`
+                            : files[0].name;
+                        fileMeta.textContent = `${totalSizeKb} KB total`;
                     }
                 };
 
@@ -179,7 +180,6 @@
                     isEditing = canEdit && editing;
 
                     titleInput.toggleAttribute('readonly', ! isEditing);
-                    formatInput.toggleAttribute('disabled', ! isEditing);
                     notesInput.toggleAttribute('readonly', ! isEditing);
                     fileInput.toggleAttribute('disabled', ! isEditing);
                     actions.classList.toggle('hidden', ! isEditing);
@@ -188,7 +188,7 @@
                     editForm.classList.toggle('hidden', ! isEditing);
 
                     modeText.textContent = isEditing
-                        ? 'Upload template dalam format PDF atau Word untuk level dokumen ini.'
+                        ? 'Upload file PDF atau Word. Maksimal {{ $maxFiles }} file, {{ $maxFileSizeMb }} MB per file.'
                         : 'Template ditampilkan dalam mode read-only.';
 
                     if (editToggle) {
@@ -207,14 +207,12 @@
 
                     templatesByLevel[activeLevelKey] = {
                         title: titleInput.value,
-                        format: formatInput.value,
                         notes: notesInput.value,
                     };
                 };
 
                 const renderTemplate = (template = {}) => {
                     titleInput.value = template.title || '';
-                    formatInput.value = template.format || '';
                     notesInput.value = template.notes || '';
                     updateReadPanel();
                 };
@@ -239,11 +237,6 @@
 
                 builder.querySelectorAll('[data-template-level-option]').forEach((option) => {
                     option.addEventListener('click', () => selectLevel(option));
-                });
-
-                builder.querySelector('[data-template-reset]').addEventListener('click', () => {
-                    renderTemplate();
-                    persistActiveTemplate();
                 });
 
                 builder.querySelector('[data-template-save]').addEventListener('click', () => {

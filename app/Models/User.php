@@ -100,6 +100,11 @@ class User extends Authenticatable implements PasskeyUser
         return $this->hasMany(DocumentFile::class, 'uploaded_by');
     }
 
+    public function uploadedDocumentTemplates(): HasMany
+    {
+        return $this->hasMany(DocumentTemplate::class, 'uploaded_by');
+    }
+
     /**
      * Get the user's initials
      */
