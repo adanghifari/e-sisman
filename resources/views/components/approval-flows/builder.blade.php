@@ -10,11 +10,11 @@
 
     <div class="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
         <x-ui.panel title="Level Dokumen" description="Pilih level dokumen yang ingin disetting." class="h-fit xl:sticky xl:top-8">
-            <div class="space-y-3">
+            <div class="mt-4 space-y-3">
                 @foreach ($documentLevels as $levelKey => $level)
                     <button
                         type="button"
-                        class="group w-full rounded-lg border border-slate-200 bg-white p-4 text-left transition hover:border-sky-200 hover:bg-sky-50 data-[active=true]:border-sky-300 data-[active=true]:bg-sky-50 data-[active=true]:shadow-sm"
+                        class="group w-full rounded-lg border border-slate-200 bg-white px-5 py-4 text-left transition hover:border-sky-200 hover:bg-sky-50 data-[active=true]:border-sky-300 data-[active=true]:bg-sky-50 data-[active=true]:shadow-sm"
                         data-level-option
                         data-level-key="{{ $levelKey }}"
                         data-level-name="{{ $level['name'] }}"
@@ -23,9 +23,6 @@
                     >
                         <span class="block font-semibold text-slate-900 group-data-[active=true]:text-sky-800">
                             {{ $level['name'] }}
-                        </span>
-                        <span class="mt-1 block text-sm leading-6 text-slate-500">
-                            {{ $level['approval_description'] }}
                         </span>
                     </button>
                 @endforeach
@@ -44,7 +41,9 @@
                     <div>
                         <p class="text-xs font-semibold uppercase tracking-wide text-sky-700">Flow Aktif</p>
                         <h2 class="mt-1 text-xl font-bold text-slate-950" data-selected-level-title></h2>
-                        <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-500" data-selected-level-description></p>
+                        <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
+                            Pihak dibawah ini akan tampil sebagai penanda tangan pada lembar pengesahan.
+                        </p>
                     </div>
 
                     <div class="flex shrink-0 items-center gap-2">
@@ -68,39 +67,33 @@
     </div>
 
     <template data-stage-template>
-        <section class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-stage-card>
-            <div class="flex flex-col gap-4 md:flex-row md:items-start">
-                <div class="flex size-11 shrink-0 items-center justify-center rounded-lg bg-sky-100 text-base font-bold text-sky-700" data-stage-number></div>
+        <section class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4" data-stage-card>
+            <div class="grid gap-3 lg:grid-cols-[56px_120px_minmax(180px,260px)_minmax(0,1fr)_40px] lg:items-center">
+                <div class="flex size-10 items-center justify-center self-center rounded-lg bg-sky-100 text-sm font-bold text-sky-700" data-stage-number></div>
 
-                <div class="min-w-0 flex-1 space-y-4">
-                    <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-                        <div>
-                            <h3 class="font-semibold text-slate-950" data-stage-title></h3>
-                            <p class="mt-1 text-sm text-slate-500">Pihak ini akan tampil sebagai penanda tangan pada lembar pengesahan.</p>
-                        </div>
+                <h3 class="self-center font-semibold leading-none text-slate-950" data-stage-title></h3>
 
-                        <x-ui.icon-button
-                            icon="trash"
-                            label="Hapus tahap"
-                            variant="secondary"
-                            data-remove-stage
-                        />
-                    </div>
+                <x-ui.input
+                    label="Nama Tahap"
+                    name="stage_label[]"
+                    placeholder="Contoh: Diperiksa oleh"
+                    data-stage-label
+                />
 
-                    <div class="grid gap-4 lg:grid-cols-[minmax(180px,240px)_minmax(0,1fr)]">
-                        <x-ui.input
-                            label="Nama Tahap"
-                            name="stage_label[]"
-                            placeholder="Contoh: Diperiksa oleh"
-                            data-stage-label
-                        />
-                        <x-ui.input
-                            label="Pihak Approval"
-                            name="approver_party[]"
-                            placeholder="Contoh: Manager QA / Kepala Departemen"
-                            data-stage-party
-                        />
-                    </div>
+                <x-ui.input
+                    label="Pihak Approval"
+                    name="approver_party[]"
+                    placeholder="Contoh: Manager QA / Kepala Departemen"
+                    data-stage-party
+                />
+
+                <div class="flex lg:justify-end">
+                    <x-ui.icon-button
+                        icon="trash"
+                        label="Hapus tahap"
+                        variant="secondary"
+                        data-remove-stage
+                    />
                 </div>
             </div>
         </section>
@@ -118,7 +111,6 @@
                 const stageList = builder.querySelector('[data-stage-list]');
                 const stageTemplate = builder.querySelector('[data-stage-template]');
                 const selectedTitle = builder.querySelector('[data-selected-level-title]');
-                const selectedDescription = builder.querySelector('[data-selected-level-description]');
                 const selectedLevelInput = builder.querySelector('[data-selected-level-input]');
                 const flowsByLevel = {};
                 let activeLevelKey = null;
@@ -174,7 +166,6 @@
                     });
 
                     selectedTitle.textContent = option.dataset.levelName;
-                    selectedDescription.textContent = option.dataset.levelDescription;
 
                     renderStages(flowsByLevel[activeLevelKey] ?? getDefaultStages(option));
 

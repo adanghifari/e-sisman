@@ -9,6 +9,7 @@ return [
         ['label' => 'Butuh Diproses', 'route' => 'documents.inbox', 'icon' => 'inbox'],
         ['label' => 'Tambah Dokumen', 'route' => 'documents.create', 'icon' => 'document-plus'],
         ['label' => 'Dokumen Master', 'route' => 'documents.master', 'icon' => 'document-duplicate'],
+        ['label' => 'Template Dokumen', 'route' => 'document-templates.index', 'icon' => 'document-text'],
     ],
 
     'Reporting' => [
@@ -18,7 +19,6 @@ return [
     'Administrasi' => [
         ['label' => 'Manajemen User', 'route' => 'users.index', 'icon' => 'users'],
         ['label' => 'Approval Flow', 'route' => 'approval-flows.index', 'icon' => 'adjustments-horizontal'],
-        ['label' => 'Template Dokumen', 'route' => 'document-templates.index', 'icon' => 'document-text'],
     ],
 
     'Master Data' => [
