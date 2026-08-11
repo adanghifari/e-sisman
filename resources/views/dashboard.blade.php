@@ -28,7 +28,6 @@
 
     <div class="space-y-6">
         <x-ui.page-header
-            eyebrow="E-SISMAN V2"
             title="Dashboard"
             :description="'Selamat datang, '.auth()->user()->name.'. Pantau proses dokumen dan approval dari satu halaman.'"
         >
