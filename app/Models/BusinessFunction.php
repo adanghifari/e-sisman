@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable(['kode', 'nama_proses_fungsi', 'is_active'])]
 class BusinessFunction extends Model
@@ -23,5 +24,10 @@ class BusinessFunction extends Model
     public function scopeActive(Builder $query): void
     {
         $query->where('is_active', true);
+    }
+
+    public function documents(): HasMany
+    {
+        return $this->hasMany(Document::class, 'm_proses_fungsi_id');
     }
 }
