@@ -53,14 +53,14 @@ class Document extends Model
         return $this->belongsTo(DocumentType::class, 'm_document_types_id');
     }
 
-    public function prosesBisnis(): BelongsTo
+    public function businessProcess(): BelongsTo
     {
-        return $this->belongsTo(ProsesBisnis::class, 'm_proses_bisnis_id');
+        return $this->belongsTo(BusinessProcess::class, 'm_proses_bisnis_id');
     }
 
-    public function prosesFungsi(): BelongsTo
+    public function businessFunction(): BelongsTo
     {
-        return $this->belongsTo(ProsesFungsi::class, 'm_proses_fungsi_id');
+        return $this->belongsTo(BusinessFunction::class, 'm_proses_fungsi_id');
     }
 
     public function creator(): BelongsTo

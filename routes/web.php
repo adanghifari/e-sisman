@@ -1,5 +1,6 @@
 <?php
 
+use App\Livewire\MasterData\BusinessProcess\Index as BusinessProcessIndex;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
@@ -14,7 +15,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('approval-flows', 'approval-flows.index')->name('approval-flows.index');
     Route::view('document-templates', 'document-templates.index')->name('document-templates.index');
     Route::view('master-data/process-functions', 'master-data.process-functions')->name('master-data.process-functions');
-    Route::view('master-data/business-processes', 'master-data.business-processes')->name('master-data.business-processes');
+    Route::livewire('master-data/business-processes', BusinessProcessIndex::class)->name('master-data.business-processes');
     Route::view('master-data/departments', 'master-data.departments')->name('master-data.departments');
     Route::view('master-data/document-types', 'master-data.document-types')->name('master-data.document-types');
     Route::view('activity-log', 'activity-log.index')->name('activity-log.index');
