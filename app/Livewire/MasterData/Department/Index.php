@@ -106,7 +106,7 @@ class Index extends Component
 
     public function render(): View
     {
-        return view('livewire.master-data.department.index', [
+        return view('livewire.master-data.departments.index', [
             'departments' => $this->departments,
             'statusOptions' => [
                 '' => 'Semua Status',

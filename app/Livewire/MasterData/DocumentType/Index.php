@@ -98,7 +98,7 @@ class Index extends Component
 
     public function render(): View
     {
-        return view('livewire.master-data.document-type.index', [
+        return view('livewire.master-data.document-types.index', [
             'documentTypes' => $this->documentTypes,
             'statusOptions' => [
                 '' => 'Semua Status',

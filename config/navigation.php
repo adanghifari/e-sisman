@@ -17,7 +17,15 @@ return [
     ],
 
     'Administrasi' => [
-        ['label' => 'Manajemen User', 'route' => 'users.index', 'icon' => 'users'],
+        [
+            'label' => 'Manajemen User',
+            'icon' => 'users',
+            'children' => [
+                ['label' => 'User', 'route' => 'users.index', 'icon' => 'user'],
+                ['label' => 'Group Akses', 'route' => 'access-groups.index', 'icon' => 'shield-check'],
+                ['label' => 'Menu Akses', 'route' => 'access-menus.index', 'icon' => 'list-bullet'],
+            ],
+        ],
         ['label' => 'Approval Flow', 'route' => 'approval-flows.index', 'icon' => 'adjustments-horizontal'],
     ],
 
