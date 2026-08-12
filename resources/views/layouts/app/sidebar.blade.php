@@ -11,18 +11,12 @@
         <div class="app-shell min-h-screen bg-slate-50 lg:grid lg:grid-cols-[280px_1fr]" data-app-shell>
             <aside class="hidden border-r border-sky-900 bg-sky-950 text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
                 <div class="sidebar-header flex items-center justify-between gap-3 px-7 py-7">
-                    <a href="{{ route('dashboard') }}" class="flex min-w-0 items-center gap-3" wire:navigate>
-                        <span class="grid size-11 shrink-0 place-items-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
-                            <img
-                                src="{{ asset('image/krakatau_logo.png') }}"
-                                alt="Krakatau International Port"
-                                class="size-8 object-contain"
-                            >
-                        </span>
-                        <span class="sidebar-label grid leading-none">
-                            <span class="text-base font-extrabold uppercase text-white">Krakatau</span>
-                            <span class="mt-1 text-[11px] font-bold uppercase text-white">International Port</span>
-                        </span>
+                    <a href="{{ route('dashboard') }}" class="sidebar-brand ml-3 flex min-w-0 items-center" wire:navigate>
+                        <img
+                            src="{{ asset('image/esisman_logo.png') }}"
+                            alt="E-SISMAN"
+                            class="sidebar-brand-logo h-auto w-[140px] max-w-full object-contain"
+                        >
                     </a>
 
                     <button
@@ -41,14 +35,6 @@
                 </x-ui.scroll-area>
 
                 <div class="sidebar-user border-t border-sky-800 p-5">
-                    <div class="sidebar-label flex justify-center pb-5">
-                        <img
-                            src="{{ asset('image/esisman_logo_tight.png') }}"
-                            alt="E-SISMAN"
-                            class="h-auto w-[96px] max-w-full object-contain"
-                        >
-                    </div>
-
                     <flux:dropdown position="top" align="start">
                         <button
                             type="button"
@@ -91,6 +77,20 @@
                             </form>
                         </flux:menu>
                     </flux:dropdown>
+
+                    <div class="sidebar-kip-brand flex w-full items-center justify-start gap-3 px-2.5 pt-5">
+                        <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+                            <img
+                                src="{{ asset('image/krakatau_logo.png') }}"
+                                alt="Krakatau International Port"
+                                class="size-7 object-contain"
+                            >
+                        </span>
+                        <span class="sidebar-label grid leading-none">
+                            <span class="text-sm font-extrabold uppercase text-white">Krakatau</span>
+                            <span class="mt-1 text-[10px] font-bold uppercase text-white">International Port</span>
+                        </span>
+                    </div>
                 </div>
             </aside>
 

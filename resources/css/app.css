@@ -179,6 +179,15 @@ select option:disabled {
         padding: 1.25rem 0;
     }
 
+    .app-shell.is-sidebar-collapsed .sidebar-brand {
+        justify-content: center;
+        width: 100%;
+    }
+
+    .app-shell.is-sidebar-collapsed .sidebar-brand-logo {
+        width: 3.5rem;
+    }
+
     .app-shell.is-sidebar-collapsed .sidebar-label {
         display: none;
     }
