@@ -38,6 +38,11 @@
             ->values();
         $selectedBusinessProcess = $businessProcesses->firstWhere('id', (int) old('m_proses_bisnis_id'));
         $documentNumberProcessCode = $selectedBusinessProcess?->kode ?: 'SMR';
+        $documentNumberSegments = match ($levelKey) {
+            'level-2' => [['value' => $documentNumberProcessCode, 'target' => 'business-process']],
+            'level-3' => ['XXX', 'YY'],
+            default => [],
+        };
         $assignableUsers = \App\Models\User::query()
             ->with('department')
             ->orderBy('name')
@@ -58,7 +63,9 @@
         </h1>
 
         @if ($levelKey === 'level-1')
-            <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+                @csrf
+
                 <div class="space-y-6">
                     <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm">
                         <div class="border-b border-slate-200 px-6 py-5">
@@ -70,9 +77,19 @@
                                 <span class="mb-2 block text-base font-medium text-slate-500">Nama Dokumen</span>
                                 <input
                                     type="text"
+                                    name="nama_dokumen"
+                                    value="{{ old('nama_dokumen') }}"
                                     placeholder="Masukan nama dokumen"
-                                    class="h-14 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                                    required
+                                    @class([
+                                        'h-14 w-full rounded-lg bg-white px-4 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:ring-2',
+                                        'border border-red-300 focus:border-red-400 focus:ring-red-100' => $errors->has('nama_dokumen'),
+                                        'border border-slate-300 focus:border-sky-400 focus:ring-sky-100' => ! $errors->has('nama_dokumen'),
+                                    ])
                                 >
+                                @error('nama_dokumen')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
                             </label>
                         </div>
                     </section>
@@ -83,26 +100,30 @@
                         </div>
 
                         <div class="space-y-5 px-6 py-6">
-                            <label class="flex min-h-56 cursor-pointer items-center gap-8 rounded-lg border border-dashed border-slate-300 bg-white px-6 py-7 transition hover:border-sky-300 hover:bg-sky-50/40">
-                                <input type="file" class="sr-only">
-                                <span class="grid size-40 shrink-0 place-items-center rounded-full bg-sky-100 text-sky-500">
-                                    <flux:icon name="cloud-arrow-up" class="size-20" />
-                                </span>
-                                <span class="min-w-0">
-                                    <span class="block text-xl font-bold text-slate-950">Drag & Drop atau Pilih file</span>
-                                    <span class="mt-3 block max-w-md text-base leading-7 text-slate-500">
-                                        Letakkan file di sini atau klik untuk upload file
-                                    </span>
-                                </span>
-                            </label>
+                            <x-ui.file-upload
+                                label="Import Dokumen"
+                                name="imported_document"
+                                accept=".pdf,.doc,.docx"
+                                hint="Format PDF, DOC, atau DOCX."
+                                :max-files="1"
+                                :max-file-size-kb="10240"
+                                required
+                            />
+                            @error('imported_document')
+                                <span class="-mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                            @enderror
 
                             <label class="block">
                                 <span class="mb-2 block text-base font-medium text-slate-500">Catatan</span>
                                 <textarea
+                                    name="catatan_revisi"
                                     rows="5"
                                     placeholder="Tambahkan catatan dokumen"
                                     class="w-full resize-none rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                                ></textarea>
+                                >{{ old('catatan_revisi') }}</textarea>
+                                @error('catatan_revisi')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
                             </label>
                         </div>
                     </section>
@@ -119,38 +140,40 @@
                             <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4">
                                 <input type="text" value="{{ $documentPrefixes[$levelKey] }}" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
                                 <span class="text-lg font-semibold text-slate-500">-</span>
-                                <input type="text" class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                <input type="text" name="nomor_dokumen_suffix" value="{{ old('nomor_dokumen_suffix') }}" required class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                             </div>
+                            @error('nomor_dokumen_suffix')
+                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                            @enderror
                         </div>
 
                         <label class="block">
                             <span class="mb-2 block text-base font-medium text-slate-500">Revisi</span>
                             <input
                                 type="text"
+                                name="nomor_revisi"
+                                value="{{ old('nomor_revisi') }}"
                                 class="h-14 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                             >
+                            @error('nomor_revisi')
+                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                            @enderror
                         </label>
 
-                        <label class="block">
-                            <span class="mb-2 block text-base font-medium text-slate-500">Tanggal Terbit</span>
-                            <div class="relative">
-                                <input
-                                    type="text"
-                                    placeholder="DD/MM/YYYY"
-                                    class="h-14 w-full rounded-lg border border-slate-300 bg-white px-4 pr-12 text-base font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                                >
-                                <flux:icon name="calendar" class="pointer-events-none absolute right-4 top-1/2 size-6 -translate-y-1/2 text-slate-500" />
-                            </div>
-                        </label>
+                        <x-ui.date-input
+                            label="Tanggal Terbit"
+                            name="tanggal_terbit"
+                            :value="old('tanggal_terbit')"
+                        />
                     </div>
 
                     <div class="border-t border-dashed border-slate-200 px-6 py-5">
-                        <button type="button" class="inline-flex h-12 w-full items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
+                        <button type="submit" class="inline-flex h-12 w-full items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
                             Import Dokumen
                         </button>
                     </div>
                 </aside>
-            </div>
+            </form>
         @else
             <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
                 @csrf
@@ -291,9 +314,7 @@
                         <div class="space-y-5 px-6 py-6">
                             <x-documents.document-number-input
                                 :prefix="$documentPrefixes[$levelKey]"
-                                :segments="$levelKey === 'level-2'
-                                    ? [['value' => $documentNumberProcessCode, 'target' => 'business-process']]
-                                    : ['XXX', 'YY']"
+                                :segments="$documentNumberSegments"
                             />
 
                             <label class="block">

@@ -52,6 +52,74 @@ class CreateDocumentTest extends TestCase
             ->assertSee('Level Two User');
     }
 
+    public function test_level_one_create_page_is_displayed(): void
+    {
+        $user = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('documents.create.level', 'level-1'))
+            ->assertOk()
+            ->assertSee('Import Dokumen Level I')
+            ->assertSee('Nama Dokumen')
+            ->assertSee('Upload Dokumen')
+            ->assertSee('Import Dokumen');
+    }
+
+    public function test_create_document_sidebar_stays_active_on_level_forms(): void
+    {
+        $user = User::factory()->create();
+
+        foreach (['level-1', 'level-2', 'level-3'] as $level) {
+            $this->actingAs($user)
+                ->get(route('documents.create.level', $level))
+                ->assertOk()
+                ->assertSee('bg-white text-sky-800 shadow-sm', false)
+                ->assertSee('Tambah Dokumen');
+        }
+    }
+
+    public function test_level_one_document_can_be_imported(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+
+        BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+
+        StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        DocumentType::create(['nama_types' => 'Manual']);
+
+        $level = DocumentLevel::query()->where('kode', 'level-1')->firstOrFail();
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-1'), [
+                'nama_dokumen' => 'Manual SKMBS',
+                'nomor_dokumen_suffix' => '001',
+                'nomor_revisi' => '00.00',
+                'tanggal_terbit' => '2026-08-12',
+                'catatan_revisi' => 'Dokumen awal.',
+                'imported_document' => UploadedFile::fake()->create('manual.pdf', 24, 'application/pdf'),
+            ])
+            ->assertRedirect(route('documents.create.level', 'level-1'));
+
+        $document = Document::query()->firstOrFail();
+
+        $this->assertSame($level->id, $document->m_document_level_id);
+        $this->assertSame('Manual SKMBS', $document->nama_dokumen);
+        $this->assertSame('SM-001', $document->nomor_dokumen);
+        $this->assertSame(0, $document->nomor_revisi);
+        $this->assertSame('Dokumen awal.', $document->catatan_revisi);
+        $this->assertTrue($document->files()->where('type_file', 'imported_document')->exists());
+    }
+
     public function test_level_two_document_can_be_saved_as_draft(): void
     {
         Storage::fake('local');
