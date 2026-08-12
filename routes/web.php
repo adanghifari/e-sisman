@@ -11,7 +11,10 @@ Route::view('/', 'welcome')->name('home');
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('dashboard', 'main.dashboard')->name('dashboard');
     Route::view('documents/inbox', 'document-management.inbox')->name('documents.inbox');
-    Route::view('documents/create', 'document-management.create')->name('documents.create');
+    Route::view('documents/create', 'document-management.create.index')->name('documents.create');
+    Route::view('documents/create/{level}', 'document-management.create.level')
+        ->whereIn('level', array_keys(config('document-levels')))
+        ->name('documents.create.level');
     Route::view('documents/master', 'document-management.master')->name('documents.master');
     Route::view('document-templates', 'document-management.templates.index')->name('document-templates.index');
     Route::view('reports', 'reporting.index')->name('reports.index');
