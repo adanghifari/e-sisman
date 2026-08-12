@@ -162,6 +162,7 @@ class CreateDocumentTest extends TestCase
 
         $this->assertSame($level->id, $document->m_document_level_id);
         $this->assertSame('Prosedur Pengujian', $document->nama_dokumen);
+        $this->assertSame($user->id, $document->official_preparer_id);
         $this->assertSame('PS-SMR-002', $document->nomor_dokumen);
         $this->assertTrue($document->departments()->whereKey($department->id)->exists());
     }
@@ -212,6 +213,7 @@ class CreateDocumentTest extends TestCase
 
         $this->assertSame($level->id, $document->m_document_level_id);
         $this->assertSame('Instruksi Kerja Pengujian', $document->nama_dokumen);
+        $this->assertSame($user->id, $document->official_preparer_id);
         $this->assertSame('IK-XXX-YY-001', $document->nomor_dokumen);
         $this->assertTrue($document->departments()->whereKey($department->id)->exists());
         $this->assertTrue($document->departments()->whereKey($secondDepartment->id)->exists());

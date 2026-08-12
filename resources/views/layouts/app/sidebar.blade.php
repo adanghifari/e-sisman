@@ -132,6 +132,13 @@
             </div>
         </div>
 
+        @if (session('document_success'))
+            <x-ui.success-dialog
+                :title="session('document_success.title')"
+                :message="session('document_success.message')"
+            />
+        @endif
+
         @persist('toast')
             <flux:toast.group>
                 <flux:toast />

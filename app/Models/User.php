@@ -74,6 +74,11 @@ class User extends Authenticatable implements PasskeyUser
         return $this->hasMany(Document::class, 'user_id');
     }
 
+    public function preparedDocuments(): HasMany
+    {
+        return $this->hasMany(Document::class, 'official_preparer_id');
+    }
+
     public function approvals(): HasMany
     {
         return $this->hasMany(Approval::class, 'user_id');

@@ -48,6 +48,7 @@ class DocumentController extends Controller
                 'm_proses_bisnis_id' => $validated['m_proses_bisnis_id'],
                 'm_proses_fungsi_id' => $validated['m_proses_fungsi_id'],
                 'user_id' => $request->user()->id,
+                'official_preparer_id' => $validated['official_preparer_id'] ?? null,
                 'reference' => $validated['reference'] ?? null,
                 'nama_dokumen' => $validated['nama_dokumen'],
                 'nomor_dokumen' => $this->buildDocumentNumber($documentLevel, $validated),
@@ -73,9 +74,18 @@ class DocumentController extends Controller
 
         });
 
+        if ($validated['submit_action'] === 'submit') {
+            return redirect()
+                ->route('documents.create')
+                ->with('document_success', [
+                    'title' => 'Dokumen berhasil disubmit',
+                    'message' => 'Dokumen akan segera diproses oleh tim terkait.',
+                ]);
+        }
+
         return redirect()
             ->route('documents.create.level', $level)
-            ->with('status', 'Dokumen berhasil disimpan.');
+            ->with('status', 'Dokumen berhasil disimpan sebagai draft.');
     }
 
     protected function documentTypeNameForLevel(string $level): string

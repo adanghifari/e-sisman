@@ -6,13 +6,14 @@ use App\Livewire\MasterData\BusinessProcess\Index as BusinessProcessIndex;
 use App\Livewire\MasterData\Department\Index as DepartmentIndex;
 use App\Livewire\MasterData\DocumentType\Index as DocumentTypeIndex;
 use App\Http\Controllers\DocumentManagement\DocumentController;
+use App\Http\Controllers\DocumentManagement\DocumentInboxController;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('dashboard', 'main.dashboard')->name('dashboard');
-    Route::view('documents/inbox', 'document-management.inbox')->name('documents.inbox');
+    Route::get('documents/inbox', DocumentInboxController::class)->name('documents.inbox');
     Route::view('documents/create', 'document-management.create.index')->name('documents.create');
     Route::view('documents/create/{level}', 'document-management.create.level')
         ->whereIn('level', array_keys(config('document-levels')))

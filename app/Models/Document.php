@@ -15,6 +15,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'm_proses_bisnis_id',
     'm_proses_fungsi_id',
     'user_id',
+    'official_preparer_id',
     'reference',
     'nama_dokumen',
     'nomor_dokumen',
@@ -72,6 +73,11 @@ class Document extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function officialPreparer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'official_preparer_id');
     }
 
     public function referenceDocument(): BelongsTo
