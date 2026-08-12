@@ -3,6 +3,7 @@
 namespace App\Http\Controllers\DocumentManagement;
 
 use App\Http\Controllers\Controller;
+use App\Models\BusinessProcess;
 use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
@@ -56,7 +57,7 @@ class DocumentController extends Controller
                 'user_id' => $request->user()->id,
                 'reference' => $validated['reference'] ?? null,
                 'nama_dokumen' => $validated['nama_dokumen'],
-                'nomor_dokumen' => $this->buildDocumentNumber($documentLevel->prefix, $validated['nomor_dokumen_suffix'] ?? null),
+                'nomor_dokumen' => $this->buildDocumentNumber($documentLevel, $validated),
                 'nomor_revisi' => 0,
                 'submitted_at' => $validated['submit_action'] === 'submit' ? now() : null,
             ]);
@@ -87,13 +88,30 @@ class DocumentController extends Controller
         ][$level] ?? 'IK';
     }
 
-    protected function buildDocumentNumber(?string $prefix, ?string $suffix): ?string
+    protected function buildDocumentNumber(DocumentLevel $documentLevel, array $validated): ?string
     {
+        $suffix = $validated['nomor_dokumen_suffix'] ?? null;
+
         if (! filled($suffix)) {
             return null;
         }
 
-        return collect([$prefix, 'XXX', 'YY', Str::upper(trim($suffix))])
+        $segments = [$documentLevel->prefix];
+
+        if ($documentLevel->kode === 'level-2') {
+            $businessProcessCode = BusinessProcess::query()
+                ->whereKey($validated['m_proses_bisnis_id'])
+                ->value('kode');
+
+            $segments[] = $businessProcessCode ?: 'SMR';
+        } else {
+            $segments[] = 'XXX';
+            $segments[] = 'YY';
+        }
+
+        $segments[] = Str::upper(trim($suffix));
+
+        return collect($segments)
             ->filter()
             ->implode('-');
     }
@@ -112,5 +130,4 @@ class DocumentController extends Controller
             'file_size' => $file->getSize(),
         ]);
     }
-
 }

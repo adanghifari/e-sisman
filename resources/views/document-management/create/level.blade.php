@@ -12,6 +12,7 @@
             'level-2' => 'PS',
             'level-3' => 'IK',
         ];
+
         $ownerLabel = $levelKey === 'level-1' ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
         $documentTitle = \Illuminate\Support\Str::after($level['name'], ': ');
         $documentLevelRecord = \Illuminate\Support\Facades\Schema::hasTable('m_document_levels')
@@ -29,21 +30,18 @@
         $departments = \Illuminate\Support\Facades\Schema::hasTable('departments')
             ? \App\Models\Department::query()->active()->orderBy('nama_department')->get()
             : collect();
+        $departmentOptions = $departments
+            ->map(fn ($department) => [
+                'value' => $department->id,
+                'label' => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department,
+            ])
+            ->values();
+        $selectedBusinessProcess = $businessProcesses->firstWhere('id', (int) old('m_proses_bisnis_id'));
+        $documentNumberProcessCode = $selectedBusinessProcess?->kode ?: 'SMR';
         $assignableUsers = \App\Models\User::query()
             ->with('department')
             ->orderBy('name')
             ->get();
-        $assignableUserOptions = $assignableUsers
-            ->map(fn ($user) => [
-                'id' => $user->id,
-                'name' => $user->name,
-                'email' => $user->email,
-                'title' => $user->jabatan,
-                'initials' => $user->initials(),
-                'meta' => $user->jabatan ?: $user->email,
-                'search' => \Illuminate\Support\Str::lower($user->name.' '.$user->email.' '.$user->jabatan),
-            ])
-            ->values();
     @endphp
 
     <div class="space-y-8">
@@ -156,269 +154,132 @@
         @else
             <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
                 @csrf
+
                 <div class="space-y-6">
-                    <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                        <div class="border-b border-slate-200 px-6 py-5">
-                            <h2 class="text-lg font-bold text-slate-900">Informasi Dokumen</h2>
-                        </div>
-
-                        <div class="grid gap-5 px-6 py-6">
-                            @if ($levelKey === 'level-2')
-                                <label class="block">
-                                    <span class="mb-2 block text-base font-medium text-slate-500">Nama Dokumen</span>
-                                    <input
-                                        type="text"
-                                        placeholder="Masukan nama dokumen"
-                                        class="h-14 w-full rounded-lg border border-red-300 bg-white px-4 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-red-400 focus:ring-2 focus:ring-red-100"
-                                    >
-                                    <span class="mt-2 block text-sm font-semibold text-red-500">Nama Dokumen wajib diisi</span>
-                                </label>
-
-                                <label class="block">
-                                    <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
-                                    <select class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                        <option>Sistem Manajemen & Risiko</option>
-                                    </select>
-                                </label>
-
-                                <div class="grid gap-5 md:grid-cols-2">
-                                    <label class="block">
-                                        <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
-                                        <select class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                            <option>Proses Inti/ Utama</option>
-                                        </select>
-                                    </label>
-
-                                    <label class="block">
-                                        <span class="mb-2 block text-base font-medium text-slate-500">Department Terkait</span>
-                                        <div class="flex min-h-12 items-center rounded-lg border border-sky-300 bg-white px-3 text-base font-medium text-slate-500 shadow-sm ring-2 ring-sky-100">
-                                            <span class="inline-flex max-w-[78%] items-center gap-2 truncate rounded-md bg-blue-50 px-3 py-1.5 text-sm font-semibold text-slate-600 ring-1 ring-blue-200">
-                                                <span class="truncate">Stevedoring O...</span>
-                                                <span class="grid size-5 shrink-0 place-items-center rounded-full bg-blue-500 text-xs font-bold text-white">x</span>
-                                            </span>
-                                            <span class="ml-auto text-xl leading-none text-slate-400">x</span>
-                                            <flux:icon name="chevron-down" class="ml-2 size-5 shrink-0 text-slate-500" />
-                                        </div>
-                                    </label>
-                                </div>
-                            @else
-                                <div class="grid gap-5 md:grid-cols-2">
-                                    <label class="block md:col-span-2">
-                                        <span class="mb-2 block text-base font-medium text-slate-500">Nama Dokumen</span>
-                                        <input
-                                            type="text"
-                                            name="nama_dokumen"
-                                            placeholder="Masukan nama dokumen"
-                                            required
-                                            class="h-14 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                                        >
-                                    </label>
-
-                                    <label class="block">
-                                        <span class="mb-2 block text-base font-medium text-slate-500">Level Dokumen:</span>
-                                        <input type="hidden" name="m_document_level_id" value="{{ $documentLevelRecord?->id }}">
-                                        <input
-                                            type="text"
-                                            value="{{ $levelDisplayValue }}"
-                                            readonly
-                                            class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none"
-                                        >
-                                    </label>
-
-                                    <label class="block">
-                                        <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
-                                        <select name="m_proses_bisnis_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                            <option value="">-Pilih-</option>
-                                            @foreach ($businessProcesses as $businessProcess)
-                                                <option value="{{ $businessProcess->id }}">
-                                                    {{ $businessProcess->nama_proses_bisnis }}
-                                                </option>
-                                            @endforeach
-                                        </select>
-                                    </label>
-
-                                    <div class="block">
-                                        <span class="mb-2 block text-base font-medium text-slate-500">Department Terkait</span>
-                                        <div data-department-picker>
-                                            <div class="mb-2 hidden flex-col items-start gap-2" data-department-chip-list></div>
-                                            <select required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" data-department-select>
-                                                <option value="" data-department-placeholder>-Pilih-</option>
-                                                @foreach ($departments as $department)
-                                                    <option value="{{ $department->id }}">
-                                                        {{ $department->kode_department ? $department->kode_department.' - ' : '' }}{{ $department->nama_department }}
-                                                    </option>
-                                                @endforeach
-                                            </select>
-                                        </div>
-                                    </div>
-
-                                    <label class="block">
-                                        <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
-                                        <select name="m_proses_fungsi_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                            <option value="">-Pilih-</option>
-                                            @foreach ($businessFunctions as $businessFunction)
-                                                <option value="{{ $businessFunction->id }}">
-                                                    {{ $businessFunction->nama_proses_fungsi }}
-                                                </option>
-                                            @endforeach
-                                        </select>
-                                    </label>
-                                </div>
-                            @endif
-                        </div>
-                    </section>
-
-                    <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm" data-official-preparer>
-                        <div class="flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-5">
-                            <h2 class="text-lg font-bold text-slate-900">{{ $ownerLabel }}</h2>
-
-                            @if ($levelKey === 'level-3')
-                                <button
-                                    type="button"
-                                    class="inline-flex h-10 items-center justify-center rounded-lg border border-sky-200 bg-sky-50 px-4 text-sm font-semibold text-sky-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-100 focus:outline-none focus:ring-2 focus:ring-sky-200"
-                                    data-use-current-user
-                                    data-user-id="{{ auth()->id() }}"
-                                    data-user-name="{{ auth()->user()->name }}"
-                                    data-user-email="{{ auth()->user()->email }}"
-                                    data-user-title="{{ auth()->user()->jabatan }}"
-                                    data-user-initials="{{ auth()->user()->initials() }}"
+                    <x-documents.form-section title="Informasi Dokumen">
+                        <div class="grid gap-5 px-6 py-6 md:grid-cols-2">
+                            <label class="block md:col-span-2">
+                                <span class="mb-2 block text-base font-medium text-slate-500">Nama Dokumen</span>
+                                <input
+                                    type="text"
+                                    name="nama_dokumen"
+                                    value="{{ old('nama_dokumen') }}"
+                                    placeholder="Masukan nama dokumen"
+                                    required
+                                    @class([
+                                        'h-14 w-full rounded-lg bg-white px-4 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:ring-2',
+                                        'border border-red-300 focus:border-red-400 focus:ring-red-100' => $errors->has('nama_dokumen'),
+                                        'border border-slate-300 focus:border-sky-400 focus:ring-sky-100' => ! $errors->has('nama_dokumen'),
+                                    ])
                                 >
-                                    Saya Mengajukan tanpa Perwakilan
-                                </button>
-                            @else
-                                <button type="button" class="text-base font-semibold text-blue-500 transition hover:text-blue-600">
-                                    {{ $ownerLabel }}
-                                </button>
-                            @endif
+                                @error('nama_dokumen')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                            </label>
+
+                            <label class="block">
+                                <span class="mb-2 block text-base font-medium text-slate-500">Level Dokumen:</span>
+                                <input type="hidden" name="m_document_level_id" value="{{ $documentLevelRecord?->id }}">
+                                <input
+                                    type="text"
+                                    value="{{ $levelDisplayValue }}"
+                                    readonly
+                                    class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none"
+                                >
+                            </label>
+
+                            <label class="block">
+                                <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
+                                <select name="m_proses_bisnis_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                    <option value="">-Pilih-</option>
+                                    @foreach ($businessProcesses as $businessProcess)
+                                        <option
+                                            value="{{ $businessProcess->id }}"
+                                            data-process-code="{{ $businessProcess->kode }}"
+                                            @selected((string) old('m_proses_bisnis_id') === (string) $businessProcess->id)
+                                        >
+                                            {{ $businessProcess->nama_proses_bisnis }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('m_proses_bisnis_id')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                            </label>
+
+                            <x-ui.multi-select
+                                label="Department Terkait"
+                                name="department_ids"
+                                :options="$departmentOptions"
+                                selected-placeholder="Tambah Department"
+                                required
+                            />
+
+                            <label class="block">
+                                <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
+                                <select name="m_proses_fungsi_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                    <option value="">-Pilih-</option>
+                                    @foreach ($businessFunctions as $businessFunction)
+                                        <option value="{{ $businessFunction->id }}" @selected((string) old('m_proses_fungsi_id') === (string) $businessFunction->id)>
+                                            {{ $businessFunction->nama_proses_fungsi }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('m_proses_fungsi_id')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                            </label>
                         </div>
+                    </x-documents.form-section>
 
-                        @if ($levelKey === 'level-3')
-                            <div class="space-y-5 px-6 py-6">
-                                <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                                    <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pengisi Form</span>
-                                    <div class="mt-2 flex items-center gap-2.5">
-                                        <span class="grid size-9 shrink-0 place-items-center rounded-full bg-sky-100 text-xs font-bold text-sky-700">
-                                            {{ auth()->user()->initials() }}
-                                        </span>
-                                        <span class="min-w-0">
-                                            <span class="block truncate text-sm font-bold leading-tight text-slate-900">{{ auth()->user()->name }}</span>
-                                            <span class="mt-0.5 block truncate text-xs font-medium leading-tight text-slate-500">
-                                                {{ auth()->user()->jabatan ?: auth()->user()->email }}
-                                            </span>
-                                        </span>
-                                        <span class="ml-auto rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-slate-500 ring-1 ring-slate-200">
-                                            Tercatat di sistem
-                                        </span>
-                                    </div>
-                                </div>
+                    <x-documents.official-preparer :label="$ownerLabel" :users="$assignableUsers" />
 
-                                <div class="block">
-                                    <span class="mb-2 block text-base font-medium text-slate-500">Pilih Penyusun Resmi</span>
-                                    <x-ui.user-search-select
-                                        name="official_preparer_id"
-                                        :users="$assignableUsers"
-                                        placeholder="Pilih penyusun pemilik proses"
-                                        data-official-preparer-picker
-                                        required
-                                    />
-                                </div>
-
-                                <div class="hidden rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3" data-official-preparer-card>
-                                    <span class="block text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Penyusun Resmi</span>
-                                    <div class="mt-2 flex items-center gap-2.5">
-                                        <span class="grid size-9 shrink-0 place-items-center rounded-full bg-white text-xs font-bold text-emerald-700 ring-1 ring-emerald-200" data-official-preparer-initials></span>
-                                        <span class="min-w-0">
-                                            <span class="block truncate text-sm font-bold leading-tight text-slate-900" data-official-preparer-name></span>
-                                            <span class="mt-0.5 block truncate text-xs font-medium leading-tight text-slate-500" data-official-preparer-meta></span>
-                                        </span>
-                                        <span class="ml-auto rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200" data-official-preparer-source></span>
-                                    </div>
-                                </div>
-
-                                <div class="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-3 text-xs leading-5 text-slate-500" data-official-preparer-empty>
-                                    Gunakan tombol
-                                    <span class="inline-flex items-center rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700">Saya Mengajukan tanpa Perwakilan</span>
-                                    jika pengisi form juga menjadi penyusun resmi.
-                                </div>
-                            </div>
-                        @else
-                            <div class="min-h-36 px-6 py-6"></div>
-                        @endif
-                    </section>
-
-                    <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm">
-                        <div class="border-b border-slate-200 px-6 py-5">
-                            <div class="flex items-center gap-3">
-                                <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-sky-50 text-sky-700 ring-1 ring-sky-100">
-                                    <flux:icon name="cloud-arrow-up" class="size-5" />
-                                </span>
-                                <h2 class="text-lg font-bold text-slate-900">Isi Dokumen</h2>
-                            </div>
-                        </div>
-
+                    <x-documents.form-section title="Isi Dokumen" icon="cloud-arrow-up">
                         <div class="space-y-6 px-6 py-6">
-                            <div class="rounded-lg border border-sky-100 bg-sky-50/40 px-4 py-4" data-document-upload>
-                                <div class="flex flex-wrap items-start justify-between gap-4">
-                                    <div class="flex min-w-0 items-start gap-3">
-                                        <span class="min-w-0">
-                                            <span class="block text-base font-bold text-slate-900">Template Dokumen yang Sudah Diisi</span>
-                                        </span>
-                                    </div>
-                                    <button
-                                        type="button"
-                                        class="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-sky-200 bg-white px-4 text-sm font-semibold text-sky-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 focus:outline-none focus:ring-2 focus:ring-sky-200"
-                                        data-document-upload-trigger
-                                        aria-expanded="false"
-                                    >
-                                        Upload Template
-                                    </button>
-                                </div>
+                            <x-documents.upload-toggle-card
+                                title="Template Dokumen yang Sudah Diisi"
+                                button-label="Upload Template"
+                                tone="sky"
+                            >
+                                <x-ui.file-upload
+                                    label="Upload Template Terisi"
+                                    name="filled_template"
+                                    accept=".doc,.docx"
+                                    hint="Format DOC atau DOCX."
+                                    :max-files="1"
+                                    :max-file-size-kb="10240"
+                                    required
+                                />
 
-                                <div class="mt-4 hidden" data-document-upload-panel>
-                                    <x-ui.file-upload
-                                        label="Upload Template Terisi"
-                                        name="filled_template"
-                                        accept=".doc,.docx"
-                                        hint="Format DOC atau DOCX."
-                                        :max-files="1"
-                                        :max-file-size-kb="10240"
-                                        required
-                                    />
-                                </div>
-                            </div>
+                                @error('filled_template')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                            </x-documents.upload-toggle-card>
 
-                            <div class="rounded-lg border border-slate-200 bg-white px-4 py-4" data-document-upload>
-                                <div class="flex flex-wrap items-start justify-between gap-4">
-                                    <span class="min-w-0">
-                                        <span class="block text-base font-bold text-slate-900">Daftar Dokumen</span>
-                                        <span class="mt-2 inline-flex rounded-full bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
-                                            Lampiran
-                                        </span>
-                                    </span>
-                                    <button
-                                        type="button"
-                                        class="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-600 shadow-sm transition hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                                        data-document-upload-trigger
-                                        aria-expanded="false"
-                                    >
-                                        Tambah Dokumen
-                                    </button>
-                                </div>
+                            <x-documents.upload-toggle-card
+                                title="Daftar Dokumen"
+                                button-label="Tambah Dokumen"
+                                badge="Lampiran"
+                            >
+                                <x-ui.file-upload
+                                    label="Upload Lampiran"
+                                    name="attachments[]"
+                                    accept=".pdf,.doc,.docx"
+                                    hint="Bisa lebih dari satu file. Format PDF, DOC, atau DOCX."
+                                    multiple
+                                    :max-files="10"
+                                    :max-file-size-kb="10240"
+                                />
 
-                                <div class="mt-4 hidden" data-document-upload-panel>
-                                    <x-ui.file-upload
-                                        label="Upload Lampiran"
-                                        name="attachments[]"
-                                        accept=".pdf,.doc,.docx"
-                                        hint="Bisa lebih dari satu file. Format PDF, DOC, atau DOCX."
-                                        multiple
-                                        :max-files="10"
-                                        :max-file-size-kb="10240"
-                                    />
-                                </div>
-                            </div>
+                                @error('attachments')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                                @error('attachments.*')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                            </x-documents.upload-toggle-card>
                         </div>
-                    </section>
+                    </x-documents.form-section>
                 </div>
 
                 <aside class="space-y-6 xl:sticky xl:top-8">
@@ -428,31 +289,12 @@
                         </div>
 
                         <div class="space-y-5 px-6 py-6">
-                            @if ($levelKey === 'level-2')
-                                <div>
-                                    <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen</span>
-                                    <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
-                                        <input type="text" value="{{ $documentPrefixes[$levelKey] }}" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
-                                        <span class="text-lg font-semibold text-slate-500">-</span>
-                                        <input type="text" value="SMR" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
-                                        <span class="text-lg font-semibold text-slate-500">-</span>
-                                        <input type="text" name="nomor_dokumen_suffix" value="2" required class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                    </div>
-                                </div>
-                            @else
-                                <div>
-                                    <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen</span>
-                                    <div class="flex flex-wrap items-center gap-3">
-                                        <input type="text" value="{{ $documentPrefixes[$levelKey] }}" readonly class="h-14 w-20 rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
-                                        <span class="text-lg font-semibold text-slate-500">-</span>
-                                        <input type="text" value="XXX" readonly class="h-14 w-24 rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
-                                        <span class="text-lg font-semibold text-slate-500">-</span>
-                                        <input type="text" value="YY" readonly class="h-14 w-24 rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
-                                        <span class="text-lg font-semibold text-slate-500">-</span>
-                                        <input type="text" name="nomor_dokumen_suffix" required class="h-14 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                    </div>
-                                </div>
-                            @endif
+                            <x-documents.document-number-input
+                                :prefix="$documentPrefixes[$levelKey]"
+                                :segments="$levelKey === 'level-2'
+                                    ? [['value' => $documentNumberProcessCode, 'target' => 'business-process']]
+                                    : ['XXX', 'YY']"
+                            />
 
                             <label class="block">
                                 <span class="mb-2 block text-base font-medium text-slate-500">Revisi</span>
@@ -494,7 +336,6 @@
                             </button>
                         </div>
                     </section>
-
                 </aside>
             </form>
         @endif
@@ -503,84 +344,7 @@
     @once
         <script>
             (() => {
-                const createDepartmentChip = (picker, value, label) => {
-                    const chipList = picker.querySelector('[data-department-chip-list]');
-
-                    if (!chipList || !value || chipList.querySelector(`[data-department-chip="${value}"]`)) {
-                        return;
-                    }
-
-                    const chip = document.createElement('span');
-                    chip.className = 'inline-flex max-w-full items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-slate-700';
-                    chip.dataset.departmentChip = value;
-
-                    const hidden = document.createElement('input');
-                    hidden.type = 'hidden';
-                    hidden.name = 'department_ids[]';
-                    hidden.value = value;
-
-                    const text = document.createElement('span');
-                    text.className = 'max-w-40 truncate';
-                    text.textContent = label;
-
-                    const removeButton = document.createElement('button');
-                    removeButton.type = 'button';
-                    removeButton.className = 'grid size-6 shrink-0 place-items-center rounded-full bg-blue-500 text-xs font-bold text-white transition hover:bg-blue-600';
-                    removeButton.dataset.removeDepartment = '';
-                    removeButton.setAttribute('aria-label', `Hapus ${label}`);
-                    removeButton.textContent = 'x';
-
-                    chip.append(hidden, text, removeButton);
-                    chipList.append(chip);
-                };
-
-                const syncDepartmentPlaceholder = (picker) => {
-                    const chipList = picker?.querySelector('[data-department-chip-list]');
-                    const placeholder = picker?.querySelector('[data-department-placeholder]');
-                    const hasChips = (chipList?.querySelectorAll('[data-department-chip]').length ?? 0) > 0;
-
-                    if (placeholder) {
-                        placeholder.textContent = hasChips ? 'Tambah Department' : '-Pilih-';
-                    }
-
-                    if (chipList) {
-                        chipList.classList.toggle('hidden', !hasChips);
-                        chipList.classList.toggle('flex', hasChips);
-                    }
-                };
-
-                document.addEventListener('change', (event) => {
-                    const select = event.target.closest('[data-department-select]');
-
-                    if (!select || !select.value) {
-                        return;
-                    }
-
-                    const picker = select.closest('[data-department-picker]');
-                    const option = select.selectedOptions[0];
-
-                    createDepartmentChip(picker, option.value, option.textContent.trim());
-                    select.value = '';
-                    select.required = picker.querySelectorAll('[data-department-chip]').length === 0;
-                    syncDepartmentPlaceholder(picker);
-                });
-
                 document.addEventListener('click', (event) => {
-                    const removeDepartmentButton = event.target.closest('[data-remove-department]');
-
-                    if (removeDepartmentButton) {
-                        const picker = removeDepartmentButton.closest('[data-department-picker]');
-                        removeDepartmentButton.closest('[data-department-chip]')?.remove();
-
-                        const select = picker?.querySelector('[data-department-select]');
-                        if (select) {
-                            select.required = picker.querySelectorAll('[data-department-chip]').length === 0;
-                        }
-                        syncDepartmentPlaceholder(picker);
-
-                        return;
-                    }
-
                     const button = event.target.closest('[data-document-upload-trigger]');
 
                     if (!button) {
@@ -623,84 +387,98 @@
                     trigger?.focus();
                     trigger?.classList.add('border-red-300', 'ring-2', 'ring-red-100');
                 });
+
+                document.addEventListener('change', (event) => {
+                    const select = event.target.closest('select[name="m_proses_bisnis_id"]');
+
+                    if (!select) {
+                        return;
+                    }
+
+                    const segment = document.querySelector('[data-document-number-segment="business-process"]');
+                    const selectedOption = select.selectedOptions[0];
+                    const processCode = selectedOption?.dataset.processCode;
+
+                    if (segment && processCode) {
+                        segment.value = processCode;
+                    }
+                });
             })();
         </script>
     @endonce
 
-    @if ($levelKey === 'level-3')
-        @once
-            <script>
-                (() => {
-                    const syncOfficialPreparer = (root, user, sourceLabel) => {
-                        const input = root.querySelector('[data-official-preparer-picker] [data-user-search-value]');
-                        const card = root.querySelector('[data-official-preparer-card]');
-                        const empty = root.querySelector('[data-official-preparer-empty]');
-                        const initials = root.querySelector('[data-official-preparer-initials]');
-                        const name = root.querySelector('[data-official-preparer-name]');
-                        const meta = root.querySelector('[data-official-preparer-meta]');
-                        const source = root.querySelector('[data-official-preparer-source]');
+    @once
+        <script>
+            (() => {
+                const syncOfficialPreparer = (root, user, sourceLabel) => {
+                    const input = root.querySelector('[data-official-preparer-picker] [data-user-search-value]');
+                    const card = root.querySelector('[data-official-preparer-card]');
+                    const empty = root.querySelector('[data-official-preparer-empty]');
+                    const initials = root.querySelector('[data-official-preparer-initials]');
+                    const name = root.querySelector('[data-official-preparer-name]');
+                    const meta = root.querySelector('[data-official-preparer-meta]');
+                    const source = root.querySelector('[data-official-preparer-source]');
 
-                        if (!input || !card || !empty || !initials || !name || !meta || !source) {
-                            return;
-                        }
+                    if (!input || !card || !empty || !initials || !name || !meta || !source) {
+                        return;
+                    }
 
-                        input.value = user.id || '';
-                        initials.textContent = user.initials || '-';
-                        name.textContent = user.name || '-';
-                        meta.textContent = user.title || user.email || '-';
-                        source.textContent = sourceLabel;
-                        card.classList.remove('hidden');
-                        empty.classList.add('hidden');
-                    };
+                    input.value = user.id || '';
+                    initials.textContent = user.initials || '-';
+                    name.textContent = user.name || '-';
+                    meta.textContent = user.title || user.email || '-';
+                    source.textContent = sourceLabel;
+                    card.classList.remove('hidden');
+                    empty.classList.add('hidden');
+                };
 
-                    document.addEventListener('click', (event) => {
-                        const button = event.target.closest('[data-use-current-user]');
+                document.addEventListener('click', (event) => {
+                    const button = event.target.closest('[data-use-current-user]');
 
-                        if (!button) {
-                            return;
-                        }
+                    if (!button) {
+                        return;
+                    }
 
-                        const root = button.closest('[data-official-preparer]');
-                        const picker = root?.querySelector('[data-official-preparer-picker]');
+                    const root = button.closest('[data-official-preparer]');
+                    const picker = root?.querySelector('[data-official-preparer-picker]');
 
-                        window.setUserSearchSelect?.(picker, {
-                            id: button.dataset.userId,
-                            name: button.dataset.userName,
-                            email: button.dataset.userEmail,
-                            title: button.dataset.userTitle,
-                            meta: button.dataset.userTitle || button.dataset.userEmail,
-                            initials: button.dataset.userInitials,
-                        });
-
-                        syncOfficialPreparer(root, {
-                            id: button.dataset.userId,
-                            name: button.dataset.userName,
-                            email: button.dataset.userEmail,
-                            title: button.dataset.userTitle,
-                            initials: button.dataset.userInitials,
-                        }, 'Tanpa perwakilan');
+                    window.setUserSearchSelect?.(picker, {
+                        id: button.dataset.userId,
+                        name: button.dataset.userName,
+                        email: button.dataset.userEmail,
+                        title: button.dataset.userTitle,
+                        meta: button.dataset.userTitle || button.dataset.userEmail,
+                        initials: button.dataset.userInitials,
                     });
 
-                    document.addEventListener('user-search-select:selected', (event) => {
-                        const picker = event.target.closest('[data-official-preparer-picker]');
+                    syncOfficialPreparer(root, {
+                        id: button.dataset.userId,
+                        name: button.dataset.userName,
+                        email: button.dataset.userEmail,
+                        title: button.dataset.userTitle,
+                        initials: button.dataset.userInitials,
+                    }, 'Tanpa perwakilan');
+                });
 
-                        if (!picker) {
-                            return;
-                        }
+                document.addEventListener('user-search-select:selected', (event) => {
+                    const picker = event.target.closest('[data-official-preparer-picker]');
 
-                        const root = picker.closest('[data-official-preparer]');
-                        const user = event.detail;
+                    if (!picker) {
+                        return;
+                    }
 
-                        syncOfficialPreparer(root, {
-                            id: user.value,
-                            name: user.name,
-                            email: user.email,
-                            title: user.title,
-                            initials: user.initials,
-                        }, 'Diwakilkan');
-                    });
-                })();
-            </script>
-        @endonce
-    @endif
+                    const root = picker.closest('[data-official-preparer]');
+                    const user = event.detail;
+
+                    syncOfficialPreparer(root, {
+                        id: user.value,
+                        name: user.name,
+                        email: user.email,
+                        title: user.title,
+                        initials: user.initials,
+                    }, 'Diwakilkan');
+                });
+            })();
+        </script>
+    @endonce
 </x-layouts::app>
