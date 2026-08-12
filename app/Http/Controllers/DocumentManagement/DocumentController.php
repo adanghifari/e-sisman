@@ -32,11 +32,11 @@ class DocumentController extends Controller
             'reference' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'department_ids' => ['required', 'array', 'min:1'],
             'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
-            'official_preparer_id' => ['nullable', 'integer', Rule::exists('users', 'id')],
-            'nomor_dokumen_suffix' => ['nullable', 'string', 'max:50'],
-            'filled_template' => ['nullable', 'file', 'mimes:pdf,doc,docx', 'max:10240'],
+            'official_preparer_id' => ['required', 'integer', Rule::exists('users', 'id')],
+            'nomor_dokumen_suffix' => ['required', 'string', 'max:50'],
+            'filled_template' => ['required', 'file', 'mimes:doc,docx', 'max:10240'],
             'attachments' => ['nullable', 'array', 'max:10'],
-            'attachments.*' => ['file', 'mimes:pdf,doc,docx,xls,xlsx,jpg,jpeg,png', 'max:10240'],
+            'attachments.*' => ['file', 'mimes:pdf,doc,docx', 'max:10240'],
             'submit_action' => ['required', Rule::in(['draft', 'submit'])],
         ]);
 
@@ -70,6 +70,7 @@ class DocumentController extends Controller
             foreach ($request->file('attachments', []) as $attachment) {
                 $this->storeDocumentFile($document, $attachment, 'attachment', $request->user()->id);
             }
+
         });
 
         return redirect()
@@ -111,4 +112,5 @@ class DocumentController extends Controller
             'file_size' => $file->getSize(),
         ]);
     }
+
 }

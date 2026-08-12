@@ -73,6 +73,49 @@
                     : `${sizeKb} KB`;
             };
 
+            const acceptedFileTypes = (input) => (input.getAttribute('accept') || '')
+                .split(',')
+                .map((type) => type.trim().toLowerCase())
+                .filter(Boolean);
+
+            const fileMatchesAccept = (file, acceptedTypes) => {
+                if (acceptedTypes.length === 0) {
+                    return true;
+                }
+
+                const fileName = file.name.toLowerCase();
+                const fileType = (file.type || '').toLowerCase();
+
+                return acceptedTypes.some((acceptedType) => {
+                    if (acceptedType.startsWith('.')) {
+                        return fileName.endsWith(acceptedType);
+                    }
+
+                    if (acceptedType.endsWith('/*')) {
+                        return fileType.startsWith(acceptedType.slice(0, -1));
+                    }
+
+                    return fileType === acceptedType;
+                });
+            };
+
+            const formatAcceptedTypes = (acceptedTypes) => acceptedTypes
+                .map((type) => type.startsWith('.') ? type.slice(1).toUpperCase() : type)
+                .join(', ');
+
+            const clearRejectedFiles = (input, fileName, list) => {
+                input.value = '';
+
+                if (fileName) {
+                    fileName.textContent = 'Drag and drop files here or click to choose.';
+                }
+
+                if (list) {
+                    list.innerHTML = '';
+                    list.className = 'mt-3 hidden rounded-lg border border-slate-200 bg-white p-4';
+                }
+            };
+
             const renderFileList = (input) => {
                 const wrapper = input.closest('[data-file-upload]');
                 const fileName = wrapper?.querySelector('[data-file-upload-name]');
@@ -81,6 +124,7 @@
                 const maxFiles = Number(wrapper?.dataset.maxFiles || 0);
                 const maxFileSizeKb = Number(wrapper?.dataset.maxFileSizeKb || 0);
                 const files = Array.from(input.files || []);
+                const acceptedTypes = acceptedFileTypes(input);
 
                 if (error) {
                     error.textContent = '';
@@ -88,11 +132,7 @@
                 }
 
                 if (maxFiles && files.length > maxFiles) {
-                    input.value = '';
-
-                    if (fileName) {
-                        fileName.textContent = 'Pilih file template';
-                    }
+                    clearRejectedFiles(input, fileName, list);
 
                     if (error) {
                         error.textContent = `Maksimal ${maxFiles} file.`;
@@ -102,14 +142,23 @@
                     return;
                 }
 
+                const invalidTypeFile = files.find((file) => !fileMatchesAccept(file, acceptedTypes));
+
+                if (invalidTypeFile) {
+                    clearRejectedFiles(input, fileName, list);
+
+                    if (error) {
+                        error.textContent = `File ${invalidTypeFile.name} ditolak. Format yang diperbolehkan: ${formatAcceptedTypes(acceptedTypes)}.`;
+                        error.classList.remove('hidden');
+                    }
+
+                    return;
+                }
+
                 const oversizedFile = files.find((file) => maxFileSizeKb && file.size > maxFileSizeKb * 1024);
 
                 if (oversizedFile) {
-                    input.value = '';
-
-                    if (fileName) {
-                        fileName.textContent = 'Pilih file template';
-                    }
+                    clearRejectedFiles(input, fileName, list);
 
                     if (error) {
                         error.textContent = `Ukuran maksimal per file ${Math.round(maxFileSizeKb / 1024)} MB.`;

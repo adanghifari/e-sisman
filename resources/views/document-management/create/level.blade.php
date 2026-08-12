@@ -31,9 +31,19 @@
             : collect();
         $assignableUsers = \App\Models\User::query()
             ->with('department')
-            ->when(auth()->check(), fn ($query) => $query->whereKeyNot(auth()->id()))
             ->orderBy('name')
             ->get();
+        $assignableUserOptions = $assignableUsers
+            ->map(fn ($user) => [
+                'id' => $user->id,
+                'name' => $user->name,
+                'email' => $user->email,
+                'title' => $user->jabatan,
+                'initials' => $user->initials(),
+                'meta' => $user->jabatan ?: $user->email,
+                'search' => \Illuminate\Support\Str::lower($user->name.' '.$user->email.' '.$user->jabatan),
+            ])
+            ->values();
     @endphp
 
     <div class="space-y-8">
@@ -52,7 +62,7 @@
         @if ($levelKey === 'level-1')
             <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
                 <div class="space-y-6">
-                    <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm">
                         <div class="border-b border-slate-200 px-6 py-5">
                             <h2 class="text-lg font-bold text-slate-900">Informasi Dokumen</h2>
                         </div>
@@ -199,6 +209,7 @@
                                             type="text"
                                             name="nama_dokumen"
                                             placeholder="Masukan nama dokumen"
+                                            required
                                             class="h-14 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                                         >
                                     </label>
@@ -216,7 +227,7 @@
 
                                     <label class="block">
                                         <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
-                                        <select name="m_proses_bisnis_id" class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                        <select name="m_proses_bisnis_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                                             <option value="">-Pilih-</option>
                                             @foreach ($businessProcesses as $businessProcess)
                                                 <option value="{{ $businessProcess->id }}">
@@ -226,21 +237,24 @@
                                         </select>
                                     </label>
 
-                                    <label class="block">
+                                    <div class="block">
                                         <span class="mb-2 block text-base font-medium text-slate-500">Department Terkait</span>
-                                        <select name="department_ids[]" class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                            <option value="">-Pilih-</option>
-                                            @foreach ($departments as $department)
-                                                <option value="{{ $department->id }}">
-                                                    {{ $department->kode_department ? $department->kode_department.' - ' : '' }}{{ $department->nama_department }}
-                                                </option>
-                                            @endforeach
-                                        </select>
-                                    </label>
+                                        <div data-department-picker>
+                                            <div class="mb-2 hidden flex-col items-start gap-2" data-department-chip-list></div>
+                                            <select required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" data-department-select>
+                                                <option value="" data-department-placeholder>-Pilih-</option>
+                                                @foreach ($departments as $department)
+                                                    <option value="{{ $department->id }}">
+                                                        {{ $department->kode_department ? $department->kode_department.' - ' : '' }}{{ $department->nama_department }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                        </div>
+                                    </div>
 
                                     <label class="block">
                                         <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
-                                        <select name="m_proses_fungsi_id" class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                        <select name="m_proses_fungsi_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                                             <option value="">-Pilih-</option>
                                             @foreach ($businessFunctions as $businessFunction)
                                                 <option value="{{ $businessFunction->id }}">
@@ -254,7 +268,7 @@
                         </div>
                     </section>
 
-                    <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm" data-official-preparer>
+                    <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm" data-official-preparer>
                         <div class="flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-5">
                             <h2 class="text-lg font-bold text-slate-900">{{ $ownerLabel }}</h2>
 
@@ -280,8 +294,6 @@
 
                         @if ($levelKey === 'level-3')
                             <div class="space-y-5 px-6 py-6">
-                                <input type="hidden" name="official_preparer_id" value="" data-official-preparer-input>
-
                                 <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
                                     <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pengisi Form</span>
                                     <div class="mt-2 flex items-center gap-2.5">
@@ -300,23 +312,16 @@
                                     </div>
                                 </div>
 
-                                <label class="block">
+                                <div class="block">
                                     <span class="mb-2 block text-base font-medium text-slate-500">Pilih Penyusun Resmi</span>
-                                    <select class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" data-official-preparer-select>
-                                        <option value="">-Pilih penyusun pemilik proses-</option>
-                                        @foreach ($assignableUsers as $user)
-                                            <option
-                                                value="{{ $user->id }}"
-                                                data-name="{{ $user->name }}"
-                                                data-email="{{ $user->email }}"
-                                                data-title="{{ $user->jabatan }}"
-                                                data-initials="{{ $user->initials() }}"
-                                            >
-                                                {{ $user->name }}{{ $user->jabatan ? ' - '.$user->jabatan : '' }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                </label>
+                                    <x-ui.user-search-select
+                                        name="official_preparer_id"
+                                        :users="$assignableUsers"
+                                        placeholder="Pilih penyusun pemilik proses"
+                                        data-official-preparer-picker
+                                        required
+                                    />
+                                </div>
 
                                 <div class="hidden rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3" data-official-preparer-card>
                                     <span class="block text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Penyusun Resmi</span>
@@ -330,9 +335,9 @@
                                     </div>
                                 </div>
 
-                                <div class="rounded-lg border border-dashed border-slate-200 bg-white px-4 py-5 text-sm leading-6 text-slate-500" data-official-preparer-empty>
-                                    Penyusun resmi masih kosong. Pilih user pada daftar di atas, atau gunakan tombol
-                                    <span class="inline-flex items-center rounded-md border border-sky-200 bg-sky-50 px-2 py-0.5 font-semibold text-sky-700">Saya Mengajukan tanpa Perwakilan</span>
+                                <div class="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-3 text-xs leading-5 text-slate-500" data-official-preparer-empty>
+                                    Gunakan tombol
+                                    <span class="inline-flex items-center rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700">Saya Mengajukan tanpa Perwakilan</span>
                                     jika pengisi form juga menjadi penyusun resmi.
                                 </div>
                             </div>
@@ -341,7 +346,7 @@
                         @endif
                     </section>
 
-                    <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm">
                         <div class="border-b border-slate-200 px-6 py-5">
                             <div class="flex items-center gap-3">
                                 <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-sky-50 text-sky-700 ring-1 ring-sky-100">
@@ -357,9 +362,6 @@
                                     <div class="flex min-w-0 items-start gap-3">
                                         <span class="min-w-0">
                                             <span class="block text-base font-bold text-slate-900">Template Dokumen yang Sudah Diisi</span>
-                                            <span class="mt-1 block text-sm leading-6 text-slate-500">
-                                                Upload file template dokumen final yang sudah dilengkapi.
-                                            </span>
                                         </span>
                                     </div>
                                     <button
@@ -376,10 +378,11 @@
                                     <x-ui.file-upload
                                         label="Upload Template Terisi"
                                         name="filled_template"
-                                        accept=".pdf,.doc,.docx"
-                                        hint="Format PDF, DOC, atau DOCX."
+                                        accept=".doc,.docx"
+                                        hint="Format DOC atau DOCX."
                                         :max-files="1"
                                         :max-file-size-kb="10240"
+                                        required
                                     />
                                 </div>
                             </div>
@@ -406,8 +409,8 @@
                                     <x-ui.file-upload
                                         label="Upload Lampiran"
                                         name="attachments[]"
-                                        accept=".pdf,.doc,.docx,.xls,.xlsx,.jpg,.jpeg,.png"
-                                        hint="Bisa lebih dari satu file. Format PDF, Office, JPG, JPEG, atau PNG."
+                                        accept=".pdf,.doc,.docx"
+                                        hint="Bisa lebih dari satu file. Format PDF, DOC, atau DOCX."
                                         multiple
                                         :max-files="10"
                                         :max-file-size-kb="10240"
@@ -418,77 +421,80 @@
                     </section>
                 </div>
 
-                <aside class="h-fit overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm xl:sticky xl:top-8">
-                    <div class="border-b border-slate-200 px-6 py-5">
-                        <h2 class="text-lg font-bold text-slate-900">Rincian Dokumen</h2>
-                    </div>
+                <aside class="space-y-6 xl:sticky xl:top-8">
+                    <section class="h-fit overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                        <div class="border-b border-slate-200 px-6 py-5">
+                            <h2 class="text-lg font-bold text-slate-900">Rincian Dokumen</h2>
+                        </div>
 
-                    <div class="space-y-5 px-6 py-6">
-                        @if ($levelKey === 'level-2')
-                            <div>
-                                <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen</span>
-                                <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
-                                    <input type="text" value="{{ $documentPrefixes[$levelKey] }}" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
-                                    <span class="text-lg font-semibold text-slate-500">-</span>
-                                    <input type="text" value="SMR" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
-                                    <span class="text-lg font-semibold text-slate-500">-</span>
-                                    <input type="text" name="nomor_dokumen_suffix" value="2" class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                        <div class="space-y-5 px-6 py-6">
+                            @if ($levelKey === 'level-2')
+                                <div>
+                                    <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen</span>
+                                    <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-3">
+                                        <input type="text" value="{{ $documentPrefixes[$levelKey] }}" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
+                                        <span class="text-lg font-semibold text-slate-500">-</span>
+                                        <input type="text" value="SMR" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
+                                        <span class="text-lg font-semibold text-slate-500">-</span>
+                                        <input type="text" name="nomor_dokumen_suffix" value="2" required class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                    </div>
                                 </div>
-                            </div>
-                        @else
-                            <div>
-                                <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen</span>
-                                <div class="flex flex-wrap items-center gap-3">
-                                    <input type="text" value="{{ $documentPrefixes[$levelKey] }}" readonly class="h-14 w-20 rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
-                                    <span class="text-lg font-semibold text-slate-500">-</span>
-                                    <input type="text" value="XXX" readonly class="h-14 w-24 rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
-                                    <span class="text-lg font-semibold text-slate-500">-</span>
-                                    <input type="text" value="YY" readonly class="h-14 w-24 rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
-                                    <span class="text-lg font-semibold text-slate-500">-</span>
-                                    <input type="text" name="nomor_dokumen_suffix" class="h-14 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                            @else
+                                <div>
+                                    <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen</span>
+                                    <div class="flex flex-wrap items-center gap-3">
+                                        <input type="text" value="{{ $documentPrefixes[$levelKey] }}" readonly class="h-14 w-20 rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
+                                        <span class="text-lg font-semibold text-slate-500">-</span>
+                                        <input type="text" value="XXX" readonly class="h-14 w-24 rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
+                                        <span class="text-lg font-semibold text-slate-500">-</span>
+                                        <input type="text" value="YY" readonly class="h-14 w-24 rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
+                                        <span class="text-lg font-semibold text-slate-500">-</span>
+                                        <input type="text" name="nomor_dokumen_suffix" required class="h-14 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                    </div>
                                 </div>
-                            </div>
-                        @endif
+                            @endif
 
-                        <label class="block">
-                            <span class="mb-2 block text-base font-medium text-slate-500">Revisi</span>
-                            <input
-                                type="text"
-                                value="00.00"
-                                readonly
-                                class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600"
-                            >
-                        </label>
+                            <label class="block">
+                                <span class="mb-2 block text-base font-medium text-slate-500">Revisi</span>
+                                <input
+                                    type="text"
+                                    value="00.00"
+                                    readonly
+                                    class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600"
+                                >
+                            </label>
 
-                        <div class="space-y-4 pt-1 text-base font-medium text-slate-500">
-                            <div class="flex items-center gap-3">
-                                <flux:icon name="arrow-path" class="size-6 text-slate-700" />
-                                <span>Status</span>
-                                <span class="ml-auto rounded-full bg-slate-200 px-3 py-1 text-sm font-bold text-slate-700">Draft</span>
-                            </div>
+                            <div class="space-y-4 pt-1 text-base font-medium text-slate-500">
+                                <div class="flex items-center gap-3">
+                                    <flux:icon name="arrow-path" class="size-6 text-slate-700" />
+                                    <span>Status</span>
+                                    <span class="ml-auto rounded-full bg-slate-200 px-3 py-1 text-sm font-bold text-slate-700">Draft</span>
+                                </div>
 
-                            <div class="flex items-center gap-3">
-                                <flux:icon name="calendar-days" class="size-6 text-slate-700" />
-                                <span>Tanggal Pengajuan</span>
-                                <span class="ml-auto text-slate-500">-</span>
-                            </div>
+                                <div class="flex items-center gap-3">
+                                    <flux:icon name="calendar-days" class="size-6 text-slate-700" />
+                                    <span>Tanggal Pengajuan</span>
+                                    <span class="ml-auto text-slate-500">-</span>
+                                </div>
 
-                            <div class="flex items-center gap-3">
-                                <flux:icon name="calendar" class="size-6 text-slate-700" />
-                                <span>Tanggal Terbit</span>
-                                <span class="ml-auto text-slate-500">-</span>
+                                <div class="flex items-center gap-3">
+                                    <flux:icon name="calendar" class="size-6 text-slate-700" />
+                                    <span>Tanggal Terbit</span>
+                                    <span class="ml-auto text-slate-500">-</span>
+                                </div>
                             </div>
                         </div>
-                    </div>
 
-                    <div class="grid gap-3 border-t border-dashed border-slate-200 px-6 py-5 sm:grid-cols-2">
-                        <button type="submit" name="submit_action" value="draft" class="inline-flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:bg-slate-50">
-                            Simpan Draft
-                        </button>
-                        <button type="submit" name="submit_action" value="submit" class="inline-flex h-12 items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
-                            Submit Dokumen
-                        </button>
-                    </div>
+                        <div class="grid gap-3 border-t border-dashed border-slate-200 px-6 py-5 sm:grid-cols-2">
+                            <button type="submit" name="submit_action" value="draft" class="inline-flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:bg-slate-50">
+                                Simpan Draft
+                            </button>
+                            <button type="submit" name="submit_action" value="submit" class="inline-flex h-12 items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
+                                Submit Dokumen
+                            </button>
+                        </div>
+                    </section>
+
                 </aside>
             </form>
         @endif
@@ -497,7 +503,84 @@
     @once
         <script>
             (() => {
+                const createDepartmentChip = (picker, value, label) => {
+                    const chipList = picker.querySelector('[data-department-chip-list]');
+
+                    if (!chipList || !value || chipList.querySelector(`[data-department-chip="${value}"]`)) {
+                        return;
+                    }
+
+                    const chip = document.createElement('span');
+                    chip.className = 'inline-flex max-w-full items-center gap-2 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-sm font-semibold text-slate-700';
+                    chip.dataset.departmentChip = value;
+
+                    const hidden = document.createElement('input');
+                    hidden.type = 'hidden';
+                    hidden.name = 'department_ids[]';
+                    hidden.value = value;
+
+                    const text = document.createElement('span');
+                    text.className = 'max-w-40 truncate';
+                    text.textContent = label;
+
+                    const removeButton = document.createElement('button');
+                    removeButton.type = 'button';
+                    removeButton.className = 'grid size-6 shrink-0 place-items-center rounded-full bg-blue-500 text-xs font-bold text-white transition hover:bg-blue-600';
+                    removeButton.dataset.removeDepartment = '';
+                    removeButton.setAttribute('aria-label', `Hapus ${label}`);
+                    removeButton.textContent = 'x';
+
+                    chip.append(hidden, text, removeButton);
+                    chipList.append(chip);
+                };
+
+                const syncDepartmentPlaceholder = (picker) => {
+                    const chipList = picker?.querySelector('[data-department-chip-list]');
+                    const placeholder = picker?.querySelector('[data-department-placeholder]');
+                    const hasChips = (chipList?.querySelectorAll('[data-department-chip]').length ?? 0) > 0;
+
+                    if (placeholder) {
+                        placeholder.textContent = hasChips ? 'Tambah Department' : '-Pilih-';
+                    }
+
+                    if (chipList) {
+                        chipList.classList.toggle('hidden', !hasChips);
+                        chipList.classList.toggle('flex', hasChips);
+                    }
+                };
+
+                document.addEventListener('change', (event) => {
+                    const select = event.target.closest('[data-department-select]');
+
+                    if (!select || !select.value) {
+                        return;
+                    }
+
+                    const picker = select.closest('[data-department-picker]');
+                    const option = select.selectedOptions[0];
+
+                    createDepartmentChip(picker, option.value, option.textContent.trim());
+                    select.value = '';
+                    select.required = picker.querySelectorAll('[data-department-chip]').length === 0;
+                    syncDepartmentPlaceholder(picker);
+                });
+
                 document.addEventListener('click', (event) => {
+                    const removeDepartmentButton = event.target.closest('[data-remove-department]');
+
+                    if (removeDepartmentButton) {
+                        const picker = removeDepartmentButton.closest('[data-department-picker]');
+                        removeDepartmentButton.closest('[data-department-chip]')?.remove();
+
+                        const select = picker?.querySelector('[data-department-select]');
+                        if (select) {
+                            select.required = picker.querySelectorAll('[data-department-chip]').length === 0;
+                        }
+                        syncDepartmentPlaceholder(picker);
+
+                        return;
+                    }
+
                     const button = event.target.closest('[data-document-upload-trigger]');
 
                     if (!button) {
@@ -515,6 +598,31 @@
                     button.setAttribute('aria-expanded', 'true');
                     button.classList.add('hidden');
                 });
+
+                document.addEventListener('submit', (event) => {
+                    const form = event.target.closest('form');
+
+                    if (!form) {
+                        return;
+                    }
+
+                    const emptyPicker = Array.from(form.querySelectorAll('[data-user-search-select]'))
+                        .find((picker) => {
+                            const value = picker.querySelector('[data-user-search-value]');
+
+                            return value?.required && !value.value;
+                        });
+
+                    if (!emptyPicker) {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    window.initUserSearchSelect?.(emptyPicker);
+                    const trigger = emptyPicker.querySelector('[data-user-search-trigger]');
+                    trigger?.focus();
+                    trigger?.classList.add('border-red-300', 'ring-2', 'ring-red-100');
+                });
             })();
         </script>
     @endonce
@@ -524,7 +632,7 @@
             <script>
                 (() => {
                     const syncOfficialPreparer = (root, user, sourceLabel) => {
-                        const input = root.querySelector('[data-official-preparer-input]');
+                        const input = root.querySelector('[data-official-preparer-picker] [data-user-search-value]');
                         const card = root.querySelector('[data-official-preparer-card]');
                         const empty = root.querySelector('[data-official-preparer-empty]');
                         const initials = root.querySelector('[data-official-preparer-initials]');
@@ -553,11 +661,16 @@
                         }
 
                         const root = button.closest('[data-official-preparer]');
-                        const select = root?.querySelector('[data-official-preparer-select]');
+                        const picker = root?.querySelector('[data-official-preparer-picker]');
 
-                        if (select) {
-                            select.value = '';
-                        }
+                        window.setUserSearchSelect?.(picker, {
+                            id: button.dataset.userId,
+                            name: button.dataset.userName,
+                            email: button.dataset.userEmail,
+                            title: button.dataset.userTitle,
+                            meta: button.dataset.userTitle || button.dataset.userEmail,
+                            initials: button.dataset.userInitials,
+                        });
 
                         syncOfficialPreparer(root, {
                             id: button.dataset.userId,
@@ -568,22 +681,22 @@
                         }, 'Tanpa perwakilan');
                     });
 
-                    document.addEventListener('change', (event) => {
-                        const select = event.target.closest('[data-official-preparer-select]');
+                    document.addEventListener('user-search-select:selected', (event) => {
+                        const picker = event.target.closest('[data-official-preparer-picker]');
 
-                        if (!select || !select.value) {
+                        if (!picker) {
                             return;
                         }
 
-                        const option = select.selectedOptions[0];
-                        const root = select.closest('[data-official-preparer]');
+                        const root = picker.closest('[data-official-preparer]');
+                        const user = event.detail;
 
                         syncOfficialPreparer(root, {
-                            id: option.value,
-                            name: option.dataset.name,
-                            email: option.dataset.email,
-                            title: option.dataset.title,
-                            initials: option.dataset.initials,
+                            id: user.value,
+                            name: user.name,
+                            email: user.email,
+                            title: user.title,
+                            initials: user.initials,
                         }, 'Diwakilkan');
                     });
                 })();
