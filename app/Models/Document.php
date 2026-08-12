@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'm_status_document_id',
+    'm_document_level_id',
     'm_document_types_id',
     'm_proses_bisnis_id',
     'm_proses_fungsi_id',
@@ -46,6 +47,11 @@ class Document extends Model
     public function status(): BelongsTo
     {
         return $this->belongsTo(StatusDocument::class, 'm_status_document_id');
+    }
+
+    public function documentLevel(): BelongsTo
+    {
+        return $this->belongsTo(DocumentLevel::class, 'm_document_level_id');
     }
 
     public function documentType(): BelongsTo

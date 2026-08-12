@@ -19,6 +19,7 @@ class DatabaseSeeder extends Seeder
         $this->call([
             DocumentStatusSeeder::class,
             ApprovalStatusSeeder::class,
+            DocumentLevelSeeder::class,
             DocumentTypeSeeder::class,
         ]);
 

@@ -7,22 +7,29 @@
     <div class="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
         <x-ui.panel title="Level Dokumen" description="Pilih level dokumen yang ingin disetting." class="h-fit xl:sticky xl:top-8">
             <div class="mt-4 space-y-3">
-                @forelse ($documentTypes as $documentType)
+                @forelse ($documentLevels as $documentLevel)
                     <button
                         type="button"
-                        wire:click="selectDocumentType({{ $documentType->id }})"
+                        wire:click="selectDocumentLevel({{ $documentLevel->id }})"
                         @class([
                             'group w-full rounded-lg border px-5 py-4 text-left transition hover:border-sky-200 hover:bg-sky-50',
-                            'border-sky-300 bg-sky-50 shadow-sm' => $selectedDocumentTypeId === $documentType->id,
-                            'border-slate-200 bg-white' => $selectedDocumentTypeId !== $documentType->id,
+                            'border-sky-300 bg-sky-50 shadow-sm' => $selectedDocumentLevelId === $documentLevel->id,
+                            'border-slate-200 bg-white' => $selectedDocumentLevelId !== $documentLevel->id,
                         ])
                     >
                         <span @class([
                             'block font-semibold',
-                            'text-sky-800' => $selectedDocumentTypeId === $documentType->id,
-                            'text-slate-900' => $selectedDocumentTypeId !== $documentType->id,
+                            'text-sky-800' => $selectedDocumentLevelId === $documentLevel->id,
+                            'text-slate-900' => $selectedDocumentLevelId !== $documentLevel->id,
                         ])>
-                            {{ $documentType->nama_types }}
+                            {{ $documentLevel->nama_level }}
+                        </span>
+                        <span @class([
+                            'mt-1 block text-sm leading-6',
+                            'text-sky-700' => $selectedDocumentLevelId === $documentLevel->id,
+                            'text-slate-500' => $selectedDocumentLevelId !== $documentLevel->id,
+                        ])>
+                            {{ $documentLevel->nama_dokumen }}
                         </span>
                     </button>
                 @empty
@@ -35,7 +42,7 @@
         </x-ui.panel>
 
         <div class="space-y-5">
-            @if (! $selectedDocumentType)
+            @if (! $selectedDocumentLevel)
                 <x-ui.empty-state
                     title="Pilih Level Dokumen"
                     description="Flow approval akan muncul setelah level dokumen dipilih."
@@ -45,9 +52,9 @@
                     <div class="flex flex-col gap-4 border-b border-slate-200 px-5 py-5 md:flex-row md:items-start md:justify-between">
                         <div>
                             <p class="text-xs font-semibold uppercase tracking-wide text-sky-700">Flow Aktif</p>
-                            <h2 class="mt-1 text-xl font-bold text-slate-950">{{ $selectedDocumentType->nama_types }}</h2>
+                            <h2 class="mt-1 text-xl font-bold text-slate-950">{{ $selectedDocumentLevel->nama_level }}</h2>
                             <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                                Pihak dibawah ini akan tampil sebagai penanda tangan pada lembar pengesahan.
+                                {{ $selectedDocumentLevel->nama_dokumen }}. Pihak dibawah ini akan tampil sebagai penanda tangan pada lembar pengesahan.
                             </p>
                         </div>
 

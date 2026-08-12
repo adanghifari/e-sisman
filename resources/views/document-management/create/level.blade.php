@@ -12,13 +12,23 @@
             'level-2' => 'PS',
             'level-3' => 'IK',
         ];
-        $parentLabels = [
-            'level-1' => 'Pilih Referensi Dokumen',
-            'level-2' => 'Pilih Dokumen Level I : Manual',
-            'level-3' => 'Pilih Dokumen Level II : Prosedur',
-        ];
         $ownerLabel = $levelKey === 'level-1' ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
         $documentTitle = \Illuminate\Support\Str::after($level['name'], ': ');
+        $documentLevelRecord = \Illuminate\Support\Facades\Schema::hasTable('m_document_levels')
+            ? \App\Models\DocumentLevel::query()->where('kode', $levelKey)->first()
+            : null;
+        $levelDisplayValue = $documentLevelRecord
+            ? $documentLevelRecord->nama_level.' : '.\Illuminate\Support\Str::after($documentLevelRecord->nama_dokumen, ': ')
+            : $level['badge'].' : '.$documentTitle;
+        $businessProcesses = \Illuminate\Support\Facades\Schema::hasTable('m_proses_bisnis')
+            ? \App\Models\BusinessProcess::query()->active()->orderBy('nama_proses_bisnis')->get()
+            : collect();
+        $businessFunctions = \Illuminate\Support\Facades\Schema::hasTable('m_proses_fungsi')
+            ? \App\Models\BusinessFunction::query()->active()->orderBy('nama_proses_fungsi')->get()
+            : collect();
+        $departments = \Illuminate\Support\Facades\Schema::hasTable('departments')
+            ? \App\Models\Department::query()->active()->orderBy('nama_department')->get()
+            : collect();
         $assignableUsers = \App\Models\User::query()
             ->with('department')
             ->when(auth()->check(), fn ($query) => $query->whereKeyNot(auth()->id()))
@@ -134,7 +144,8 @@
                 </aside>
             </div>
         @else
-            <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
+            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
+                @csrf
                 <div class="space-y-6">
                     <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                         <div class="border-b border-slate-200 px-6 py-5">
@@ -181,41 +192,61 @@
                                     </label>
                                 </div>
                             @else
-                                <label class="block">
-                                    <span class="mb-2 block text-base font-medium text-slate-500">Nama Dokumen</span>
-                                    <input
-                                        type="text"
-                                        placeholder="Masukan nama dokumen"
-                                        class="h-14 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                                    >
-                                </label>
-
                                 <div class="grid gap-5 md:grid-cols-2">
+                                    <label class="block md:col-span-2">
+                                        <span class="mb-2 block text-base font-medium text-slate-500">Nama Dokumen</span>
+                                        <input
+                                            type="text"
+                                            name="nama_dokumen"
+                                            placeholder="Masukan nama dokumen"
+                                            class="h-14 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                                        >
+                                    </label>
+
+                                    <label class="block">
+                                        <span class="mb-2 block text-base font-medium text-slate-500">Level Dokumen:</span>
+                                        <input type="hidden" name="m_document_level_id" value="{{ $documentLevelRecord?->id }}">
+                                        <input
+                                            type="text"
+                                            value="{{ $levelDisplayValue }}"
+                                            readonly
+                                            class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none"
+                                        >
+                                    </label>
+
                                     <label class="block">
                                         <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
-                                        <select class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                            <option>-Pilih-</option>
-                                        </select>
-                                    </label>
-
-                                    <label class="block">
-                                        <span class="mb-2 block text-base font-medium text-slate-500">{{ $parentLabels[$levelKey] }}</span>
-                                        <select class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                            <option>-Pilih-</option>
-                                        </select>
-                                    </label>
-
-                                    <label class="block">
-                                        <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
-                                        <select class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                            <option>-Pilih-</option>
+                                        <select name="m_proses_bisnis_id" class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                            <option value="">-Pilih-</option>
+                                            @foreach ($businessProcesses as $businessProcess)
+                                                <option value="{{ $businessProcess->id }}">
+                                                    {{ $businessProcess->nama_proses_bisnis }}
+                                                </option>
+                                            @endforeach
                                         </select>
                                     </label>
 
                                     <label class="block">
                                         <span class="mb-2 block text-base font-medium text-slate-500">Department Terkait</span>
-                                        <select class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                            <option>-Pilih-</option>
+                                        <select name="department_ids[]" class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                            <option value="">-Pilih-</option>
+                                            @foreach ($departments as $department)
+                                                <option value="{{ $department->id }}">
+                                                    {{ $department->kode_department ? $department->kode_department.' - ' : '' }}{{ $department->nama_department }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                    </label>
+
+                                    <label class="block">
+                                        <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
+                                        <select name="m_proses_fungsi_id" class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                            <option value="">-Pilih-</option>
+                                            @foreach ($businessFunctions as $businessFunction)
+                                                <option value="{{ $businessFunction->id }}">
+                                                    {{ $businessFunction->nama_proses_fungsi }}
+                                                </option>
+                                            @endforeach
                                         </select>
                                     </label>
                                 </div>
@@ -312,16 +343,18 @@
 
                     <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                         <div class="border-b border-slate-200 px-6 py-5">
-                            <h2 class="text-lg font-bold text-slate-900">Isi Dokumen</h2>
+                            <div class="flex items-center gap-3">
+                                <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-sky-50 text-sky-700 ring-1 ring-sky-100">
+                                    <flux:icon name="cloud-arrow-up" class="size-5" />
+                                </span>
+                                <h2 class="text-lg font-bold text-slate-900">Isi Dokumen</h2>
+                            </div>
                         </div>
 
                         <div class="space-y-6 px-6 py-6">
                             <div class="rounded-lg border border-sky-100 bg-sky-50/40 px-4 py-4" data-document-upload>
                                 <div class="flex flex-wrap items-start justify-between gap-4">
                                     <div class="flex min-w-0 items-start gap-3">
-                                        <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-white text-sky-700 ring-1 ring-sky-100">
-                                            <flux:icon name="cloud-arrow-up" class="size-5" />
-                                        </span>
                                         <span class="min-w-0">
                                             <span class="block text-base font-bold text-slate-900">Template Dokumen yang Sudah Diisi</span>
                                             <span class="mt-1 block text-sm leading-6 text-slate-500">
@@ -399,7 +432,7 @@
                                     <span class="text-lg font-semibold text-slate-500">-</span>
                                     <input type="text" value="SMR" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
                                     <span class="text-lg font-semibold text-slate-500">-</span>
-                                    <input type="text" value="2" class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                    <input type="text" name="nomor_dokumen_suffix" value="2" class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                                 </div>
                             </div>
                         @else
@@ -412,7 +445,7 @@
                                     <span class="text-lg font-semibold text-slate-500">-</span>
                                     <input type="text" value="YY" readonly class="h-14 w-24 rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
                                     <span class="text-lg font-semibold text-slate-500">-</span>
-                                    <input type="text" class="h-14 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                    <input type="text" name="nomor_dokumen_suffix" class="h-14 min-w-0 flex-1 rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                                 </div>
                             </div>
                         @endif
@@ -449,15 +482,15 @@
                     </div>
 
                     <div class="grid gap-3 border-t border-dashed border-slate-200 px-6 py-5 sm:grid-cols-2">
-                        <button type="button" class="inline-flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:bg-slate-50">
+                        <button type="submit" name="submit_action" value="draft" class="inline-flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:bg-slate-50">
                             Simpan Draft
                         </button>
-                        <button type="button" class="inline-flex h-12 items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
+                        <button type="submit" name="submit_action" value="submit" class="inline-flex h-12 items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
                             Submit Dokumen
                         </button>
                     </div>
                 </aside>
-            </div>
+            </form>
         @endif
     </div>
 

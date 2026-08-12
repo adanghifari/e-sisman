@@ -8,7 +8,7 @@ use App\Actions\Administration\ApprovalFlow\EnsureApprovalFlow;
 use App\Actions\Administration\ApprovalFlow\UpdateApprovalFlowStage;
 use App\Models\ApprovalFlow;
 use App\Models\ApprovalFlowStage;
-use App\Models\DocumentType;
+use App\Models\DocumentLevel;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Validation\ValidationException;
@@ -18,7 +18,7 @@ use Livewire\Component;
 #[Title('Approval Flow')]
 class Index extends Component
 {
-    public ?int $selectedDocumentTypeId = null;
+    public ?int $selectedDocumentLevelId = null;
 
     public ?int $approvalFlowId = null;
 
@@ -36,19 +36,20 @@ class Index extends Component
 
     public function mount(): void
     {
-        $this->selectedDocumentTypeId = DocumentType::query()
+        $this->selectedDocumentLevelId = DocumentLevel::query()
             ->active()
-            ->orderBy('nama_types')
+            ->orderBy('sort_order')
+            ->orderBy('nama_level')
             ->value('id');
 
-        if ($this->selectedDocumentTypeId !== null) {
+        if ($this->selectedDocumentLevelId !== null) {
             $this->loadApprovalFlow();
         }
     }
 
-    public function selectDocumentType(int $documentTypeId): void
+    public function selectDocumentLevel(int $documentLevelId): void
     {
-        $this->selectedDocumentTypeId = $documentTypeId;
+        $this->selectedDocumentLevelId = $documentLevelId;
         $this->resetStageForm();
         $this->cancelDelete();
         $this->loadApprovalFlow();
@@ -131,21 +132,22 @@ class Index extends Component
         $this->resetStageForm();
     }
 
-    public function getDocumentTypesProperty(): Collection
+    public function getDocumentLevelsProperty(): Collection
     {
-        return DocumentType::query()
+        return DocumentLevel::query()
             ->active()
-            ->orderBy('nama_types')
+            ->orderBy('sort_order')
+            ->orderBy('nama_level')
             ->get();
     }
 
-    public function getSelectedDocumentTypeProperty(): ?DocumentType
+    public function getSelectedDocumentLevelProperty(): ?DocumentLevel
     {
-        if ($this->selectedDocumentTypeId === null) {
+        if ($this->selectedDocumentLevelId === null) {
             return null;
         }
 
-        return $this->documentTypes->firstWhere('id', $this->selectedDocumentTypeId);
+        return $this->documentLevels->firstWhere('id', $this->selectedDocumentLevelId);
     }
 
     public function getApprovalStagesProperty(): Collection
@@ -163,8 +165,8 @@ class Index extends Component
     public function render(): View
     {
         return view('livewire.administration.approval-flows.index', [
-            'documentTypes' => $this->documentTypes,
-            'selectedDocumentType' => $this->selectedDocumentType,
+            'documentLevels' => $this->documentLevels,
+            'selectedDocumentLevel' => $this->selectedDocumentLevel,
             'approvalStages' => $this->approvalStages,
         ]);
     }
@@ -177,7 +179,7 @@ class Index extends Component
     protected function approvalFlow(): ApprovalFlow
     {
         return app(EnsureApprovalFlow::class)->handle([
-            'm_document_types_id' => $this->selectedDocumentTypeId,
+            'm_document_level_id' => $this->selectedDocumentLevelId,
         ]);
     }
 

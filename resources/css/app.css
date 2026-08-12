@@ -61,6 +61,20 @@ select:focus[data-flux-control] {
     @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-accent-foreground;
 }
 
+select option {
+    background-color: #f1f5f9;
+    color: #475569;
+}
+
+select option:checked {
+    background-color: #e2e8f0;
+    color: #0f172a;
+}
+
+select option:disabled {
+    color: #94a3b8;
+}
+
 .ui-data-table tbody > tr:nth-child(even) {
     background-color: #f8fafc;
 }
