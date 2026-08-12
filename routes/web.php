@@ -1,5 +1,6 @@
 <?php
 
+use App\Livewire\Administration\ApprovalFlow\Index as ApprovalFlowIndex;
 use App\Livewire\MasterData\BusinessFunction\Index as BusinessFunctionIndex;
 use App\Livewire\MasterData\BusinessProcess\Index as BusinessProcessIndex;
 use App\Livewire\MasterData\Department\Index as DepartmentIndex;
@@ -21,7 +22,7 @@ Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('users', 'administration.users.index')->name('users.index');
     Route::view('access-groups', 'administration.access-groups.index')->name('access-groups.index');
     Route::view('access-menus', 'administration.access-menus.index')->name('access-menus.index');
-    Route::view('approval-flows', 'administration.approval-flows.index')->name('approval-flows.index');
+    Route::livewire('approval-flows', ApprovalFlowIndex::class)->name('approval-flows.index');
     Route::livewire('master-data/process-functions', BusinessFunctionIndex::class)->name('master-data.process-functions');
     Route::livewire('master-data/business-processes', BusinessProcessIndex::class)->name('master-data.business-processes');
     Route::livewire('master-data/departments', DepartmentIndex::class)->name('master-data.departments');
