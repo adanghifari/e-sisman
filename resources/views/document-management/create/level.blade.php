@@ -234,8 +234,51 @@
 
                             <input type="hidden" name="m_document_level_id" value="{{ $documentLevelRecord?->id }}">
 
+                            <label @class(['block', 'md:col-span-2' => $levelKey !== 'level-3'])>
+                                <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
+                                <select name="m_proses_bisnis_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                    <option value="">-Pilih-</option>
+                                    @foreach ($businessProcesses as $businessProcess)
+                                        <option
+                                            value="{{ $businessProcess->id }}"
+                                            data-process-code="{{ $businessProcess->kode }}"
+                                            @selected((string) old('m_proses_bisnis_id') === (string) $businessProcess->id)
+                                        >
+                                            {{ $businessProcess->nama_proses_bisnis }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('m_proses_bisnis_id')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                            </label>
+
+                            <label class="block">
+                                <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
+                                <select name="m_proses_fungsi_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                    <option value="">-Pilih-</option>
+                                    @foreach ($businessFunctions as $businessFunction)
+                                        <option value="{{ $businessFunction->id }}" @selected((string) old('m_proses_fungsi_id') === (string) $businessFunction->id)>
+                                            {{ $businessFunction->nama_proses_fungsi }}
+                                        </option>
+                                    @endforeach
+                                </select>
+                                @error('m_proses_fungsi_id')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                            </label>
+
+                            <x-ui.multi-select
+                                label="Department Terkait"
+                                name="department_ids"
+                                :options="$departmentOptions"
+                                selected-placeholder="Tambah Department"
+                                required
+                                class="md:col-span-1"
+                            />
+
                             @if ($levelKey === 'level-3')
-                                <label class="block md:col-span-2">
+                                <label class="block">
                                     <span class="mb-2 block text-base font-medium text-slate-500">Pilih Dokumen Level II: Prosedur</span>
                                     <select name="reference" class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                                         <option value="">-Pilih-</option>
@@ -255,49 +298,6 @@
                                     @enderror
                                 </label>
                             @endif
-
-                            <label class="block md:col-span-2">
-                                <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
-                                <select name="m_proses_bisnis_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                    <option value="">-Pilih-</option>
-                                    @foreach ($businessProcesses as $businessProcess)
-                                        <option
-                                            value="{{ $businessProcess->id }}"
-                                            data-process-code="{{ $businessProcess->kode }}"
-                                            @selected((string) old('m_proses_bisnis_id') === (string) $businessProcess->id)
-                                        >
-                                            {{ $businessProcess->nama_proses_bisnis }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('m_proses_bisnis_id')
-                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                @enderror
-                            </label>
-
-                            <x-ui.multi-select
-                                label="Department Terkait"
-                                name="department_ids"
-                                :options="$departmentOptions"
-                                selected-placeholder="Tambah Department"
-                                required
-                                class="md:col-span-1"
-                            />
-
-                            <label class="block">
-                                <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
-                                <select name="m_proses_fungsi_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                    <option value="">-Pilih-</option>
-                                    @foreach ($businessFunctions as $businessFunction)
-                                        <option value="{{ $businessFunction->id }}" @selected((string) old('m_proses_fungsi_id') === (string) $businessFunction->id)>
-                                            {{ $businessFunction->nama_proses_fungsi }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('m_proses_fungsi_id')
-                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                @enderror
-                            </label>
                         </div>
                     </x-documents.form-section>
 
