@@ -42,32 +42,28 @@
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
             <div class="space-y-6">
                 <x-documents.form-section title="Informasi Dokumen">
-                    <div class="grid gap-5 px-6 py-6 md:grid-cols-2">
-                        <label class="block md:col-span-2">
-                            <span class="mb-2 block text-base font-medium text-slate-500">Nama Dokumen</span>
-                            <input type="text" value="{{ $document->nama_dokumen }}" readonly class="{{ $readonlyInput }}">
-                        </label>
-
-                        <label class="block">
-                            <span class="mb-2 block text-base font-medium text-slate-500">Level Dokumen:</span>
-                            <input type="text" value="{{ $document->documentLevel?->nama_level }} : {{ \Illuminate\Support\Str::after($document->documentLevel?->nama_dokumen ?? '', ': ') }}" readonly class="{{ $readonlyInput }}">
-                        </label>
-
-                        <label class="block">
-                            <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
-                            <input type="text" value="{{ $document->businessProcess?->nama_proses_bisnis ?? '-' }}" readonly class="{{ $readonlySelect }}">
-                        </label>
-
-                        <label class="block">
-                            <span class="mb-2 block text-base font-medium text-slate-500">Department Terkait</span>
-                            <input type="text" value="{{ $document->departments->map(fn ($department) => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department)->implode(', ') ?: '-' }}" readonly class="{{ $readonlySelect }}">
-                        </label>
-
-                        <label class="block">
-                            <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
-                            <input type="text" value="{{ $document->businessFunction?->nama_proses_fungsi ?? '-' }}" readonly class="{{ $readonlySelect }}">
-                        </label>
-                    </div>
+                    <dl class="divide-y divide-slate-100 px-6 py-4">
+                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                            <dt class="text-sm font-semibold text-slate-500">Nama Dokumen</dt>
+                            <dd class="text-sm font-bold text-slate-900">{{ $document->nama_dokumen }}</dd>
+                        </div>
+                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                            <dt class="text-sm font-semibold text-slate-500">Level Dokumen</dt>
+                            <dd class="text-sm font-bold text-slate-900">{{ $document->documentLevel?->nama_level }} : {{ \Illuminate\Support\Str::after($document->documentLevel?->nama_dokumen ?? '', ': ') }}</dd>
+                        </div>
+                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                            <dt class="text-sm font-semibold text-slate-500">Proses Bisnis</dt>
+                            <dd class="text-sm font-bold text-slate-900">{{ $document->businessProcess?->nama_proses_bisnis ?? '-' }}</dd>
+                        </div>
+                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                            <dt class="text-sm font-semibold text-slate-500">Department Terkait</dt>
+                            <dd class="text-sm font-bold text-slate-900">{{ $document->departments->map(fn ($department) => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department)->implode(', ') ?: '-' }}</dd>
+                        </div>
+                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                            <dt class="text-sm font-semibold text-slate-500">Proses / Fungsi</dt>
+                            <dd class="text-sm font-bold text-slate-900">{{ $document->businessFunction?->nama_proses_fungsi ?? '-' }}</dd>
+                        </div>
+                    </dl>
                 </x-documents.form-section>
 
                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -211,24 +207,95 @@
                 <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm">
                     <div class="border-b border-slate-200 px-6 py-5">
                         <h2 class="text-lg font-bold text-slate-900">Assign Approver</h2>
+                        <p class="mt-2 text-sm font-medium text-slate-500">
+                            Approval Flow {{ $document->documentLevel?->nama_dokumen ?? $document->documentLevel?->nama_level ?? '-' }}
+                        </p>
                     </div>
-                    <form method="POST" action="{{ route('documents.approval.assign', $document) }}" class="space-y-5 px-6 py-6">
-                        @csrf
-                        <x-ui.user-search-select
-                            name="user_id"
-                            :users="$assignableUsers"
-                            placeholder="Cari dan pilih approver"
-                            required
-                        />
-                        <x-ui.input
-                            label="Tahap"
-                            name="stages"
-                            placeholder="Contoh: Review Kadis"
-                        />
-                        <x-ui.action-button type="submit" class="w-full">
-                            Assign Approver
-                        </x-ui.action-button>
-                    </form>
+
+                    @if ($approvalFlowStages->isEmpty())
+                        <div class="px-6 py-6">
+                            <p class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
+                                Belum ada aturan tahap approval.
+                            </p>
+                        </div>
+                    @else
+                        <form method="POST" action="{{ route('documents.approval.assign', $document) }}" class="space-y-5 px-6 py-6" data-approver-assignment-form>
+                            @csrf
+
+                            @foreach ($approvalFlowStages as $stage)
+                                @php
+                                    $stageLabel = $stage->display_label ?: 'Approval';
+                                    $oldApproverIds = collect(old("stage_approvers.{$stage->id}", []))
+                                        ->filter()
+                                        ->map(fn ($userId) => (int) $userId)
+                                        ->values();
+                                    $stageApprovers = $oldApproverIds->isNotEmpty()
+                                        ? $assignableUsers->whereIn('id', $oldApproverIds)->values()
+                                        : $document->approvals
+                                            ->filter(fn ($approval) => $approval->stages === $stageLabel && $approval->responded_at === null)
+                                            ->map(fn ($approval) => $approval->approver)
+                                            ->filter()
+                                            ->values();
+                                    if (
+                                        $stage->stage_order === 1
+                                        && $stageApprovers->isEmpty()
+                                        && $document->officialPreparer
+                                        && data_get(old('stage_approvers', []), $stage->id) === null
+                                    ) {
+                                        $stageApprovers = collect([$document->officialPreparer]);
+                                    }
+                                @endphp
+
+                                <article class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-approver-stage="{{ $stage->id }}">
+                                    <div class="flex items-start gap-3">
+                                        <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-sky-100 text-sm font-bold text-sky-700">
+                                            {{ $stage->stage_order }}
+                                        </span>
+                                        <div class="min-w-0">
+                                            <h3 class="text-base font-bold text-slate-900">{{ $stage->keterangan ?: 'Tahap Approval' }}</h3>
+                                            <p class="mt-1 text-sm font-semibold text-slate-500">{{ $stage->nama_tahap }}</p>
+                                        </div>
+                                    </div>
+
+                                    <div class="mt-4 space-y-3" data-approver-slots>
+                                        @foreach ($stageApprovers as $approver)
+                                            <div class="flex items-start gap-2" data-approver-slot>
+                                                <div class="min-w-0 flex-1">
+                                                    <x-ui.user-search-select
+                                                        name="stage_approvers[{{ $stage->id }}][]"
+                                                        :users="$assignableUsers"
+                                                        :selected-user="$approver"
+                                                        placeholder="Cari dan pilih approver"
+                                                        required
+                                                    />
+                                                </div>
+                                                <x-ui.icon-button
+                                                    type="button"
+                                                    icon="trash"
+                                                    label="Hapus approver"
+                                                    variant="ghost"
+                                                    data-remove-approver-slot
+                                                />
+                                            </div>
+                                        @endforeach
+                                    </div>
+
+                                    @error("stage_approvers.{$stage->id}")
+                                        <span class="mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+
+                                    <button type="button" class="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-add-approver-slot>
+                                        <flux:icon name="plus" class="size-5" />
+                                        Tambah Approver
+                                    </button>
+                                </article>
+                            @endforeach
+
+                            <x-ui.action-button type="submit" class="w-full">
+                                Save Approver
+                            </x-ui.action-button>
+                        </form>
+                    @endif
 
                     <div class="border-t border-slate-100 px-6 py-5">
                         <h3 class="text-sm font-bold text-slate-900">Riwayat Approver</h3>
@@ -297,6 +364,55 @@
                 if (event.target.closest('[data-reject-modal-close]')) {
                     modal?.classList.add('hidden');
                     modal?.classList.remove('flex');
+                }
+            });
+        })();
+    </script>
+
+    <template data-approver-slot-template>
+        <div class="flex items-start gap-2" data-approver-slot>
+            <div class="min-w-0 flex-1">
+                <x-ui.user-search-select
+                    name="__NAME__"
+                    :users="$assignableUsers"
+                    placeholder="Cari dan pilih approver"
+                    required
+                />
+            </div>
+            <x-ui.icon-button
+                type="button"
+                icon="trash"
+                label="Hapus approver"
+                variant="ghost"
+                data-remove-approver-slot
+            />
+        </div>
+    </template>
+
+    <script>
+        (() => {
+            const template = document.querySelector('[data-approver-slot-template]');
+
+            document.addEventListener('click', (event) => {
+                const addButton = event.target.closest('[data-add-approver-slot]');
+
+                if (addButton) {
+                    const stage = addButton.closest('[data-approver-stage]');
+                    const list = stage?.querySelector('[data-approver-slots]');
+
+                    if (!stage || !list || !template) {
+                        return;
+                    }
+
+                    const slot = template.innerHTML.replaceAll('__NAME__', `stage_approvers[${stage.dataset.approverStage}][]`);
+                    list.insertAdjacentHTML('beforeend', slot);
+                    return;
+                }
+
+                const removeButton = event.target.closest('[data-remove-approver-slot]');
+
+                if (removeButton) {
+                    removeButton.closest('[data-approver-slot]')?.remove();
                 }
             });
         })();

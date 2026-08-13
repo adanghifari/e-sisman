@@ -10,6 +10,7 @@ use App\Livewire\MasterData\DocumentType\Index as DocumentTypeIndex;
 use App\Http\Controllers\DocumentManagement\DocumentController;
 use App\Http\Controllers\DocumentManagement\DocumentApprovalController;
 use App\Http\Controllers\DocumentManagement\DocumentInboxController;
+use App\Http\Controllers\DocumentManagement\DocumentMasterController;
 use App\Http\Middleware\EnsureRoutePermission;
 use Illuminate\Support\Facades\Route;
 
@@ -31,7 +32,7 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::post('documents/create/{level}', [DocumentController::class, 'store'])
         ->whereIn('level', array_keys(config('document-levels')))
         ->name('documents.store');
-    Route::view('documents/master', 'document-management.master')->name('documents.master');
+    Route::get('documents/master', DocumentMasterController::class)->name('documents.master');
     Route::view('document-templates', 'document-management.templates.index')->name('document-templates.index');
     Route::view('reports', 'reporting.index')->name('reports.index');
     Route::view('users', 'administration.users.index')->name('users.index');

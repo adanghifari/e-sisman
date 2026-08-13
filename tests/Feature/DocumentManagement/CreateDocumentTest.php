@@ -363,7 +363,7 @@ class CreateDocumentTest extends TestCase
                 'department_ids' => [$department->id],
                 'official_preparer_id' => $user->id,
                 'nomor_dokumen_suffix' => '001',
-                'filled_template' => UploadedFile::fake()->create('template.docx', 24),
+                'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
                 'submit_action' => 'draft',
             ])
             ->assertRedirect(route('documents.create.level', 'level-3'))
@@ -412,7 +412,7 @@ class CreateDocumentTest extends TestCase
                 'department_ids' => [$department->id],
                 'official_preparer_id' => $user->id,
                 'nomor_dokumen_suffix' => '001',
-                'filled_template' => UploadedFile::fake()->create('template.docx', 24),
+                'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
                 'submit_action' => 'draft',
             ])
             ->assertRedirect(route('documents.create.level', 'level-2'))
