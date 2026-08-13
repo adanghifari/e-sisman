@@ -48,7 +48,7 @@ class CreateDocumentTest extends TestCase
             ->assertOk()
             ->assertSee('Tambah Dokumen Level II')
             ->assertSee('Nama Dokumen')
-            ->assertSee('Level Dokumen:')
+            ->assertDontSee('Level Dokumen:')
             ->assertSee('Penyusun Pemilik Proses')
             ->assertSee('Template Dokumen yang Sudah Diisi')
             ->assertSee('Level Two User');
@@ -246,9 +246,22 @@ class CreateDocumentTest extends TestCase
 
         StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
         StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $procedureType = DocumentType::create(['nama_types' => 'Prosedur']);
         DocumentType::create(['nama_types' => 'IK']);
 
         $level = DocumentLevel::query()->where('kode', 'level-3')->firstOrFail();
+        $procedureLevel = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+        $procedure = Document::create([
+            'm_document_level_id' => $procedureLevel->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $procedureType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Prosedur Pengujian',
+            'nomor_dokumen' => 'PS-SMR-001',
+        ]);
 
         $this->actingAs($user)
             ->post(route('documents.store', 'level-3'), [
@@ -256,6 +269,7 @@ class CreateDocumentTest extends TestCase
                 'nama_dokumen' => 'Instruksi Kerja Pengujian',
                 'm_proses_bisnis_id' => $businessProcess->id,
                 'm_proses_fungsi_id' => $businessFunction->id,
+                'reference' => $procedure->id,
                 'department_ids' => [$department->id, $secondDepartment->id],
                 'official_preparer_id' => $user->id,
                 'nomor_dokumen_suffix' => '001',
@@ -264,11 +278,14 @@ class CreateDocumentTest extends TestCase
             ])
             ->assertRedirect(route('documents.create.level', 'level-3'));
 
-        $document = Document::query()->firstOrFail();
+        $document = Document::query()
+            ->where('nama_dokumen', 'Instruksi Kerja Pengujian')
+            ->firstOrFail();
 
         $this->assertSame($level->id, $document->m_document_level_id);
         $this->assertSame('Instruksi Kerja Pengujian', $document->nama_dokumen);
         $this->assertSame($user->id, $document->official_preparer_id);
+        $this->assertSame($procedure->id, $document->reference);
         $this->assertSame('IK-XXX-YY-001', $document->nomor_dokumen);
         $this->assertTrue($document->departments()->whereKey($department->id)->exists());
         $this->assertTrue($document->departments()->whereKey($secondDepartment->id)->exists());
@@ -289,11 +306,117 @@ class CreateDocumentTest extends TestCase
                 'nama_dokumen',
                 'm_proses_bisnis_id',
                 'm_proses_fungsi_id',
+                'reference',
                 'department_ids',
                 'official_preparer_id',
                 'nomor_dokumen_suffix',
                 'filled_template',
             ]);
+    }
+
+    public function test_level_three_reference_must_match_selected_process_and_function(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $otherBusinessProcess = BusinessProcess::create([
+            'kode' => 'OPS',
+            'nama_proses_bisnis' => 'Operasional',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'QA',
+            'nama_proses_fungsi' => 'Quality Assurance',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        $procedureType = DocumentType::create(['nama_types' => 'Prosedur']);
+        DocumentType::create(['nama_types' => 'IK']);
+
+        $procedureLevel = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+        $procedure = Document::create([
+            'm_document_level_id' => $procedureLevel->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $procedureType->id,
+            'm_proses_bisnis_id' => $otherBusinessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Prosedur Operasional',
+            'nomor_dokumen' => 'PS-OPS-001',
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('documents.create.level', 'level-3'))
+            ->post(route('documents.store', 'level-3'), [
+                'nama_dokumen' => 'Instruksi Kerja Pengujian',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'reference' => $procedure->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'nomor_dokumen_suffix' => '001',
+                'filled_template' => UploadedFile::fake()->create('template.docx', 24),
+                'submit_action' => 'draft',
+            ])
+            ->assertRedirect(route('documents.create.level', 'level-3'))
+            ->assertSessionHasErrors(['reference']);
+    }
+
+    public function test_document_number_must_be_unique(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'QA',
+            'nama_proses_fungsi' => 'Quality Assurance',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $draftStatus = StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        $documentType = DocumentType::create(['nama_types' => 'Prosedur']);
+        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+
+        Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $draftStatus->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Prosedur Lama',
+            'nomor_dokumen' => 'PS-SMR-001',
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('documents.create.level', 'level-2'))
+            ->post(route('documents.store', 'level-2'), [
+                'nama_dokumen' => 'Prosedur Baru',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'nomor_dokumen_suffix' => '001',
+                'filled_template' => UploadedFile::fake()->create('template.docx', 24),
+                'submit_action' => 'draft',
+            ])
+            ->assertRedirect(route('documents.create.level', 'level-2'))
+            ->assertSessionHasErrors(['nomor_dokumen_suffix']);
     }
 
     public function test_template_upload_must_be_pdf_document(): void

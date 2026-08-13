@@ -17,6 +17,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'user_id',
     'official_preparer_id',
     'reference',
+    'revised_from',
     'nama_dokumen',
     'nomor_dokumen',
     'nomor_revisi',
@@ -83,6 +84,16 @@ class Document extends Model
     public function referenceDocument(): BelongsTo
     {
         return $this->belongsTo(self::class, 'reference');
+    }
+
+    public function revisedFrom(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'revised_from');
+    }
+
+    public function revisions(): HasMany
+    {
+        return $this->hasMany(self::class, 'revised_from');
     }
 
     public function departments(): BelongsToMany

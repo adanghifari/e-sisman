@@ -39,13 +39,23 @@ class DocumentController extends Controller
             $validated['submit_action'] = 'draft';
         }
 
+        $documentNumber = $this->buildDocumentNumber($documentLevel, $validated);
+
+        if ($documentNumber !== null && Document::query()->where('nomor_dokumen', $documentNumber)->exists()) {
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'nomor_dokumen_suffix' => 'Nomor dokumen sudah digunakan.',
+                ]);
+        }
+
         $status = StatusDocument::findByName(
             $validated['submit_action'] === 'submit'
                 ? StatusDocument::PROPOSED
                 : StatusDocument::DRAFT,
         );
 
-        DB::transaction(function () use ($request, $validated, $documentLevel, $documentType, $status): void {
+        DB::transaction(function () use ($request, $validated, $documentNumber, $documentLevel, $documentType, $status, $level): void {
             $document = Document::create([
                 'm_document_level_id' => $documentLevel->id,
                 'm_status_document_id' => $status->id,
@@ -54,9 +64,9 @@ class DocumentController extends Controller
                 'm_proses_fungsi_id' => $validated['m_proses_fungsi_id'],
                 'user_id' => $request->user()->id,
                 'official_preparer_id' => $validated['official_preparer_id'] ?? null,
-                'reference' => $validated['reference'] ?? null,
+                'reference' => $level === 'level-3' ? $validated['reference'] : null,
                 'nama_dokumen' => $validated['nama_dokumen'],
-                'nomor_dokumen' => $this->buildDocumentNumber($documentLevel, $validated),
+                'nomor_dokumen' => $documentNumber,
                 'nomor_revisi' => $this->normalizeRevision($validated['nomor_revisi'] ?? null),
                 'catatan_revisi' => $validated['catatan_revisi'] ?? null,
                 'tanggal_terbit' => $validated['tanggal_terbit'] ?? null,
@@ -122,7 +132,7 @@ class DocumentController extends Controller
             'nama_dokumen' => ['required', 'string', 'max:255'],
             'm_proses_bisnis_id' => ['required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
             'm_proses_fungsi_id' => ['required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
-            'reference' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+            'reference' => $this->referenceRulesForLevel($level),
             'department_ids' => ['required', 'array', 'min:1'],
             'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
             'official_preparer_id' => ['required', 'integer', Rule::exists('users', 'id')],
@@ -131,6 +141,31 @@ class DocumentController extends Controller
             'attachments' => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
             'submit_action' => ['required', Rule::in(['draft', 'submit'])],
+        ];
+    }
+
+    protected function referenceRulesForLevel(string $level): array
+    {
+        if ($level !== 'level-3') {
+            return ['nullable', 'integer', Rule::exists('t_document', 'id')];
+        }
+
+        $procedureLevelId = DocumentLevel::query()
+            ->where('kode', 'level-2')
+            ->value('id');
+
+        $approvedStatusId = StatusDocument::query()
+            ->where('nama_status', StatusDocument::APPROVED)
+            ->value('id');
+
+        return [
+            'required',
+            'integer',
+            Rule::exists('t_document', 'id')
+                ->where('m_document_level_id', $procedureLevelId)
+                ->where('m_status_document_id', $approvedStatusId)
+                ->where('m_proses_bisnis_id', request('m_proses_bisnis_id'))
+                ->where('m_proses_fungsi_id', request('m_proses_fungsi_id')),
         ];
     }
 

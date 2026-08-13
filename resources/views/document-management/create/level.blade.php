@@ -30,6 +30,38 @@
         $departments = \Illuminate\Support\Facades\Schema::hasTable('departments')
             ? \App\Models\Department::query()->active()->orderBy('nama_department')->get()
             : collect();
+        $procedureLevelId = \Illuminate\Support\Facades\Schema::hasTable('m_document_levels')
+            ? \App\Models\DocumentLevel::query()->where('kode', 'level-2')->value('id')
+            : null;
+        $approvedStatusId = \Illuminate\Support\Facades\Schema::hasTable('m_status_document')
+            ? \App\Models\StatusDocument::query()->where('nama_status', \App\Models\StatusDocument::APPROVED)->value('id')
+            : null;
+        $procedureReferences = ($levelKey === 'level-3' && $procedureLevelId && $approvedStatusId)
+            ? \App\Models\Document::query()
+                ->select([
+                    'id',
+                    'nomor_dokumen',
+                    'nama_dokumen',
+                    'm_proses_bisnis_id',
+                    'm_proses_fungsi_id',
+                ])
+                ->where('m_document_level_id', $procedureLevelId)
+                ->where('m_status_document_id', $approvedStatusId)
+                ->orderBy('nomor_dokumen')
+                ->get()
+            : collect();
+        $documentNumberSuggestions = ($documentLevelRecord && in_array($levelKey, ['level-2', 'level-3'], true))
+            ? \App\Models\Document::query()
+                ->select(['m_proses_bisnis_id', 'm_proses_fungsi_id', 'nomor_revisi', 'nomor_dokumen'])
+                ->where('m_document_level_id', $documentLevelRecord->id)
+                ->whereNull('revised_from')
+                ->where('nomor_revisi', 0)
+                ->whereNotNull('nomor_dokumen')
+                ->get()
+                ->groupBy(fn ($document) => $document->m_proses_bisnis_id.'-'.$document->m_proses_fungsi_id)
+                ->map(fn ($documents) => str_pad((string) ($documents->count() + 1), 2, '0', STR_PAD_LEFT))
+                ->all()
+            : [];
         $departmentOptions = $departments
             ->map(fn ($department) => [
                 'value' => $department->id,
@@ -200,18 +232,31 @@
                                 @enderror
                             </label>
 
-                            <label class="block">
-                                <span class="mb-2 block text-base font-medium text-slate-500">Level Dokumen:</span>
-                                <input type="hidden" name="m_document_level_id" value="{{ $documentLevelRecord?->id }}">
-                                <input
-                                    type="text"
-                                    value="{{ $levelDisplayValue }}"
-                                    readonly
-                                    class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none"
-                                >
-                            </label>
+                            <input type="hidden" name="m_document_level_id" value="{{ $documentLevelRecord?->id }}">
 
-                            <label class="block">
+                            @if ($levelKey === 'level-3')
+                                <label class="block md:col-span-2">
+                                    <span class="mb-2 block text-base font-medium text-slate-500">Pilih Dokumen Level II: Prosedur</span>
+                                    <select name="reference" class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                        <option value="">-Pilih-</option>
+                                        @foreach ($procedureReferences as $procedureReference)
+                                            <option
+                                                value="{{ $procedureReference->id }}"
+                                                data-business-process-id="{{ $procedureReference->m_proses_bisnis_id }}"
+                                                data-business-function-id="{{ $procedureReference->m_proses_fungsi_id }}"
+                                                @selected((string) old('reference') === (string) $procedureReference->id)
+                                            >
+                                                {{ $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    @error('reference')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </label>
+                            @endif
+
+                            <label class="block md:col-span-2">
                                 <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
                                 <select name="m_proses_bisnis_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                                     <option value="">-Pilih-</option>
@@ -236,6 +281,7 @@
                                 :options="$departmentOptions"
                                 selected-placeholder="Tambah Department"
                                 required
+                                class="md:col-span-1"
                             />
 
                             <label class="block">
@@ -365,6 +411,8 @@
     @once
         <script>
             (() => {
+                const documentNumberSuggestions = @json($documentNumberSuggestions);
+
                 document.addEventListener('click', (event) => {
                     const button = event.target.closest('[data-document-upload-trigger]');
 
@@ -422,6 +470,97 @@
 
                     if (segment && processCode) {
                         segment.value = processCode;
+                    }
+                });
+
+                const syncProcedureReferenceOptions = (form) => {
+                    const processSelect = form.querySelector('select[name="m_proses_bisnis_id"]');
+                    const functionSelect = form.querySelector('select[name="m_proses_fungsi_id"]');
+                    const referenceSelect = form.querySelector('select[name="reference"]');
+
+                    if (!processSelect || !functionSelect || !referenceSelect) {
+                        return;
+                    }
+
+                    const processId = processSelect.value;
+                    const functionId = functionSelect.value;
+                    let selectedReferenceStillValid = referenceSelect.value === '';
+
+                    Array.from(referenceSelect.options).forEach((option) => {
+                        if (!option.value) {
+                            option.hidden = false;
+
+                            return;
+                        }
+
+                        const matches = processId !== ''
+                            && option.dataset.businessProcessId === processId
+                            && (
+                                functionId === ''
+                                || option.dataset.businessFunctionId === functionId
+                            );
+
+                        option.hidden = !matches;
+                        option.disabled = !matches;
+
+                        if (option.selected && matches) {
+                            selectedReferenceStillValid = true;
+                        }
+                    });
+
+                    referenceSelect.disabled = processId === '';
+
+                    if (!selectedReferenceStillValid) {
+                        referenceSelect.value = '';
+                    }
+                };
+
+                const syncDocumentNumberSuggestion = (form) => {
+                    const processSelect = form.querySelector('select[name="m_proses_bisnis_id"]');
+                    const functionSelect = form.querySelector('select[name="m_proses_fungsi_id"]');
+                    const suffixInput = form.querySelector('input[name="nomor_dokumen_suffix"]');
+
+                    if (!processSelect || !functionSelect || !suffixInput) {
+                        return;
+                    }
+
+                    if (suffixInput.dataset.userEdited === 'true') {
+                        return;
+                    }
+
+                    const processId = processSelect.value;
+                    const functionId = functionSelect.value;
+
+                    if (processId === '' || functionId === '') {
+                        return;
+                    }
+
+                    suffixInput.value = documentNumberSuggestions[`${processId}-${functionId}`] ?? '01';
+                };
+
+                document.querySelectorAll('form').forEach((form) => {
+                    syncProcedureReferenceOptions(form);
+                    syncDocumentNumberSuggestion(form);
+                });
+
+                document.addEventListener('input', (event) => {
+                    const suffixInput = event.target.closest('input[name="nomor_dokumen_suffix"]');
+
+                    if (suffixInput) {
+                        suffixInput.dataset.userEdited = 'true';
+                    }
+                });
+
+                document.addEventListener('change', (event) => {
+                    if (!event.target.closest('select[name="m_proses_bisnis_id"], select[name="m_proses_fungsi_id"]')) {
+                        return;
+                    }
+
+                    const form = event.target.closest('form');
+
+                    if (form) {
+                        syncProcedureReferenceOptions(form);
+                        syncDocumentNumberSuggestion(form);
                     }
                 });
             })();
