@@ -96,6 +96,12 @@ class Document extends Model
         return $this->hasMany(self::class, 'revised_from');
     }
 
+    public function obsoleteRevisions(): HasMany
+    {
+        return $this->hasMany(self::class, 'revised_from')
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::OBSOLETE));
+    }
+
     public function departments(): BelongsToMany
     {
         return $this->belongsToMany(

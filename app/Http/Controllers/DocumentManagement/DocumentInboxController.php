@@ -5,6 +5,7 @@ namespace App\Http\Controllers\DocumentManagement;
 use App\Http\Controllers\Controller;
 use App\Models\Approval;
 use App\Models\ApprovalStatus;
+use App\Models\Document;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -115,45 +116,76 @@ class DocumentInboxController extends Controller
 
     private function myTasks(Request $request): array
     {
-        return Approval::query()
-            ->with(['status', 'approver', 'document.documentType', 'document.creator', 'document.departments'])
-            ->where('user_id', $request->user()->id)
-            ->whereNull('responded_at')
-            ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::PENDING))
-            ->orderByDesc('assigned_at')
+        $approvalScope = $this->approvalScope($request, processed: false);
+
+        return Document::query()
+            ->with([
+                'documentType',
+                'creator',
+                'departments',
+                'approvals' => function ($query) use ($approvalScope): void {
+                    $approvalScope($query);
+                    $query->with(['status', 'approver'])->orderByDesc('assigned_at');
+                },
+            ])
+            ->whereHas('approvals', $approvalScope)
             ->get()
-            ->map(fn (Approval $approval): array => $this->approvalRow($approval))
+            ->map(fn (Document $document): array => $this->approvalRow($document, $document->approvals->first()))
             ->all();
     }
 
     private function myProcessedHistory(Request $request): array
     {
-        return Approval::query()
-            ->with(['status', 'approver', 'document.documentType', 'document.creator', 'document.departments'])
-            ->where('user_id', $request->user()->id)
-            ->whereNotNull('responded_at')
-            ->orderByDesc('responded_at')
+        $approvalScope = $this->approvalScope($request, processed: true);
+
+        return Document::query()
+            ->with([
+                'documentType',
+                'creator',
+                'departments',
+                'approvals' => function ($query) use ($approvalScope): void {
+                    $approvalScope($query);
+                    $query->with(['status', 'approver'])->orderByDesc('responded_at');
+                },
+            ])
+            ->whereHas('approvals', $approvalScope)
             ->get()
-            ->map(fn (Approval $approval): array => $this->approvalRow($approval))
+            ->map(fn (Document $document): array => $this->approvalRow($document, $document->approvals->first()))
             ->all();
     }
 
-    private function approvalRow(Approval $approval): array
+    private function approvalScope(Request $request, bool $processed): callable
     {
-        $document = $approval->document;
-        $assignedAt = $approval->assigned_at;
-        $respondedAt = $approval->responded_at;
-        $submittedAt = $document?->submitted_at ?? $document?->created_at;
-        $statusCode = $approval->status?->kode_status ?? $approval->status?->nama_status ?? '-';
+        return function ($query) use ($request, $processed) {
+            $query
+                ->when(! $request->user()->isDeveloper(), fn ($query) => $query->where('user_id', $request->user()->id))
+                ->when(
+                    $processed,
+                    fn ($query) => $query->whereNotNull('responded_at'),
+                    fn ($query) => $query
+                        ->whereNull('responded_at')
+                        ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::PENDING)),
+                );
+        };
+    }
+
+    private function approvalRow(Document $document, ?Approval $approval): array
+    {
+        $assignedAt = $approval?->assigned_at;
+        $respondedAt = $approval?->responded_at;
+        $submittedAt = $document->submitted_at ?? $document->created_at;
+        $statusCode = $approval?->status?->kode_status ?? $approval?->status?->nama_status ?? '-';
 
         return [
-            'number' => $document?->nomor_dokumen ?? '-',
-            'name' => $document?->nama_dokumen ?? '-',
-            'type' => $document?->documentType?->nama_types ?? '-',
-            'stage' => $approval->stages ?: 'Approval',
-            'waiting_for' => $approval->approver?->name ?? '-',
-            'owner' => $document?->creator?->name ?? '-',
-            'department' => $document?->departments
+            'id' => $document->id,
+            'detail_url' => route('documents.approval.show', $document),
+            'number' => $document->nomor_dokumen ?? '-',
+            'name' => $document->nama_dokumen ?? '-',
+            'type' => $document->documentType?->nama_types ?? '-',
+            'stage' => $approval?->stages ?: 'Approval',
+            'waiting_for' => $approval?->approver?->name ?? '-',
+            'owner' => $document->creator?->name ?? '-',
+            'department' => $document->departments
                 ->map(fn ($department) => $department->kode_department ?: $department->nama_department)
                 ->filter()
                 ->implode(', ') ?: '-',
@@ -163,7 +195,7 @@ class DocumentInboxController extends Controller
             'submitted_at_sort' => $submittedAt?->timestamp ?? 0,
             'updated_at' => $respondedAt?->translatedFormat('d M Y H:i') ?? '-',
             'updated_at_sort' => $respondedAt?->timestamp ?? 0,
-            'status' => $approval->status?->nama_status ?? $statusCode,
+            'status' => $approval?->status?->nama_status ?? $statusCode,
             'tone' => $this->approvalTone($statusCode),
             'action' => 'Proses',
         ];

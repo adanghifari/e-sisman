@@ -92,17 +92,9 @@
                                     </span>
                                 </td>
                                 <td class="px-5 py-4">
-                                    <details class="group">
-                                        <summary class="list-none rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                            Detail
-                                        </summary>
-                                        <div class="mt-2 w-64 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-sm">
-                                            <p class="font-semibold text-slate-800">{{ $document['name'] }}</p>
-                                            <p class="mt-2">Tahap: {{ $document['stage'] }}</p>
-                                            <p class="mt-1">Tindakan: {{ $document['action'] }}</p>
-                                            <p class="mt-1">Pengaju: {{ $document['owner'] }}</p>
-                                        </div>
-                                    </details>
+                                    <a href="{{ $document['detail_url'] }}" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
+                                        Detail
+                                    </a>
                                 </td>
                             </tr>
                         @empty
@@ -151,17 +143,9 @@
                                     <x-ui.status-badge :label="$document['status']" :tone="$document['tone']" />
                                 </td>
                                 <td class="px-5 py-4">
-                                    <details class="group">
-                                        <summary class="list-none rounded-md border border-slate-200 bg-white px-3 py-1.5 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                            Detail
-                                        </summary>
-                                        <div class="mt-2 w-64 rounded-lg border border-slate-200 bg-white p-3 text-xs text-slate-600 shadow-sm">
-                                            <p class="font-semibold text-slate-800">{{ $document['name'] }}</p>
-                                            <p class="mt-2">Diajukan: {{ $document['submitted_at'] }}</p>
-                                            <p class="mt-1">Tahap: {{ $document['stage'] }}</p>
-                                            <p class="mt-1">Diproses: {{ $document['updated_at'] }}</p>
-                                        </div>
-                                    </details>
+                                    <a href="{{ $document['detail_url'] }}" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
+                                        Detail
+                                    </a>
                                 </td>
                             </tr>
                         @empty
