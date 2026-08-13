@@ -34,13 +34,23 @@ class DocumentController extends Controller
             $validated['submit_action'] = 'draft';
         }
 
+        $documentNumber = $this->buildDocumentNumber($documentLevel, $validated);
+
+        if ($documentNumber !== null && Document::query()->where('nomor_dokumen', $documentNumber)->exists()) {
+            return back()
+                ->withInput()
+                ->withErrors([
+                    'nomor_dokumen_suffix' => 'Nomor dokumen sudah digunakan.',
+                ]);
+        }
+
         $status = StatusDocument::findByName(
             $validated['submit_action'] === 'submit'
                 ? StatusDocument::PROPOSED
                 : StatusDocument::DRAFT,
         );
 
-        DB::transaction(function () use ($request, $validated, $documentLevel, $documentType, $status, $level): void {
+        DB::transaction(function () use ($request, $validated, $documentNumber, $documentLevel, $documentType, $status, $level): void {
             $document = Document::create([
                 'm_document_level_id' => $documentLevel->id,
                 'm_status_document_id' => $status->id,
@@ -51,7 +61,7 @@ class DocumentController extends Controller
                 'official_preparer_id' => $validated['official_preparer_id'] ?? null,
                 'reference' => $level === 'level-3' ? $validated['reference'] : null,
                 'nama_dokumen' => $validated['nama_dokumen'],
-                'nomor_dokumen' => $this->buildDocumentNumber($documentLevel, $validated),
+                'nomor_dokumen' => $documentNumber,
                 'nomor_revisi' => $this->normalizeRevision($validated['nomor_revisi'] ?? null),
                 'catatan_revisi' => $validated['catatan_revisi'] ?? null,
                 'tanggal_terbit' => $validated['tanggal_terbit'] ?? null,

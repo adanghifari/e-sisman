@@ -38,11 +38,30 @@
             : null;
         $procedureReferences = ($levelKey === 'level-3' && $procedureLevelId && $approvedStatusId)
             ? \App\Models\Document::query()
+                ->select([
+                    'id',
+                    'nomor_dokumen',
+                    'nama_dokumen',
+                    'm_proses_bisnis_id',
+                    'm_proses_fungsi_id',
+                ])
                 ->where('m_document_level_id', $procedureLevelId)
                 ->where('m_status_document_id', $approvedStatusId)
                 ->orderBy('nomor_dokumen')
                 ->get()
             : collect();
+        $documentNumberSuggestions = ($documentLevelRecord && in_array($levelKey, ['level-2', 'level-3'], true))
+            ? \App\Models\Document::query()
+                ->select(['m_proses_bisnis_id', 'm_proses_fungsi_id', 'nomor_revisi', 'nomor_dokumen'])
+                ->where('m_document_level_id', $documentLevelRecord->id)
+                ->whereNull('revised_from')
+                ->where('nomor_revisi', 0)
+                ->whereNotNull('nomor_dokumen')
+                ->get()
+                ->groupBy(fn ($document) => $document->m_proses_bisnis_id.'-'.$document->m_proses_fungsi_id)
+                ->map(fn ($documents) => str_pad((string) ($documents->count() + 1), 2, '0', STR_PAD_LEFT))
+                ->all()
+            : [];
         $departmentOptions = $departments
             ->map(fn ($department) => [
                 'value' => $department->id,
@@ -392,6 +411,8 @@
     @once
         <script>
             (() => {
+                const documentNumberSuggestions = @json($documentNumberSuggestions);
+
                 document.addEventListener('click', (event) => {
                     const button = event.target.closest('[data-document-upload-trigger]');
 
@@ -494,7 +515,41 @@
                     }
                 };
 
-                document.querySelectorAll('form').forEach(syncProcedureReferenceOptions);
+                const syncDocumentNumberSuggestion = (form) => {
+                    const processSelect = form.querySelector('select[name="m_proses_bisnis_id"]');
+                    const functionSelect = form.querySelector('select[name="m_proses_fungsi_id"]');
+                    const suffixInput = form.querySelector('input[name="nomor_dokumen_suffix"]');
+
+                    if (!processSelect || !functionSelect || !suffixInput) {
+                        return;
+                    }
+
+                    if (suffixInput.dataset.userEdited === 'true') {
+                        return;
+                    }
+
+                    const processId = processSelect.value;
+                    const functionId = functionSelect.value;
+
+                    if (processId === '' || functionId === '') {
+                        return;
+                    }
+
+                    suffixInput.value = documentNumberSuggestions[`${processId}-${functionId}`] ?? '01';
+                };
+
+                document.querySelectorAll('form').forEach((form) => {
+                    syncProcedureReferenceOptions(form);
+                    syncDocumentNumberSuggestion(form);
+                });
+
+                document.addEventListener('input', (event) => {
+                    const suffixInput = event.target.closest('input[name="nomor_dokumen_suffix"]');
+
+                    if (suffixInput) {
+                        suffixInput.dataset.userEdited = 'true';
+                    }
+                });
 
                 document.addEventListener('change', (event) => {
                     if (!event.target.closest('select[name="m_proses_bisnis_id"], select[name="m_proses_fungsi_id"]')) {
@@ -505,6 +560,7 @@
 
                     if (form) {
                         syncProcedureReferenceOptions(form);
+                        syncDocumentNumberSuggestion(form);
                     }
                 });
             })();

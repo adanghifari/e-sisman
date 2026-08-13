@@ -315,6 +315,55 @@ class CreateDocumentTest extends TestCase
             ->assertSessionHasErrors(['reference']);
     }
 
+    public function test_document_number_must_be_unique(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'QA',
+            'nama_proses_fungsi' => 'Quality Assurance',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $draftStatus = StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        $documentType = DocumentType::create(['nama_types' => 'Prosedur']);
+        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+
+        Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $draftStatus->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Prosedur Lama',
+            'nomor_dokumen' => 'PS-SMR-001',
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('documents.create.level', 'level-2'))
+            ->post(route('documents.store', 'level-2'), [
+                'nama_dokumen' => 'Prosedur Baru',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'nomor_dokumen_suffix' => '001',
+                'filled_template' => UploadedFile::fake()->create('template.docx', 24),
+                'submit_action' => 'draft',
+            ])
+            ->assertRedirect(route('documents.create.level', 'level-2'))
+            ->assertSessionHasErrors(['nomor_dokumen_suffix']);
+    }
+
     public function test_template_upload_must_be_word_document(): void
     {
         Storage::fake('local');
