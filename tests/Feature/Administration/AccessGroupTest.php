@@ -112,23 +112,24 @@ class AccessGroupTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_seeded_administrator_identity_bypasses_group_permissions(): void
+    public function test_seeded_developer_identity_bypasses_group_permissions(): void
     {
         $this->seed(PermissionSeeder::class);
 
-        $admin = User::factory()->create([
+        $developer = User::factory()->create([
             'nik' => '000000',
-            'name' => 'Administrator',
-            'email' => 'administrator@example.com',
+            'name' => 'Developer',
+            'email' => 'developer@example.com',
         ]);
         $role = Role::create(['nama_role' => 'No Access']);
 
-        $role->users()->sync([$admin->id]);
+        $role->users()->sync([$developer->id]);
 
-        $this->assertTrue($admin->fresh()->isAdmin());
-        $this->assertTrue($admin->fresh()->hasPermission('reports.view'));
+        $this->assertTrue($developer->fresh()->isDeveloper());
+        $this->assertTrue($developer->fresh()->isAdmin());
+        $this->assertTrue($developer->fresh()->hasPermission('reports.view'));
 
-        $this->actingAs($admin->fresh())
+        $this->actingAs($developer->fresh())
             ->get(route('reports.index'))
             ->assertOk();
     }

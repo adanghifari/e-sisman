@@ -91,13 +91,18 @@ class User extends Authenticatable implements PasskeyUser
 
     public function isAdmin(): bool
     {
-        if ($this->nik === '000000' || $this->email === 'administrator@example.com') {
+        if ($this->isDeveloper()) {
             return true;
         }
 
         return $this->roles()
             ->whereIn('nama_role', ['admin', 'administrator', 'super admin'])
             ->exists();
+    }
+
+    public function isDeveloper(): bool
+    {
+        return $this->nik === '000000' || $this->email === 'developer@example.com';
     }
 
     public function hasPermission(string $permissionCode): bool

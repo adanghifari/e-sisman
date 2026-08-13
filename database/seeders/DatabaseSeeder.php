@@ -36,8 +36,8 @@ class DatabaseSeeder extends Seeder
             ['nik' => '000000'],
             [
                 'm_department_id' => $departmentId,
-                'name' => 'Administrator',
-                'email' => 'administrator@example.com',
+                'name' => 'Developer',
+                'email' => 'developer@example.com',
                 'password' => 'Password123!',
             ],
         );
