@@ -27,6 +27,8 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $email_verified_at
  * @property string $password
  * @property string|null $jabatan
+ * @property string|null $no_whatsapp
+ * @property bool $is_active
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
@@ -34,7 +36,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['m_department_id', 'nik', 'name', 'email', 'password', 'jabatan'])]
+#[Fillable(['m_department_id', 'nik', 'name', 'email', 'password', 'jabatan', 'no_whatsapp', 'is_active'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
 {
@@ -50,6 +52,7 @@ class User extends Authenticatable implements PasskeyUser
     {
         return [
             'email_verified_at' => 'datetime',
+            'is_active' => 'boolean',
             'password' => 'hashed',
         ];
     }
@@ -121,7 +124,7 @@ class User extends Authenticatable implements PasskeyUser
     }
 
     /**
-     * @param array<int, string> $permissionCodes
+     * @param  array<int, string>  $permissionCodes
      */
     public function hasAnyPermission(array $permissionCodes): bool
     {

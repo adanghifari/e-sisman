@@ -80,15 +80,17 @@
                             {{ $user->no_whatsapp ?: '-' }}
                         </td>
                         <td class="px-5 py-4">
-                            <x-ui.status-badge label="Active" tone="sky" />
+                            <x-ui.status-badge
+                                :label="$user->is_active ? 'Active' : 'Inactive'"
+                                :tone="$user->is_active ? 'sky' : 'slate'"
+                            />
                         </td>
                         <td class="px-5 py-4">
                             <x-ui.icon-button
                                 icon="pencil"
                                 label="Edit user"
                                 size="sm"
-                                disabled
-                                class="opacity-60"
+                                wire:click="edit({{ $user->id }})"
                             />
                         </td>
                     </tr>
@@ -106,4 +108,63 @@
             {{ $users->links() }}
         </div>
     </x-ui.panel>
+
+    @if ($showForm)
+        <x-ui.modal
+            title="Edit User"
+            description="Atur role, department, kontak, dan status user."
+            close-action="cancel"
+            max-width="xl"
+        >
+            <form wire:submit="save" class="space-y-5 px-6 py-5">
+                <div class="grid gap-4 md:grid-cols-2">
+                    <x-ui.select
+                        label="Role"
+                        name="role_id"
+                        wire:model="role_id"
+                        :options="$roleOptions"
+                    />
+
+                    <x-ui.select
+                        label="Department"
+                        name="m_department_id"
+                        wire:model="m_department_id"
+                        :options="$departmentOptions"
+                    />
+
+                    <x-ui.form-input
+                        label="Jabatan"
+                        name="jabatan"
+                        wire:model="jabatan"
+                        placeholder="Jabatan user"
+                    />
+
+                    <x-ui.form-input
+                        label="No. Whatsapp"
+                        name="no_whatsapp"
+                        wire:model="no_whatsapp"
+                        placeholder="Contoh: 628123456789"
+                    />
+                </div>
+
+                <x-ui.status-toggle
+                    :active="$is_active"
+                    name="is_active"
+                    wire:model.live="is_active"
+                    active-description="User aktif dan dapat memakai akses sesuai role."
+                    inactive-description="User nonaktif tidak ditampilkan sebagai user aktif."
+                />
+
+                <div class="flex justify-end gap-2 border-t border-slate-100 pt-5">
+                    <x-ui.action-button type="button" variant="secondary" wire:click="cancel">
+                        Batal
+                    </x-ui.action-button>
+
+                    <x-ui.action-button type="submit">
+                        Simpan
+                    </x-ui.action-button>
+                </div>
+            </form>
+        </x-ui.modal>
+    @endif
 </div>

@@ -7,6 +7,7 @@ use App\Models\Role;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Validation\Rule;
 use Livewire\Attributes\Title;
 use Livewire\Component;
 use Livewire\WithPagination;
@@ -25,6 +26,20 @@ class Index extends Component
     public string $status = '';
 
     public int $perPage = 10;
+
+    public bool $showForm = false;
+
+    public ?int $editingId = null;
+
+    public string $m_department_id = '';
+
+    public string $role_id = '';
+
+    public string $jabatan = '';
+
+    public string $no_whatsapp = '';
+
+    public bool $is_active = true;
 
     public function updatingSearch(): void
     {
@@ -65,8 +80,68 @@ class Index extends Component
             ->when($this->department !== '', function ($query): void {
                 $query->where('m_department_id', $this->department);
             })
+            ->when($this->status !== '', function ($query): void {
+                $query->where('is_active', $this->status === 'active');
+            })
             ->orderBy('name')
             ->paginate($this->perPage);
+    }
+
+    public function edit(int $id): void
+    {
+        $user = User::query()
+            ->with('roles:id')
+            ->findOrFail($id);
+
+        $this->showForm = true;
+        $this->editingId = $user->id;
+        $this->m_department_id = (string) ($user->m_department_id ?? '');
+        $this->role_id = (string) ($user->roles->first()?->id ?? '');
+        $this->jabatan = $user->jabatan ?? '';
+        $this->no_whatsapp = $user->no_whatsapp ?? '';
+        $this->is_active = $user->is_active;
+    }
+
+    public function save(): void
+    {
+        $validated = $this->validate([
+            'm_department_id' => ['nullable', 'integer', Rule::exists('departments', 'id')],
+            'role_id' => ['nullable', 'integer', Rule::exists('roles', 'id')],
+            'jabatan' => ['nullable', 'string', 'max:255'],
+            'no_whatsapp' => ['nullable', 'string', 'max:30'],
+            'is_active' => ['boolean'],
+        ]);
+
+        $user = User::findOrFail($this->editingId);
+
+        $user->update([
+            'm_department_id' => $validated['m_department_id'] !== '' ? $validated['m_department_id'] : null,
+            'jabatan' => filled($validated['jabatan']) ? trim($validated['jabatan']) : null,
+            'no_whatsapp' => filled($validated['no_whatsapp']) ? trim($validated['no_whatsapp']) : null,
+            'is_active' => $validated['is_active'],
+        ]);
+
+        $validated['role_id'] !== ''
+            ? $user->roles()->sync([(int) $validated['role_id']])
+            : $user->roles()->detach();
+
+        $this->cancel();
+        $this->resetPage();
+    }
+
+    public function cancel(): void
+    {
+        $this->reset([
+            'showForm',
+            'editingId',
+            'm_department_id',
+            'role_id',
+            'jabatan',
+            'no_whatsapp',
+            'is_active',
+        ]);
+
+        $this->is_active = true;
     }
 
     public function getRoleOptionsProperty(): array
@@ -94,6 +169,7 @@ class Index extends Component
             'statusOptions' => [
                 '' => 'Semua Status',
                 'active' => 'Active',
+                'inactive' => 'Inactive',
             ],
         ]);
     }
