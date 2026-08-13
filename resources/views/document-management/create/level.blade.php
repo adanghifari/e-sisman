@@ -103,8 +103,8 @@
                             <x-ui.file-upload
                                 label="Import Dokumen"
                                 name="imported_document"
-                                accept=".pdf,.doc,.docx"
-                                hint="Format PDF, DOC, atau DOCX."
+                                accept=".pdf,application/pdf"
+                                hint="Format PDF."
                                 :max-files="1"
                                 :max-file-size-kb="10240"
                                 required
@@ -267,8 +267,8 @@
                                 <x-ui.file-upload
                                     label="Upload Template Terisi"
                                     name="filled_template"
-                                    accept=".doc,.docx"
-                                    hint="Format DOC atau DOCX."
+                                    accept=".pdf,application/pdf"
+                                    hint="Format PDF."
                                     :max-files="1"
                                     :max-file-size-kb="10240"
                                     required
@@ -287,8 +287,8 @@
                                 <x-ui.file-upload
                                     label="Upload Lampiran"
                                     name="attachments[]"
-                                    accept=".pdf,.doc,.docx"
-                                    hint="Bisa lebih dari satu file. Format PDF, DOC, atau DOCX."
+                                    accept=".pdf,application/pdf"
+                                    hint="Bisa lebih dari satu file. Format PDF."
                                     multiple
                                     :max-files="10"
                                     :max-file-size-kb="10240"

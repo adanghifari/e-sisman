@@ -8,12 +8,14 @@ use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
 use App\Models\Department;
 use App\Models\Document;
+use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
 use App\Models\Role;
 use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class DocumentInboxTest extends TestCase
@@ -63,6 +65,28 @@ class DocumentInboxTest extends TestCase
             ->assertDontSee('PS-SMR-456');
     }
 
+    public function test_developer_can_see_pending_approvals_for_all_users(): void
+    {
+        $developer = User::factory()->create([
+            'nik' => '000000',
+            'name' => 'Developer',
+            'email' => 'developer@example.com',
+        ]);
+        $otherApprover = User::factory()->create(['name' => 'Approver Lain']);
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Terlihat Developer',
+            'nomor_dokumen' => 'PS-SMR-DEV',
+        ]);
+        $this->createApproval($document, $otherApprover, ApprovalStatus::PENDING);
+
+        $this->actingAs($developer)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee('Dokumen Terlihat Developer')
+            ->assertSee('PS-SMR-DEV');
+    }
+
     public function test_responded_approval_for_login_user_is_shown_in_processed_history_tab(): void
     {
         $approver = User::factory()->create(['name' => 'Approver Login']);
@@ -85,6 +109,100 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Review Kadis')
             ->assertSee('APPROVED')
             ->assertSee('Pengaju Riwayat');
+    }
+
+    public function test_developer_can_see_processed_history_for_all_users(): void
+    {
+        $developer = User::factory()->create([
+            'nik' => '000000',
+            'name' => 'Developer',
+            'email' => 'developer@example.com',
+        ]);
+        $otherApprover = User::factory()->create(['name' => 'Approver Riwayat Lain']);
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Riwayat Terlihat Developer',
+            'nomor_dokumen' => 'IK-SMR-DEV',
+        ]);
+        $this->createApproval($document, $otherApprover, ApprovalStatus::APPROVED, [
+            'responded_at' => now(),
+        ]);
+
+        $this->actingAs($developer)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Riwayat Terlihat Developer')
+            ->assertSee('IK-SMR-DEV');
+    }
+
+    public function test_approval_detail_page_shows_readonly_document_and_actions(): void
+    {
+        Storage::fake('local');
+
+        $approver = User::factory()->create(['name' => 'Approver Detail']);
+        $submitter = User::factory()->create(['name' => 'Pengaju Detail']);
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Detail Approval',
+            'nomor_dokumen' => 'PS-SMR-DETAIL',
+        ]);
+        $this->createApproval($document, $approver, ApprovalStatus::PENDING, [
+            'stages' => 'Review Detail',
+        ]);
+
+        Storage::disk('local')->put("documents/{$document->id}/isi.pdf", '%PDF-1.4');
+        DocumentFile::create([
+            't_document_id' => $document->id,
+            'type_file' => 'filled_template',
+            'path_file' => "documents/{$document->id}/isi.pdf",
+            'uploaded_by' => $submitter->id,
+            'updated_at' => now(),
+            'original_file_name' => 'isi.pdf',
+            'stored_file_name' => 'isi.pdf',
+            'file_size' => 24,
+        ]);
+
+        $this->actingAs($approver)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee(route('documents.approval.show', $document));
+
+        $this->actingAs($approver)
+            ->get(route('documents.approval.show', $document))
+            ->assertOk()
+            ->assertSee('Detail Dokumen Level II')
+            ->assertSee('Dokumen Detail Approval')
+            ->assertSee('PS-SMR-DETAIL')
+            ->assertSee('Isi Dokumen')
+            ->assertSee('Lampiran')
+            ->assertSee('Approve')
+            ->assertSee('Tolak')
+            ->assertSee('Assign Approver');
+    }
+
+    public function test_pdf_preview_is_served_without_conversion(): void
+    {
+        Storage::fake('local');
+
+        $approver = User::factory()->create();
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter);
+        $this->createApproval($document, $approver, ApprovalStatus::PENDING);
+
+        Storage::disk('local')->put("documents/{$document->id}/isi.pdf", '%PDF-1.4');
+        $file = DocumentFile::create([
+            't_document_id' => $document->id,
+            'type_file' => 'filled_template',
+            'path_file' => "documents/{$document->id}/isi.pdf",
+            'uploaded_by' => $submitter->id,
+            'updated_at' => now(),
+            'original_file_name' => 'isi.pdf',
+            'stored_file_name' => 'isi.pdf',
+            'file_size' => 24,
+        ]);
+
+        $this->actingAs($approver)
+            ->get(route('documents.approval.files.preview', [$document, $file]))
+            ->assertOk();
     }
 
     private function createDocument(User $user, array $attributes = []): Document
