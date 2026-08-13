@@ -91,12 +91,60 @@ class User extends Authenticatable implements PasskeyUser
 
     public function isAdmin(): bool
     {
-        if ($this->email === 'test@example.com') {
+        if ($this->nik === '000000' || $this->email === 'administrator@example.com') {
             return true;
         }
 
         return $this->roles()
             ->whereIn('nama_role', ['admin', 'administrator', 'super admin'])
+            ->exists();
+    }
+
+    public function hasPermission(string $permissionCode): bool
+    {
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        if (! Role::query()->exists() || ! $this->roles()->exists()) {
+            return true;
+        }
+
+        return $this->roles()
+            ->whereHas('permissions', fn ($query) => $query->where('code', $permissionCode))
+            ->exists();
+    }
+
+    /**
+     * @param array<int, string> $permissionCodes
+     */
+    public function hasAnyPermission(array $permissionCodes): bool
+    {
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        if (! Role::query()->exists() || ! $this->roles()->exists()) {
+            return true;
+        }
+
+        return $this->roles()
+            ->whereHas('permissions', fn ($query) => $query->whereIn('code', $permissionCodes))
+            ->exists();
+    }
+
+    public function canAccessRoute(?string $route): bool
+    {
+        if ($route === null || $this->isAdmin()) {
+            return true;
+        }
+
+        if (! Role::query()->exists() || ! $this->roles()->exists()) {
+            return true;
+        }
+
+        return $this->roles()
+            ->whereHas('permissions', fn ($query) => $query->where('route', $route))
             ->exists();
     }
 

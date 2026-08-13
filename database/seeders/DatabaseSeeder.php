@@ -21,6 +21,7 @@ class DatabaseSeeder extends Seeder
             ApprovalStatusSeeder::class,
             DocumentLevelSeeder::class,
             DocumentTypeSeeder::class,
+            PermissionSeeder::class,
         ]);
 
         DB::table('departments')->updateOrInsert([
@@ -35,8 +36,8 @@ class DatabaseSeeder extends Seeder
             ['nik' => '000000'],
             [
                 'm_department_id' => $departmentId,
-                'name' => 'Test User',
-                'email' => 'test@example.com',
+                'name' => 'Administrator',
+                'email' => 'administrator@example.com',
                 'password' => 'Password123!',
             ],
         );
