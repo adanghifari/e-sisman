@@ -5,14 +5,22 @@ use App\Livewire\MasterData\BusinessFunction\Index as BusinessFunctionIndex;
 use App\Livewire\MasterData\BusinessProcess\Index as BusinessProcessIndex;
 use App\Livewire\MasterData\Department\Index as DepartmentIndex;
 use App\Livewire\MasterData\DocumentType\Index as DocumentTypeIndex;
+use App\Http\Controllers\DocumentManagement\DocumentController;
+use App\Http\Controllers\DocumentManagement\DocumentInboxController;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
 
 Route::middleware(['auth', 'verified'])->group(function () {
     Route::view('dashboard', 'main.dashboard')->name('dashboard');
-    Route::view('documents/inbox', 'document-management.inbox')->name('documents.inbox');
-    Route::view('documents/create', 'document-management.create')->name('documents.create');
+    Route::get('documents/inbox', DocumentInboxController::class)->name('documents.inbox');
+    Route::view('documents/create', 'document-management.create.index')->name('documents.create');
+    Route::view('documents/create/{level}', 'document-management.create.level')
+        ->whereIn('level', array_keys(config('document-levels')))
+        ->name('documents.create.level');
+    Route::post('documents/create/{level}', [DocumentController::class, 'store'])
+        ->whereIn('level', array_keys(config('document-levels')))
+        ->name('documents.store');
     Route::view('documents/master', 'document-management.master')->name('documents.master');
     Route::view('document-templates', 'document-management.templates.index')->name('document-templates.index');
     Route::view('reports', 'reporting.index')->name('reports.index');

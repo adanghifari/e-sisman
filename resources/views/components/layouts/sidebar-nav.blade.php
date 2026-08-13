@@ -10,11 +10,12 @@
         <div class="mt-2 space-y-1">
             @foreach ($items as $item)
                 @php
+                    $isRouteActive = fn (string $route) => request()->routeIs($route, "{$route}.*");
                     $children = $item['children'] ?? [];
                     $hasChildren = count($children) > 0;
                     $active = $hasChildren
-                        ? collect($children)->contains(fn ($child) => request()->routeIs($child['route']))
-                        : request()->routeIs($item['route']);
+                        ? collect($children)->contains(fn ($child) => $isRouteActive($child['route']))
+                        : $isRouteActive($item['route']);
                 @endphp
 
                 @if ($hasChildren)
@@ -28,7 +29,7 @@
                         <div class="space-y-1 pb-1 pl-8 pr-2">
                             @foreach ($children as $child)
                                 @php
-                                    $childActive = request()->routeIs($child['route']);
+                                    $childActive = $isRouteActive($child['route']);
                                 @endphp
 
                                 <a

@@ -10,10 +10,12 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
     'm_status_document_id',
+    'm_document_level_id',
     'm_document_types_id',
     'm_proses_bisnis_id',
     'm_proses_fungsi_id',
     'user_id',
+    'official_preparer_id',
     'reference',
     'nama_dokumen',
     'nomor_dokumen',
@@ -48,6 +50,11 @@ class Document extends Model
         return $this->belongsTo(StatusDocument::class, 'm_status_document_id');
     }
 
+    public function documentLevel(): BelongsTo
+    {
+        return $this->belongsTo(DocumentLevel::class, 'm_document_level_id');
+    }
+
     public function documentType(): BelongsTo
     {
         return $this->belongsTo(DocumentType::class, 'm_document_types_id');
@@ -66,6 +73,11 @@ class Document extends Model
     public function creator(): BelongsTo
     {
         return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function officialPreparer(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'official_preparer_id');
     }
 
     public function referenceDocument(): BelongsTo

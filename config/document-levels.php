@@ -17,7 +17,7 @@ return [
     ],
     'level-3' => [
         'badge' => 'Level III',
-        'name' => 'Dokumen Level III : Instruksi Kerja (Internal dan Lintas Department)',
+        'name' => 'Dokumen Level III : Instruksi Kerja',
         'create_description' => 'Dokumen yang menguraikan secara rinci tahapan teknis dalam pelaksanaan suatu kegiatan yang tertuang didalam dokumen level II dan tidak hanya garis besar saja namun menjelaskan instruksi pekerjaan dari awal sampai akhir.',
         'approval_description' => 'Instruksi kerja teknis untuk pelaksanaan kegiatan internal departemen maupun lintas department.',
         'default_stages' => ['Dibuat oleh', 'Diperiksa oleh', 'Disetujui oleh'],

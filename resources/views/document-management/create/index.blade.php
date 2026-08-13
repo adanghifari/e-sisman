@@ -7,11 +7,12 @@
         <x-ui.page-header title="Tambah Dokumen" />
 
         <div class="mx-auto grid w-full max-w-4xl gap-5">
-            @foreach ($documentLevels as $level)
+            @foreach ($documentLevels as $levelKey => $level)
                 <x-documents.level-card
                     :level="$level['badge']"
                     :title="$level['name']"
                     :description="$level['create_description']"
+                    :href="route('documents.create.level', $levelKey)"
                 />
             @endforeach
         </div>

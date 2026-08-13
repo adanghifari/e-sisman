@@ -7,14 +7,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
-#[Fillable(['m_document_types_id', 'nama_flow'])]
+#[Fillable(['m_document_level_id', 'nama_flow'])]
 class ApprovalFlow extends Model
 {
     protected $table = 'm_approval_flows';
 
-    public function documentType(): BelongsTo
+    public function documentLevel(): BelongsTo
     {
-        return $this->belongsTo(DocumentType::class, 'm_document_types_id');
+        return $this->belongsTo(DocumentLevel::class, 'm_document_level_id');
     }
 
     public function stages(): HasMany
