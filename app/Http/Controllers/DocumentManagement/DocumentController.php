@@ -3,12 +3,17 @@
 namespace App\Http\Controllers\DocumentManagement;
 
 use App\Http\Controllers\Controller;
+use App\Models\Approval;
+use App\Models\ApprovalFlow;
+use App\Models\ApprovalStatus;
 use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
 use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
+use App\Models\Role;
 use App\Models\StatusDocument;
+use App\Models\User;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
@@ -82,6 +87,9 @@ class DocumentController extends Controller
                 $this->storeDocumentFile($document, $attachment, 'attachment', $request->user()->id);
             }
 
+            if ($validated['submit_action'] === 'submit') {
+                $this->createInitialApproval($document, $request->user()->id);
+            }
         });
 
         if ($validated['submit_action'] === 'submit') {
@@ -116,7 +124,7 @@ class DocumentController extends Controller
                 'nomor_revisi' => ['nullable', 'string', 'max:20'],
                 'tanggal_terbit' => ['nullable', 'date'],
                 'catatan_revisi' => ['nullable', 'string', 'max:1000'],
-                'imported_document' => ['required', 'file', 'mimes:pdf,doc,docx', 'max:10240'],
+                'imported_document' => ['required', 'file', 'mimes:pdf', 'max:10240'],
             ];
         }
 
@@ -129,9 +137,9 @@ class DocumentController extends Controller
             'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
             'official_preparer_id' => ['required', 'integer', Rule::exists('users', 'id')],
             'nomor_dokumen_suffix' => ['required', 'string', 'max:50'],
-            'filled_template' => ['required', 'file', 'mimes:doc,docx', 'max:10240'],
+            'filled_template' => ['required', 'file', 'mimes:pdf', 'max:10240'],
             'attachments' => ['nullable', 'array', 'max:10'],
-            'attachments.*' => ['file', 'mimes:pdf,doc,docx', 'max:10240'],
+            'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
             'submit_action' => ['required', Rule::in(['draft', 'submit'])],
         ];
     }
@@ -224,5 +232,45 @@ class DocumentController extends Controller
             'stored_file_name' => basename($path),
             'file_size' => $file->getSize(),
         ]);
+    }
+
+    protected function createInitialApproval(Document $document, int $submittedBy): void
+    {
+        $approver = User::query()->find($document->official_preparer_id) ?? User::query()->find($submittedBy);
+
+        if (! $approver) {
+            return;
+        }
+
+        $stage = ApprovalFlow::query()
+            ->where('m_document_level_id', $document->m_document_level_id)
+            ->with('stages')
+            ->first()
+            ?->stages
+            ->first();
+
+        $role = Role::query()->firstOrCreate([
+            'nama_role' => $stage?->nama_tahap ?: 'Approver',
+        ]);
+
+        $pendingStatus = ApprovalStatus::query()
+            ->where('kode_status', ApprovalStatus::PENDING)
+            ->firstOrFail();
+
+        Approval::query()->updateOrCreate(
+            [
+                't_document_id' => $document->id,
+                'user_id' => $approver->id,
+                'role_id' => $role->id,
+            ],
+            [
+                'm_approval_status_id' => $pendingStatus->id,
+                'assigned_by' => $submittedBy,
+                'assigned_at' => now(),
+                'responded_at' => null,
+                'created_at' => now(),
+                'stages' => $stage?->display_label ?: 'Approval',
+            ],
+        );
     }
 }

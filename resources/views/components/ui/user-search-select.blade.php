@@ -2,6 +2,7 @@
     'name',
     'users',
     'placeholder' => 'Pilih user',
+    'selectedUser' => null,
 ])
 
 @php
@@ -16,6 +17,7 @@
     <input
         type="hidden"
         name="{{ $name }}"
+        value="{{ $selectedUser?->id }}"
         data-user-search-value
         {{ $attributes->has('required') ? 'required' : '' }}
         {{ $wireAttributes }}
@@ -27,12 +29,18 @@
         data-user-search-trigger
         aria-expanded="false"
     >
-        <span class="grid size-8 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-500 ring-1 ring-slate-200" data-user-search-initials>
-            ?
+        <span @class([
+            'grid size-8 shrink-0 place-items-center rounded-full text-xs font-bold ring-1',
+            'bg-sky-50 text-sky-700 ring-sky-100' => $selectedUser,
+            'bg-slate-100 text-slate-500 ring-slate-200' => ! $selectedUser,
+        ]) data-user-search-initials>
+            {{ $selectedUser?->initials() ?? '?' }}
         </span>
         <span class="min-w-0 flex-1">
-            <span class="block truncate font-semibold" data-user-search-name>{{ $placeholder }}</span>
-            <span class="hidden truncate text-xs text-slate-500" data-user-search-meta></span>
+            <span class="block truncate font-semibold" data-user-search-name>{{ $selectedUser?->name ?? $placeholder }}</span>
+            <span @class(['truncate text-xs text-slate-500', 'hidden' => ! $selectedUser]) data-user-search-meta>
+                {{ $selectedUser ? ($selectedUser->jabatan ?: $selectedUser->email) : '' }}
+            </span>
         </span>
         <flux:icon name="chevron-down" class="size-5 shrink-0 text-slate-400" />
     </button>
