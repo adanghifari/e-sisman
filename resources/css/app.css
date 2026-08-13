@@ -223,6 +223,14 @@ select option:disabled {
         height: 2.5rem;
         font-size: 1rem;
     }
+
+    .app-modal-overlay {
+        padding-left: calc(280px + 1rem);
+    }
+
+    .app-shell.is-sidebar-collapsed .app-modal-overlay {
+        padding-left: calc(88px + 1rem);
+    }
 }
 
 /* \[:where(&)\]:size-4 {

@@ -6,28 +6,18 @@ use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 
-#[Fillable(['nama_role'])]
-class Role extends Model
+#[Fillable(['code', 'name', 'module', 'route', 'action'])]
+class Permission extends Model
 {
     public $timestamps = false;
 
-    public function permissions(): BelongsToMany
+    public function roles(): BelongsToMany
     {
         return $this->belongsToMany(
-            Permission::class,
+            Role::class,
             'role_permissions',
-            'role_id',
             'permission_id',
-        );
-    }
-
-    public function users(): BelongsToMany
-    {
-        return $this->belongsToMany(
-            User::class,
-            'user_roles',
             'role_id',
-            'user_id',
         );
     }
 }

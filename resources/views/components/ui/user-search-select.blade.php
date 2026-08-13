@@ -4,11 +4,22 @@
     'placeholder' => 'Pilih user',
 ])
 
+@php
+    $rootAttributes = $attributes->whereDoesntStartWith('wire:')->except('required');
+    $wireAttributes = $attributes->whereStartsWith('wire:');
+@endphp
+
 <div
-    {{ $attributes->class(['relative']) }}
+    {{ $rootAttributes->class(['relative']) }}
     data-user-search-select
 >
-    <input type="hidden" name="{{ $name }}" data-user-search-value {{ $attributes->has('required') ? 'required' : '' }}>
+    <input
+        type="hidden"
+        name="{{ $name }}"
+        data-user-search-value
+        {{ $attributes->has('required') ? 'required' : '' }}
+        {{ $wireAttributes }}
+    >
 
     <button
         type="button"
@@ -36,7 +47,7 @@
             >
         </div>
 
-        <div class="max-h-72 overflow-y-auto py-1 app-scrollbar" data-user-search-options>
+        <div class="max-h-80 overflow-y-auto py-1 app-scrollbar" data-user-search-options>
             @foreach ($users as $user)
                 <button
                     type="button"
@@ -66,142 +77,3 @@
         </div>
     </div>
 </div>
-
-@once
-    <script>
-        (() => {
-            const closeUserSearchSelect = (root) => {
-                const trigger = root.querySelector('[data-user-search-trigger]');
-                const panel = root.querySelector('[data-user-search-panel]');
-
-                panel?.classList.add('hidden');
-                trigger?.setAttribute('aria-expanded', 'false');
-            };
-
-            const openUserSearchSelect = (root) => {
-                const trigger = root.querySelector('[data-user-search-trigger]');
-                const panel = root.querySelector('[data-user-search-panel]');
-                const input = root.querySelector('[data-user-search-input]');
-
-                document.querySelectorAll('[data-user-search-select]').forEach((picker) => {
-                    if (picker !== root) {
-                        closeUserSearchSelect(picker);
-                    }
-                });
-
-                panel?.classList.remove('hidden');
-                trigger?.setAttribute('aria-expanded', 'true');
-                input?.focus();
-                input?.select();
-            };
-
-            window.clearUserSearchSelect = (root) => {
-                if (!root) {
-                    return;
-                }
-
-                const value = root.querySelector('[data-user-search-value]');
-                const initials = root.querySelector('[data-user-search-initials]');
-                const name = root.querySelector('[data-user-search-name]');
-                const meta = root.querySelector('[data-user-search-meta]');
-
-                value.value = '';
-                initials.textContent = '?';
-                initials.className = 'grid size-8 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-500 ring-1 ring-slate-200';
-                name.textContent = root.dataset.placeholder || 'Pilih user';
-                meta.textContent = '';
-                meta.classList.add('hidden');
-            };
-
-            window.setUserSearchSelect = (root, user) => {
-                if (!root || !user) {
-                    return;
-                }
-
-                const value = root.querySelector('[data-user-search-value]');
-                const initials = root.querySelector('[data-user-search-initials]');
-                const name = root.querySelector('[data-user-search-name]');
-                const meta = root.querySelector('[data-user-search-meta]');
-
-                value.value = user.value || user.id || '';
-                initials.textContent = user.initials || '?';
-                initials.className = 'grid size-8 shrink-0 place-items-center rounded-full bg-sky-50 text-xs font-bold text-sky-700 ring-1 ring-sky-100';
-                name.textContent = user.name || root.dataset.placeholder || 'Pilih user';
-                meta.textContent = user.meta || user.title || user.email || '';
-                meta.classList.toggle('hidden', !meta.textContent);
-            };
-
-            window.initUserSearchSelect = (root) => {
-                if (!root || root.dataset.userSearchInitialized === 'true') {
-                    return;
-                }
-
-                root.dataset.userSearchInitialized = 'true';
-
-                const value = root.querySelector('[data-user-search-value]');
-                const trigger = root.querySelector('[data-user-search-trigger]');
-                const input = root.querySelector('[data-user-search-input]');
-                const initials = root.querySelector('[data-user-search-initials]');
-                const name = root.querySelector('[data-user-search-name]');
-                const meta = root.querySelector('[data-user-search-meta]');
-                const options = Array.from(root.querySelectorAll('[data-user-search-option]'));
-                const empty = root.querySelector('[data-user-search-empty]');
-
-                root.dataset.placeholder = name?.textContent || 'Pilih user';
-
-                trigger?.addEventListener('click', () => {
-                    const panel = root.querySelector('[data-user-search-panel]');
-                    const isOpen = panel && !panel.classList.contains('hidden');
-
-                    isOpen ? closeUserSearchSelect(root) : openUserSearchSelect(root);
-                });
-
-                input?.addEventListener('input', () => {
-                    const query = input.value.trim().toLowerCase();
-                    let visibleCount = 0;
-
-                    options.forEach((option) => {
-                        const isVisible = option.dataset.search.includes(query);
-                        option.classList.toggle('hidden', !isVisible);
-                        visibleCount += isVisible ? 1 : 0;
-                    });
-
-                    empty?.classList.toggle('hidden', visibleCount > 0);
-                });
-
-                options.forEach((option) => {
-                    option.addEventListener('click', () => {
-                        value.value = option.dataset.value || '';
-                        initials.textContent = option.dataset.initials || '?';
-                        initials.className = 'grid size-8 shrink-0 place-items-center rounded-full bg-sky-50 text-xs font-bold text-sky-700 ring-1 ring-sky-100';
-                        name.textContent = option.dataset.name || 'Pilih user';
-                        meta.textContent = option.dataset.meta || '';
-                        meta.classList.toggle('hidden', !option.dataset.meta);
-                        closeUserSearchSelect(root);
-
-                        root.dispatchEvent(new CustomEvent('user-search-select:selected', {
-                            bubbles: true,
-                            detail: {...option.dataset},
-                        }));
-                    });
-                });
-            };
-
-            document.addEventListener('click', (event) => {
-                document.querySelectorAll('[data-user-search-select]').forEach((root) => {
-                    if (!root.contains(event.target)) {
-                        closeUserSearchSelect(root);
-                    }
-                });
-            });
-
-            document.addEventListener('keydown', (event) => {
-                if (event.key === 'Escape') {
-                    document.querySelectorAll('[data-user-search-select]').forEach(closeUserSearchSelect);
-                }
-            });
-
-            document.querySelectorAll('[data-user-search-select]').forEach(window.initUserSearchSelect);
-        })();
-    </script>
-@endonce
