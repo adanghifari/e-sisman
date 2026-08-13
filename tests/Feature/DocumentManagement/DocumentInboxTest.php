@@ -88,6 +88,35 @@ class DocumentInboxTest extends TestCase
             ->assertSee('PS-SMR-DEV');
     }
 
+    public function test_developer_can_see_proposed_documents_without_assigned_approver(): void
+    {
+        $developer = User::factory()->create([
+            'nik' => '000000',
+            'name' => 'Developer',
+            'email' => 'developer@example.com',
+        ]);
+        $submitter = User::factory()->create(['name' => 'Pengaju Clean']);
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Belum Assign Approver',
+            'nomor_dokumen' => 'PS-SMR-CLEAN',
+        ]);
+
+        $this->actingAs($developer)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee('Dokumen Belum Assign Approver')
+            ->assertSee('PS-SMR-CLEAN')
+            ->assertSee('Belum assign approver')
+            ->assertSee('Assign')
+            ->assertSee(route('documents.approval.show', $document));
+
+        $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertDontSee('Dokumen Belum Assign Approver')
+            ->assertDontSee('PS-SMR-CLEAN');
+    }
+
     public function test_responded_approval_for_login_user_is_shown_in_processed_history_tab(): void
     {
         $approver = User::factory()->create(['name' => 'Approver Login']);

@@ -4,8 +4,6 @@ namespace Tests\Feature\DocumentManagement;
 
 use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
-use App\Models\Approval;
-use App\Models\ApprovalStatus;
 use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentLevel;
@@ -142,10 +140,6 @@ class CreateDocumentTest extends TestCase
 
         StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
         StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
-        ApprovalStatus::create([
-            'kode_status' => ApprovalStatus::PENDING,
-            'nama_status' => ApprovalStatus::PENDING,
-        ]);
         DocumentType::create(['nama_types' => 'Prosedur']);
 
         $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
@@ -173,7 +167,7 @@ class CreateDocumentTest extends TestCase
         $this->assertTrue($document->departments()->whereKey($department->id)->exists());
     }
 
-    public function test_submitted_document_creates_pending_approval(): void
+    public function test_submitted_document_keeps_approval_assignment_clean_until_saved(): void
     {
         Storage::fake('local');
 
@@ -194,10 +188,6 @@ class CreateDocumentTest extends TestCase
 
         StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
         StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
-        ApprovalStatus::create([
-            'kode_status' => ApprovalStatus::PENDING,
-            'nama_status' => ApprovalStatus::PENDING,
-        ]);
         DocumentType::create(['nama_types' => 'Prosedur']);
 
         $this->actingAs($user)
@@ -215,11 +205,9 @@ class CreateDocumentTest extends TestCase
 
         $document = Document::query()->where('nama_dokumen', 'Prosedur Submit Approval')->firstOrFail();
 
-        $this->assertTrue(Approval::query()
-            ->where('t_document_id', $document->id)
-            ->where('user_id', $officialPreparer->id)
-            ->whereHas('status', fn ($query) => $query->where('kode_status', 'PENDING'))
-            ->exists());
+        $this->assertSame(StatusDocument::PROPOSED, $document->status->nama_status);
+        $this->assertSame($officialPreparer->id, $document->official_preparer_id);
+        $this->assertFalse($document->approvals()->exists());
     }
 
     public function test_level_three_document_can_be_saved_as_draft(): void

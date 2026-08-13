@@ -300,7 +300,7 @@
                     <div class="border-t border-slate-100 px-6 py-5">
                         <h3 class="text-sm font-bold text-slate-900">Riwayat Approver</h3>
                         <div class="mt-3 space-y-2">
-                            @foreach ($document->approvals->sortByDesc('assigned_at') as $approval)
+                            @forelse ($document->approvals->sortByDesc('assigned_at') as $approval)
                                 <div class="rounded-lg bg-slate-50 px-3 py-2">
                                     <div class="flex items-center justify-between gap-3">
                                         <p class="truncate text-sm font-semibold text-slate-800">{{ $approval->approver?->name ?? '-' }}</p>
@@ -311,7 +311,11 @@
                                         <p class="mt-2 rounded-md bg-white px-2 py-1 text-xs text-slate-600">{{ $approval->catatan }}</p>
                                     @endif
                                 </div>
-                            @endforeach
+                            @empty
+                                <p class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-6 text-center text-sm font-semibold text-slate-500">
+                                    Belum ada approver yang disimpan.
+                                </p>
+                            @endforelse
                         </div>
                     </div>
                 </section>
