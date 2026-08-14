@@ -746,6 +746,56 @@ class DocumentInboxTest extends TestCase
         );
     }
 
+    public function test_reject_terminates_other_pending_and_waiting_approvals(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $rejectingApprover = User::factory()->create();
+        $otherPendingApprover = User::factory()->create();
+        $waitingApprover = User::factory()->create();
+        $approvedApprover = User::factory()->create();
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter);
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::REJECTED]);
+        $this->createApproval($document, $rejectingApprover, ApprovalStatus::PENDING, [
+            'stages' => 'Dibuat oleh Staff',
+        ]);
+        $this->createApproval($document, $otherPendingApprover, ApprovalStatus::PENDING, [
+            'stages' => 'Dibuat oleh Staff',
+        ]);
+        $this->createApproval($document, $waitingApprover, ApprovalStatus::WAITING, [
+            'stages' => 'Diperiksa oleh Manager',
+        ]);
+        $this->createApproval($document, $approvedApprover, ApprovalStatus::APPROVED, [
+            'stages' => 'Dibuat oleh Staff',
+            'responded_at' => now(),
+        ]);
+
+        $this->actingAs($rejectingApprover)
+            ->post(route('documents.approval.reject', $document), [
+                'catatan' => 'Dokumen belum sesuai.',
+            ])
+            ->assertRedirect(route('documents.approval.show', $document));
+
+        $this->assertSame(StatusDocument::REJECTED, $document->refresh()->status->nama_status);
+        $this->assertSame(
+            ApprovalStatus::REJECTED,
+            Approval::query()->where('user_id', $rejectingApprover->id)->firstOrFail()->status->kode_status,
+        );
+        $this->assertSame(
+            ApprovalStatus::TERMINATED,
+            Approval::query()->where('user_id', $otherPendingApprover->id)->firstOrFail()->status->kode_status,
+        );
+        $this->assertSame(
+            ApprovalStatus::TERMINATED,
+            Approval::query()->where('user_id', $waitingApprover->id)->firstOrFail()->status->kode_status,
+        );
+        $this->assertSame(
+            ApprovalStatus::APPROVED,
+            Approval::query()->where('user_id', $approvedApprover->id)->firstOrFail()->status->kode_status,
+        );
+    }
+
     public function test_document_becomes_master_after_all_flow_stage_approvals_are_approved(): void
     {
         $this->ensureApprovalStatuses();

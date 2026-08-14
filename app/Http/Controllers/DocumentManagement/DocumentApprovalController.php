@@ -87,11 +87,26 @@ class DocumentApprovalController extends Controller
         abort_if(! $approval, 404);
 
         DB::transaction(function () use ($document, $approval, $validated): void {
+            $rejectedStatus = ApprovalStatus::findByCode(ApprovalStatus::REJECTED);
+            $terminatedStatus = ApprovalStatus::findByCode(ApprovalStatus::TERMINATED);
+
             $approval->update([
-                'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::REJECTED)->id,
+                'm_approval_status_id' => $rejectedStatus->id,
                 'responded_at' => now(),
                 'catatan' => $validated['catatan'],
             ]);
+
+            Approval::query()
+                ->where('t_document_id', $document->id)
+                ->whereKeyNot($approval->id)
+                ->whereHas('status', fn ($query) => $query->whereIn('kode_status', [
+                    ApprovalStatus::PENDING,
+                    ApprovalStatus::WAITING,
+                ]))
+                ->update([
+                    'm_approval_status_id' => $terminatedStatus->id,
+                    'responded_at' => now(),
+                ]);
 
             $document->update([
                 'm_status_document_id' => StatusDocument::findByName(StatusDocument::REJECTED)->id,
