@@ -36,13 +36,25 @@ class DocumentDownloadActivityQuery
             ->join('t_document', 't_document_download_logs.t_document_id', '=', 't_document.id')
             ->leftJoin('users', 't_document_download_logs.user_id', '=', 'users.id')
             ->select([
+                't_document_download_logs.id as log_id',
                 't_document.id as document_id',
                 't_document.nama_dokumen as name',
                 't_document.nomor_dokumen as number',
                 't_document.nomor_revisi as revision',
                 DB::raw("COALESCE(users.name, '-') as downloaded_by"),
-                DB::raw('MAX(t_document_download_logs.downloaded_at) as downloaded_at'),
-                DB::raw('COUNT(*) as count'),
+                't_document_download_logs.downloaded_at',
+                DB::raw('(
+                    SELECT COUNT(*)
+                    FROM t_document_download_logs AS previous_logs
+                    WHERE previous_logs.t_document_id = t_document_download_logs.t_document_id
+                    AND (
+                        previous_logs.downloaded_at < t_document_download_logs.downloaded_at
+                        OR (
+                            previous_logs.downloaded_at = t_document_download_logs.downloaded_at
+                            AND previous_logs.id <= t_document_download_logs.id
+                        )
+                    )
+                ) as count'),
             ])
             ->when(($filters['document_name'] ?? '') !== '', function ($query) use ($filters): void {
                 $query->where('t_document.nama_dokumen', 'like', '%'.$filters['document_name'].'%');
@@ -53,15 +65,8 @@ class DocumentDownloadActivityQuery
             ->when(($filters['downloaded_by'] ?? '') !== '', function ($query) use ($filters): void {
                 $query->where('users.name', 'like', '%'.$filters['downloaded_by'].'%');
             })
-            ->groupBy([
-                't_document.id',
-                't_document.nama_dokumen',
-                't_document.nomor_dokumen',
-                't_document.nomor_revisi',
-                'users.id',
-                'users.name',
-            ])
-            ->orderByDesc('downloaded_at');
+            ->orderByDesc('t_document_download_logs.downloaded_at')
+            ->orderByDesc('t_document_download_logs.id');
     }
 
     private function formatRow(object $activity): array
