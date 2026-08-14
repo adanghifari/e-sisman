@@ -105,7 +105,8 @@ class DocumentApprovalController extends Controller
 
     public function assign(Request $request, Document $document): RedirectResponse
     {
-        $this->authorizeDocumentAccess($request, $document);
+        abort_unless($request->user()->canAssignDocument($document), 403);
+        abort_if($this->isDocumentAssignmentLocked($document), 403);
 
         $stages = $this->approvalFlowStages($document);
 
@@ -137,6 +138,12 @@ class DocumentApprovalController extends Controller
                     "stage_approvers.{$stage->id}" => "Approver tahap {$stage->stage_order} tidak valid.",
                 ])->withInput();
             }
+        }
+
+        $approvedStageError = $this->approvedStageAssignmentError($request, $document, $stages);
+
+        if ($approvedStageError !== null) {
+            return back()->withErrors($approvedStageError)->withInput();
         }
 
         foreach ($stages as $stage) {
@@ -257,6 +264,70 @@ class DocumentApprovalController extends Controller
             ->sortBy('stage_order')
             ->values()
             ?? collect();
+    }
+
+    private function isDocumentAssignmentLocked(Document $document): bool
+    {
+        $lockedStatuses = [StatusDocument::APPROVED, StatusDocument::REJECTED];
+
+        if ($document->relationLoaded('status')) {
+            return in_array($document->status?->nama_status, $lockedStatuses, true);
+        }
+
+        return $document->status()
+            ->whereIn('nama_status', $lockedStatuses)
+            ->exists();
+    }
+
+    /**
+     * @return array<string, string>|null
+     */
+    private function approvedStageAssignmentError(Request $request, Document $document, Collection $stages): ?array
+    {
+        $approvedStatusId = ApprovalStatus::findByCode(ApprovalStatus::APPROVED)->id;
+
+        foreach ($stages as $stage) {
+            $stageLabel = $stage->display_label ?: 'Approval';
+            $field = "stage_approvers.{$stage->id}";
+            $requestedUserIds = collect($request->input($field, []))
+                ->filter()
+                ->map(fn ($userId) => (int) $userId)
+                ->unique()
+                ->values();
+            $stageApprovals = Approval::query()
+                ->where('t_document_id', $document->id)
+                ->where('stages', $stageLabel)
+                ->get();
+
+            if ($stageApprovals->isEmpty()) {
+                continue;
+            }
+
+            $approvedUserIds = $stageApprovals
+                ->where('m_approval_status_id', $approvedStatusId)
+                ->pluck('user_id')
+                ->values();
+
+            if ($approvedUserIds->diff($requestedUserIds)->isNotEmpty()) {
+                return [$field => "Approver tahap {$stage->stage_order} yang sudah approve tidak boleh dihapus atau diganti."];
+            }
+
+            $isStageFullyApproved = $stageApprovals->every(
+                fn (Approval $approval): bool => $approval->m_approval_status_id === $approvedStatusId,
+            );
+
+            if (! $isStageFullyApproved) {
+                continue;
+            }
+
+            $existingUserIds = $stageApprovals->pluck('user_id')->sort()->values();
+
+            if ($existingUserIds->all() !== $requestedUserIds->sort()->values()->all()) {
+                return [$field => "Tahap {$stage->stage_order} sudah approved dan tidak boleh diubah."];
+            }
+        }
+
+        return null;
     }
 
     private function advanceApprovalFlow(Document $document): void

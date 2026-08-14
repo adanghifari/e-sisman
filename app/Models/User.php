@@ -107,10 +107,6 @@ class User extends Authenticatable implements PasskeyUser
 
     public function isDocumentControlAdmin(): bool
     {
-        if ($this->isDeveloper()) {
-            return true;
-        }
-
         return $this->roles()
             ->where('nama_role', 'Admin Kontrol Dokumen')
             ->exists();
@@ -118,10 +114,6 @@ class User extends Authenticatable implements PasskeyUser
 
     public function canAssignDocument(Document $document): bool
     {
-        if ($this->isAdmin()) {
-            return true;
-        }
-
         if (! $this->isDocumentControlAdmin() || $this->m_department_id === null) {
             return false;
         }

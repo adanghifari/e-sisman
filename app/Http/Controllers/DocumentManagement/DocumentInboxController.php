@@ -145,7 +145,7 @@ class DocumentInboxController extends Controller
             ->map(fn (Document $document): array => $this->approvalRow(
                 $document,
                 $document->approvals->first(),
-                $request->user()->canAssignDocument($document),
+                $request->user()->isAdmin() || $request->user()->canAssignDocument($document),
             ))
             ->all();
     }

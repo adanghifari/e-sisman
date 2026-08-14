@@ -374,7 +374,9 @@ class DocumentInboxTest extends TestCase
         $nextApprover = User::factory()->create(['name' => 'Next Approver']);
         $secondApprover = User::factory()->create(['name' => 'Second Approver']);
 
-        $this->actingAs($approver)
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
+
+        $this->actingAs($documentControlAdmin)
             ->post(route('documents.approval.assign', $document), [
                 'stage_approvers' => [
                     $stage->id => [$nextApprover->id, $secondApprover->id],
@@ -393,7 +395,7 @@ class DocumentInboxTest extends TestCase
             ->where('stages', 'Diperiksa oleh Manager')
             ->exists());
 
-        $this->actingAs($approver)
+        $this->actingAs($documentControlAdmin)
             ->post(route('documents.approval.assign', $document), [
                 'stage_approvers' => [
                     $stage->id => [$secondApprover->id],
@@ -413,6 +415,39 @@ class DocumentInboxTest extends TestCase
             ->exists());
     }
 
+    public function test_regular_approver_cannot_assign_document_approvers(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $approver = User::factory()->create();
+        $nextApprover = User::factory()->create();
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter);
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $document->m_document_level_id,
+            'nama_flow' => 'Flow Level II',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+        $this->createApproval($document, $approver, ApprovalStatus::PENDING);
+
+        $this->actingAs($approver)
+            ->post(route('documents.approval.assign', $document), [
+                'stage_approvers' => [
+                    $stage->id => [$nextApprover->id],
+                ],
+            ])
+            ->assertForbidden();
+
+        $this->assertFalse(Approval::query()
+            ->where('t_document_id', $document->id)
+            ->where('user_id', $nextApprover->id)
+            ->exists());
+    }
+
     public function test_assign_approver_requires_each_flow_stage_to_have_approver(): void
     {
         $this->ensureApprovalStatuses();
@@ -420,6 +455,7 @@ class DocumentInboxTest extends TestCase
         $approver = User::factory()->create();
         $submitter = User::factory()->create();
         $document = $this->createDocument($submitter);
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
         $flow = ApprovalFlow::create([
             'm_document_level_id' => $document->m_document_level_id,
             'nama_flow' => 'Flow Level II',
@@ -436,7 +472,7 @@ class DocumentInboxTest extends TestCase
         ]);
         $this->createApproval($document, $approver, ApprovalStatus::PENDING);
 
-        $this->actingAs($approver)
+        $this->actingAs($documentControlAdmin)
             ->from(route('documents.approval.show', $document))
             ->post(route('documents.approval.assign', $document), [
                 'stage_approvers' => [
@@ -452,14 +488,11 @@ class DocumentInboxTest extends TestCase
     {
         $this->ensureApprovalStatuses();
 
-        $developer = User::factory()->create([
-            'nik' => '000000',
-            'email' => 'developer@example.com',
-        ]);
         $submitter = User::factory()->create();
         $firstApprover = User::factory()->create();
         $secondApprover = User::factory()->create();
         $document = $this->createDocument($submitter);
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
         $flow = ApprovalFlow::create([
             'm_document_level_id' => $document->m_document_level_id,
             'nama_flow' => 'Flow Level II',
@@ -475,7 +508,7 @@ class DocumentInboxTest extends TestCase
             'nama_tahap' => 'Manager',
         ]);
 
-        $this->actingAs($developer)
+        $this->actingAs($documentControlAdmin)
             ->post(route('documents.approval.assign', $document), [
                 'stage_approvers' => [
                     $firstStage->id => [$firstApprover->id],
@@ -502,6 +535,128 @@ class DocumentInboxTest extends TestCase
                 ->status
                 ->kode_status,
         );
+    }
+
+    public function test_approved_approver_cannot_be_removed_from_assignment(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $approvedApprover = User::factory()->create();
+        $pendingApprover = User::factory()->create();
+        $replacementApprover = User::factory()->create();
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter);
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $document->m_document_level_id,
+            'nama_flow' => 'Flow Level II',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+        $this->createApproval($document, $approvedApprover, ApprovalStatus::APPROVED, [
+            'stages' => 'Diperiksa oleh Manager',
+            'responded_at' => now(),
+        ]);
+        $this->createApproval($document, $pendingApprover, ApprovalStatus::PENDING, [
+            'stages' => 'Diperiksa oleh Manager',
+        ]);
+
+        $this->actingAs($documentControlAdmin)
+            ->from(route('documents.approval.show', $document))
+            ->post(route('documents.approval.assign', $document), [
+                'stage_approvers' => [
+                    $stage->id => [$pendingApprover->id, $replacementApprover->id],
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document))
+            ->assertSessionHasErrors(["stage_approvers.{$stage->id}"]);
+
+        $this->assertTrue(Approval::query()
+            ->where('t_document_id', $document->id)
+            ->where('user_id', $approvedApprover->id)
+            ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::APPROVED))
+            ->exists());
+        $this->assertFalse(Approval::query()
+            ->where('t_document_id', $document->id)
+            ->where('user_id', $replacementApprover->id)
+            ->exists());
+    }
+
+    public function test_fully_approved_stage_assignment_cannot_be_changed(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $approvedApprover = User::factory()->create();
+        $replacementApprover = User::factory()->create();
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter);
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $document->m_document_level_id,
+            'nama_flow' => 'Flow Level II',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+        $this->createApproval($document, $approvedApprover, ApprovalStatus::APPROVED, [
+            'stages' => 'Diperiksa oleh Manager',
+            'responded_at' => now(),
+        ]);
+
+        $this->actingAs($documentControlAdmin)
+            ->from(route('documents.approval.show', $document))
+            ->post(route('documents.approval.assign', $document), [
+                'stage_approvers' => [
+                    $stage->id => [$approvedApprover->id, $replacementApprover->id],
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document))
+            ->assertSessionHasErrors(["stage_approvers.{$stage->id}"]);
+
+        $this->assertFalse(Approval::query()
+            ->where('t_document_id', $document->id)
+            ->where('user_id', $replacementApprover->id)
+            ->exists());
+    }
+
+    public function test_approved_or_rejected_document_assignment_is_locked(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create();
+        $newApprover = User::factory()->create();
+        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        $document = $this->createDocument($submitter, [
+            'm_status_document_id' => $approvedStatus->id,
+        ]);
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $document->m_document_level_id,
+            'nama_flow' => 'Flow Level II',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+
+        $this->actingAs($documentControlAdmin)
+            ->post(route('documents.approval.assign', $document), [
+                'stage_approvers' => [
+                    $stage->id => [$newApprover->id],
+                ],
+            ])
+            ->assertForbidden();
+
+        $this->assertFalse(Approval::query()
+            ->where('t_document_id', $document->id)
+            ->where('user_id', $newApprover->id)
+            ->exists());
     }
 
     public function test_next_stage_is_activated_after_current_stage_is_fully_approved(): void
@@ -750,16 +905,27 @@ class DocumentInboxTest extends TestCase
     private function documentControlAdmin(Department $department): User
     {
         $role = Role::query()->firstOrCreate(['nama_role' => 'Admin Kontrol Dokumen']);
-        $permission = Permission::query()->firstOrCreate(
-            ['code' => 'documents.inbox.view'],
+        $permissions = collect([
             [
+                'code' => 'documents.inbox.view',
                 'name' => 'Lihat Inbox Approval',
                 'module' => 'Manajemen Dokumen',
                 'route' => 'documents.inbox',
                 'action' => 'view',
             ],
-        );
-        $role->permissions()->syncWithoutDetaching([$permission->id]);
+            [
+                'code' => 'documents.approval.assign',
+                'name' => 'Assign Approver Dokumen',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.approval.assign',
+                'action' => 'assign',
+            ],
+        ])->map(fn (array $permission): Permission => Permission::query()->firstOrCreate(
+            ['code' => $permission['code']],
+            $permission,
+        ));
+
+        $role->permissions()->syncWithoutDetaching($permissions->pluck('id')->all());
 
         $user = User::factory()->create(['m_department_id' => $department->id]);
         $user->roles()->attach($role);
