@@ -8,7 +8,7 @@
     $maxFiles = $uploadLimits['max_files'] ?? 10;
     $maxFileSizeKb = $uploadLimits['max_file_size_kb'] ?? 10240;
     $maxFileSizeMb = (int) ceil($maxFileSizeKb / 1024);
-    $allowedExtensions = $uploadLimits['allowed_extensions'] ?? ['pdf', 'doc', 'docx'];
+    $allowedExtensions = $uploadLimits['allowed_extensions'] ?? ['doc', 'docx'];
     $allowedExtensionText = strtoupper(implode(', ', $allowedExtensions));
 @endphp
 
@@ -102,7 +102,7 @@
                     <x-ui.file-upload
                         label="File Template"
                         name="template_files[]"
-                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
                         hint="Format: {{ $allowedExtensionText }}. Maksimal {{ $maxFiles }} file, ukuran maksimal {{ $maxFileSizeMb }} MB per file."
                         :multiple="true"
                         :max-files="$maxFiles"
@@ -188,7 +188,7 @@
                     editForm.classList.toggle('hidden', ! isEditing);
 
                     modeText.textContent = isEditing
-                        ? 'Upload file PDF atau Word. Maksimal {{ $maxFiles }} file, {{ $maxFileSizeMb }} MB per file.'
+                        ? 'Upload file Word. Maksimal {{ $maxFiles }} file, {{ $maxFileSizeMb }} MB per file.'
                         : 'Template ditampilkan dalam mode read-only.';
 
                     if (editToggle) {
