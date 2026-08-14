@@ -11,6 +11,7 @@ use App\Http\Controllers\DocumentManagement\DocumentController;
 use App\Http\Controllers\DocumentManagement\DocumentApprovalController;
 use App\Http\Controllers\DocumentManagement\DocumentInboxController;
 use App\Http\Controllers\DocumentManagement\DocumentMasterController;
+use App\Http\Controllers\DocumentManagement\DocumentTemplateController;
 use App\Http\Middleware\EnsureRoutePermission;
 use Illuminate\Support\Facades\Route;
 
@@ -33,7 +34,9 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
         ->whereIn('level', array_keys(config('document-levels')))
         ->name('documents.store');
     Route::get('documents/master', DocumentMasterController::class)->name('documents.master');
-    Route::view('document-templates', 'document-management.templates.index')->name('document-templates.index');
+    Route::get('document-templates', [DocumentTemplateController::class, 'index'])->name('document-templates.index');
+    Route::post('document-templates', [DocumentTemplateController::class, 'store'])->name('document-templates.store');
+    Route::get('document-templates/files/{file}', [DocumentTemplateController::class, 'file'])->name('document-templates.files.show');
     Route::view('reports', 'reporting.index')->name('reports.index');
     Route::view('users', 'administration.users.index')->name('users.index');
     Route::livewire('access-groups', AccessGroupIndex::class)->name('access-groups.index');
