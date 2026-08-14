@@ -99,13 +99,35 @@ class User extends Authenticatable implements PasskeyUser
         }
 
         return $this->roles()
-            ->whereIn('nama_role', ['admin', 'administrator', 'super admin'])
+            ->whereIn('nama_role', ['admin', 'administrator', 'super admin', 'SuperAdmin'])
             ->exists();
     }
 
     public function isDeveloper(): bool
     {
         return $this->nik === '000000' || $this->email === 'developer@example.com';
+    }
+
+    public function isDocumentControlAdmin(): bool
+    {
+        return $this->roles()
+            ->where('nama_role', 'Admin Kontrol Dokumen')
+            ->exists();
+    }
+
+    public function canAssignDocument(Document $document): bool
+    {
+        if (! $this->isDocumentControlAdmin() || $this->m_department_id === null) {
+            return false;
+        }
+
+        if ($document->relationLoaded('departments')) {
+            return $document->departments->contains('id', $this->m_department_id);
+        }
+
+        return $document->departments()
+            ->whereKey($this->m_department_id)
+            ->exists();
     }
 
     public function hasPermission(string $permissionCode): bool
