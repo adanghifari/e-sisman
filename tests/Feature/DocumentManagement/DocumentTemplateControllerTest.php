@@ -105,7 +105,7 @@ class DocumentTemplateControllerTest extends TestCase
             ->assertForbidden();
     }
 
-    public function test_template_upload_requires_title_and_files(): void
+    public function test_template_upload_allows_empty_title_when_there_are_no_files(): void
     {
         Storage::fake('local');
         $this->seed(PermissionSeeder::class);
@@ -120,9 +120,230 @@ class DocumentTemplateControllerTest extends TestCase
                 'template_files' => [],
             ])
             ->assertRedirect(route('document-templates.index'))
-            ->assertSessionHasErrors(['title', 'template_files']);
+            ->assertSessionHasNoErrors();
+
+        $template = DocumentTemplate::query()->firstOrFail();
+
+        $this->assertNull($template->title);
+        $this->assertSame(0, $template->files()->count());
+    }
+
+    public function test_template_upload_requires_title_when_new_files_are_uploaded(): void
+    {
+        Storage::fake('local');
+        $this->seed(PermissionSeeder::class);
+
+        $editor = $this->templateEditor();
+
+        $this->actingAs($editor)
+            ->from(route('document-templates.index'))
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-1',
+                'title' => '',
+                'template_files' => [
+                    UploadedFile::fake()->create('template.docx', 32, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                ],
+            ])
+            ->assertRedirect(route('document-templates.index'))
+            ->assertSessionHasErrors(['title']);
 
         $this->assertSame(0, DocumentTemplate::query()->count());
+    }
+
+    public function test_template_upload_requires_title_when_existing_files_are_retained(): void
+    {
+        Storage::fake('local');
+        $this->seed(PermissionSeeder::class);
+
+        $editor = $this->templateEditor();
+
+        $this->actingAs($editor)
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-1',
+                'title' => 'Template Awal',
+                'template_files' => [
+                    UploadedFile::fake()->create('template.docx', 32, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                ],
+            ])
+            ->assertRedirect(route('document-templates.index'));
+
+        $activeTemplate = DocumentTemplate::query()
+            ->forLevel('level-1')
+            ->active()
+            ->with('files')
+            ->firstOrFail();
+
+        $this->actingAs($editor)
+            ->from(route('document-templates.index'))
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-1',
+                'title' => '',
+                'retained_template_file_ids_present' => '1',
+                'retained_template_file_ids' => [$activeTemplate->files->first()->id],
+            ])
+            ->assertRedirect(route('document-templates.index'))
+            ->assertSessionHasErrors(['title']);
+    }
+
+    public function test_template_editor_can_save_metadata_without_reuploading_files(): void
+    {
+        Storage::fake('local');
+        $this->seed(PermissionSeeder::class);
+
+        $editor = $this->templateEditor();
+
+        $this->actingAs($editor)
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-2',
+                'title' => 'Template Awal',
+                'template_files' => [
+                    UploadedFile::fake()->create('dipertahankan.docx', 32, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                ],
+            ])
+            ->assertRedirect(route('document-templates.index'));
+
+        $oldTemplate = DocumentTemplate::query()
+            ->forLevel('level-2')
+            ->active()
+            ->with('files')
+            ->firstOrFail();
+        $this->actingAs($editor)
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-2',
+                'title' => 'Template Baru',
+                'notes' => 'File lama tetap dipakai.',
+            ])
+            ->assertRedirect(route('document-templates.index'));
+
+        $newTemplate = DocumentTemplate::query()
+            ->forLevel('level-2')
+            ->active()
+            ->with('files')
+            ->firstOrFail();
+
+        $this->assertFalse($oldTemplate->fresh()->is_active);
+        $this->assertSame(2, $newTemplate->version_number);
+        $this->assertSame('Template Baru', $newTemplate->title);
+        $this->assertCount(1, $newTemplate->files);
+        $this->assertSame('dipertahankan.docx', $newTemplate->files->first()->original_file_name);
+        Storage::disk('local')->assertExists($newTemplate->files->first()->path_file);
+    }
+
+    public function test_uploading_new_files_replaces_active_template_files(): void
+    {
+        Storage::fake('local');
+        $this->seed(PermissionSeeder::class);
+
+        $editor = $this->templateEditor();
+
+        $this->actingAs($editor)
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-2',
+                'title' => 'Template Awal',
+                'template_files' => [
+                    UploadedFile::fake()->create('template.docx', 32, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                ],
+            ])
+            ->assertRedirect(route('document-templates.index'));
+
+        $this->actingAs($editor)
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-2',
+                'title' => 'Template Baru',
+                'template_files' => [
+                    UploadedFile::fake()->create('pengganti.docx', 32, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                ],
+            ])
+            ->assertRedirect(route('document-templates.index'));
+
+        $newTemplate = DocumentTemplate::query()
+            ->forLevel('level-2')
+            ->active()
+            ->with('files')
+            ->firstOrFail();
+
+        $this->assertCount(1, $newTemplate->files);
+        $this->assertSame('pengganti.docx', $newTemplate->files->first()->original_file_name);
+    }
+
+    public function test_template_editor_can_remove_existing_template_files(): void
+    {
+        Storage::fake('local');
+        $this->seed(PermissionSeeder::class);
+
+        $editor = $this->templateEditor();
+
+        $this->actingAs($editor)
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-2',
+                'title' => 'Template Awal',
+                'template_files' => [
+                    UploadedFile::fake()->create('dipakai.docx', 32, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                    UploadedFile::fake()->create('dihapus.docx', 32, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                ],
+            ])
+            ->assertRedirect(route('document-templates.index'));
+
+        $activeTemplate = DocumentTemplate::query()
+            ->forLevel('level-2')
+            ->active()
+            ->with('files')
+            ->firstOrFail();
+        $retainedFile = $activeTemplate->files->firstWhere('original_file_name', 'dipakai.docx');
+
+        $this->actingAs($editor)
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-2',
+                'title' => 'Template Baru',
+                'retained_template_file_ids_present' => '1',
+                'retained_template_file_ids' => [$retainedFile->id],
+            ])
+            ->assertRedirect(route('document-templates.index'));
+
+        $newTemplate = DocumentTemplate::query()
+            ->forLevel('level-2')
+            ->active()
+            ->with('files')
+            ->firstOrFail();
+
+        $this->assertCount(1, $newTemplate->files);
+        $this->assertSame('dipakai.docx', $newTemplate->files->first()->original_file_name);
+    }
+
+    public function test_template_editor_can_save_template_after_removing_all_existing_files(): void
+    {
+        Storage::fake('local');
+        $this->seed(PermissionSeeder::class);
+
+        $editor = $this->templateEditor();
+
+        $this->actingAs($editor)
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-2',
+                'title' => 'Template Awal',
+                'template_files' => [
+                    UploadedFile::fake()->create('dihapus.docx', 32, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                ],
+            ])
+            ->assertRedirect(route('document-templates.index'));
+
+        $this->actingAs($editor)
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-2',
+                'title' => 'Template Tanpa File',
+                'retained_template_file_ids_present' => '1',
+                'retained_template_file_ids' => [],
+            ])
+            ->assertRedirect(route('document-templates.index'));
+
+        $newTemplate = DocumentTemplate::query()
+            ->forLevel('level-2')
+            ->active()
+            ->with('files')
+            ->firstOrFail();
+
+        $this->assertSame('Template Tanpa File', $newTemplate->title);
+        $this->assertCount(0, $newTemplate->files);
     }
 
     private function templateEditor(): User

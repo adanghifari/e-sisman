@@ -17,6 +17,7 @@
             'title' => $template->title,
             'notes' => $template->notes,
             'files' => $template->files->map(fn ($file) => [
+                'id' => $file->id,
                 'name' => $file->original_file_name,
                 'size_kb' => (int) ceil(($file->file_size ?? 0) / 1024),
                 'url' => route('document-templates.files.show', $file),
@@ -133,13 +134,13 @@
                 <form method="POST" action="{{ route('document-templates.store') }}" enctype="multipart/form-data" class="mt-5 hidden space-y-5" data-template-edit-form>
                     @csrf
                     <input type="hidden" name="document_level" data-template-level-input>
+                    <input type="hidden" name="retained_template_file_ids_present" value="1">
 
                     <x-ui.input
                         label="Judul Template"
                         name="title"
                         placeholder="Contoh: Template Instruksi Kerja"
                         data-template-title
-                        required
                         readonly
                     />
 
@@ -156,11 +157,16 @@
                         :max-files="$maxFiles"
                         :max-file-size-kb="$maxFileSizeKb"
                         disabled
-                        required
                         data-template-file
                     />
 
+                    <div class="mt-3 hidden rounded-lg border border-slate-200 bg-white p-4" data-template-retained-files></div>
+
                     @error('template_files')
+                        <span class="block text-sm font-semibold text-red-500">{{ $message }}</span>
+                    @enderror
+
+                    @error('retained_template_file_ids')
                         <span class="block text-sm font-semibold text-red-500">{{ $message }}</span>
                     @enderror
 
@@ -182,6 +188,9 @@
                     @enderror
 
                     <div class="hidden justify-end gap-2 border-t border-slate-100 pt-5" data-template-actions>
+                        <button type="button" class="inline-flex h-10 items-center justify-center rounded-lg border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 transition hover:bg-red-50" data-template-cancel>
+                            Cancel
+                        </button>
                         <x-ui.action-button type="submit" data-template-save>
                             Simpan Template
                         </x-ui.action-button>
@@ -203,9 +212,11 @@
                 const titleInput = builder.querySelector('[data-template-title]');
                 const notesInput = builder.querySelector('[data-template-notes]');
                 const fileInput = builder.querySelector('[data-template-file]');
+                const retainedFiles = builder.querySelector('[data-template-retained-files]');
                 const actions = builder.querySelector('[data-template-actions]');
                 const modeText = builder.querySelector('[data-template-mode-text]');
                 const editToggle = builder.querySelector('[data-template-edit-toggle]');
+                const cancelButton = builder.querySelector('[data-template-cancel]');
                 const readPanel = builder.querySelector('[data-template-read-panel]');
                 const editForm = builder.querySelector('[data-template-edit-form]');
                 const filePreview = builder.querySelector('[data-template-file-preview]');
@@ -224,11 +235,17 @@
                 const canEdit = builder.dataset.canEdit === 'true';
                 let activeLevelKey = null;
                 let isEditing = false;
+                let retainedTemplateFiles = [];
 
                 const selectedFiles = () => Array.from(fileInput.files || []);
+                const hasActiveTemplateFiles = () => retainedTemplateFiles.length > 0 || selectedFiles().length > 0;
                 const clearSelectedFiles = () => {
                     fileInput.value = '';
                     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
+                };
+
+                const syncTitleRequirement = () => {
+                    titleInput.toggleAttribute('required', hasActiveTemplateFiles());
                 };
 
                 const syncLevelButtons = () => {
@@ -240,6 +257,69 @@
                         item.classList.toggle('opacity-60', item.disabled);
                         item.title = item.disabled ? 'Selesaikan atau batalkan edit sebelum pindah level.' : '';
                     });
+                };
+
+                const formatStoredFileSize = (sizeKb) => {
+                    const numericSize = Number(sizeKb || 0);
+
+                    return numericSize >= 1024
+                        ? `${(numericSize / 1024).toFixed(1)} MB`
+                        : `${numericSize} KB`;
+                };
+
+                const renderRetainedFiles = () => {
+                    if (! retainedFiles) {
+                        return;
+                    }
+
+                    retainedFiles.innerHTML = '';
+                    retainedFiles.className = 'mt-3 hidden rounded-lg border border-slate-200 bg-white p-4';
+                    retainedFiles.classList.toggle('hidden', ! isEditing || retainedTemplateFiles.length === 0);
+
+                    if (! isEditing || retainedTemplateFiles.length === 0) {
+                        return;
+                    }
+
+                    retainedFiles.classList.add('grid', 'grid-cols-2', 'gap-4', 'sm:grid-cols-3', 'lg:grid-cols-5');
+
+                    retainedTemplateFiles.forEach((file) => {
+                        const item = document.createElement('div');
+                        item.className = 'group relative min-w-0 rounded-lg border border-slate-200 bg-white p-3 text-center transition hover:border-sky-200 hover:shadow-sm';
+
+                        const hidden = document.createElement('input');
+                        hidden.type = 'hidden';
+                        hidden.name = 'retained_template_file_ids[]';
+                        hidden.value = file.id;
+
+                        const icon = document.createElement('div');
+                        icon.className = 'relative mx-auto flex h-20 w-16 items-center justify-center rounded-md border border-sky-100 bg-sky-50 text-sm font-bold text-sky-700 shadow-sm';
+                        icon.textContent = 'DOC';
+
+                        const name = document.createElement('span');
+                        name.className = 'mt-3 block truncate text-sm font-semibold text-red-700';
+                        name.textContent = file.name;
+                        name.title = file.name;
+
+                        const meta = document.createElement('span');
+                        meta.className = 'mt-1 block text-xs text-slate-500';
+                        meta.textContent = formatStoredFileSize(file.size_kb);
+
+                        const removeButton = document.createElement('button');
+                        removeButton.type = 'button';
+                        removeButton.className = 'absolute right-2 top-2 inline-flex size-7 items-center justify-center rounded-full border border-red-200 bg-white text-sm font-bold text-red-600 opacity-0 shadow-sm transition hover:bg-red-50 group-hover:opacity-100 focus:opacity-100';
+                        removeButton.setAttribute('aria-label', `Hapus ${file.name}`);
+                        removeButton.textContent = 'x';
+                        removeButton.addEventListener('click', () => {
+                            retainedTemplateFiles = retainedTemplateFiles.filter((retainedFile) => retainedFile.id !== file.id);
+                            renderRetainedFiles();
+                            syncTitleRequirement();
+                        });
+
+                        item.append(hidden, icon, name, meta, removeButton);
+                        retainedFiles.append(item);
+                    });
+
+                    syncTitleRequirement();
                 };
 
                 const updateReadPanel = () => {
@@ -322,6 +402,7 @@
                             });
                         }
                     }
+
                 };
 
                 const setEditing = (editing) => {
@@ -341,7 +422,8 @@
                     modeText.classList.toggle('hidden', ! isEditing);
 
                     if (editToggle) {
-                        editToggle.textContent = isEditing ? 'Selesai Edit' : 'Edit Template';
+                        editToggle.classList.toggle('hidden', isEditing);
+                        editToggle.textContent = 'Edit Template';
                     }
 
                     if (! isEditing) {
@@ -350,6 +432,8 @@
                         updateReadPanel();
                     }
 
+                    renderRetainedFiles();
+                    syncTitleRequirement();
                     syncLevelButtons();
                 };
 
@@ -358,6 +442,8 @@
                 const renderTemplate = (template = {}) => {
                     titleInput.value = template.title || '';
                     notesInput.value = template.notes || '';
+                    retainedTemplateFiles = [...(template.files || [])];
+                    renderRetainedFiles();
                     updateReadPanel();
                 };
 
@@ -400,13 +486,16 @@
                 });
 
                 if (editToggle) {
-                    editToggle.addEventListener('click', () => setEditing(! isEditing));
+                    editToggle.addEventListener('click', () => setEditing(true));
                 }
+
+                cancelButton?.addEventListener('click', () => setEditing(false));
 
                 panel.addEventListener('input', persistActiveTemplate);
                 panel.addEventListener('change', () => {
                     persistActiveTemplate();
                     updateReadPanel();
+                    syncTitleRequirement();
                 });
 
                 setEditing(false);
