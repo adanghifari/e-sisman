@@ -1,5 +1,36 @@
 <?php
 
+$crudPermissions = fn (string $codePrefix, string $featureName, string $module, string $route): array => [
+    [
+        'code' => "{$codePrefix}.view",
+        'name' => "Lihat {$featureName}",
+        'module' => $module,
+        'route' => $route,
+        'action' => 'view',
+    ],
+    [
+        'code' => "{$codePrefix}.create",
+        'name' => "Tambah {$featureName}",
+        'module' => $module,
+        'route' => $route,
+        'action' => 'create',
+    ],
+    [
+        'code' => "{$codePrefix}.update",
+        'name' => "Ubah {$featureName}",
+        'module' => $module,
+        'route' => $route,
+        'action' => 'update',
+    ],
+    [
+        'code' => "{$codePrefix}.delete",
+        'name' => "Hapus {$featureName}",
+        'module' => $module,
+        'route' => $route,
+        'action' => 'delete',
+    ],
+];
+
 return [
     'permissions' => [
         [
@@ -17,10 +48,17 @@ return [
             'action' => 'view',
         ],
         [
-            'code' => 'documents.create.create',
-            'name' => 'Tambah Dokumen',
+            'code' => 'documents.create.view',
+            'name' => 'Lihat Tambah Dokumen',
             'module' => 'Manajemen Dokumen',
             'route' => 'documents.create',
+            'action' => 'view',
+        ],
+        [
+            'code' => 'documents.create.create',
+            'name' => 'Submit Tambah Dokumen',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.store',
             'action' => 'create',
         ],
         [
@@ -29,6 +67,13 @@ return [
             'module' => 'Manajemen Dokumen',
             'route' => 'documents.master',
             'action' => 'view',
+        ],
+        [
+            'code' => 'documents.approval.assign',
+            'name' => 'Assign Approver Dokumen',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.approval.assign',
+            'action' => 'assign',
         ],
         [
             'code' => 'document-templates.view',
@@ -51,20 +96,8 @@ return [
             'route' => 'reports.index',
             'action' => 'view',
         ],
-        [
-            'code' => 'users.manage',
-            'name' => 'Kelola User',
-            'module' => 'Administrasi',
-            'route' => 'users.index',
-            'action' => 'manage',
-        ],
-        [
-            'code' => 'access-groups.manage',
-            'name' => 'Kelola Group Akses',
-            'module' => 'Administrasi',
-            'route' => 'access-groups.index',
-            'action' => 'manage',
-        ],
+        ...$crudPermissions('users', 'User', 'Administrasi', 'users.index'),
+        ...$crudPermissions('access-groups', 'Group Akses', 'Administrasi', 'access-groups.index'),
         [
             'code' => 'access-menus.view',
             'name' => 'Lihat Menu Akses',
@@ -72,41 +105,11 @@ return [
             'route' => 'access-menus.index',
             'action' => 'view',
         ],
-        [
-            'code' => 'approval-flows.manage',
-            'name' => 'Kelola Approval Flow',
-            'module' => 'Administrasi',
-            'route' => 'approval-flows.index',
-            'action' => 'manage',
-        ],
-        [
-            'code' => 'master-data.process-functions.manage',
-            'name' => 'Kelola Proses / Fungsi',
-            'module' => 'Master Data',
-            'route' => 'master-data.process-functions',
-            'action' => 'manage',
-        ],
-        [
-            'code' => 'master-data.business-processes.manage',
-            'name' => 'Kelola Proses Bisnis',
-            'module' => 'Master Data',
-            'route' => 'master-data.business-processes',
-            'action' => 'manage',
-        ],
-        [
-            'code' => 'master-data.departments.manage',
-            'name' => 'Kelola Department',
-            'module' => 'Master Data',
-            'route' => 'master-data.departments',
-            'action' => 'manage',
-        ],
-        [
-            'code' => 'master-data.document-types.manage',
-            'name' => 'Kelola Jenis Dokumen',
-            'module' => 'Master Data',
-            'route' => 'master-data.document-types',
-            'action' => 'manage',
-        ],
+        ...$crudPermissions('approval-flows', 'Approval Flow', 'Administrasi', 'approval-flows.index'),
+        ...$crudPermissions('master-data.process-functions', 'Proses / Fungsi', 'Master Data', 'master-data.process-functions'),
+        ...$crudPermissions('master-data.business-processes', 'Proses Bisnis', 'Master Data', 'master-data.business-processes'),
+        ...$crudPermissions('master-data.departments', 'Department', 'Master Data', 'master-data.departments'),
+        ...$crudPermissions('master-data.document-types', 'Jenis Dokumen', 'Master Data', 'master-data.document-types'),
         [
             'code' => 'activity-log.view',
             'name' => 'Lihat Catatan Aktivitas',

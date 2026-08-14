@@ -3,63 +3,38 @@
 namespace App\Livewire\Administration\AccessMenu;
 
 use App\Models\Permission;
+use App\Support\Access\PermissionCatalog;
 use Illuminate\Contracts\View\View;
-use Illuminate\Pagination\LengthAwarePaginator;
+use Illuminate\Support\Collection;
 use Livewire\Attributes\Title;
 use Livewire\Component;
-use Livewire\WithPagination;
 
 #[Title('Menu Akses')]
 class Index extends Component
 {
-    use WithPagination;
-
     public string $search = '';
 
     public string $module = '';
 
-    public int $perPage = 15;
-
-    public function updatingSearch(): void
+    public function getPermissionBundlesProperty(): Collection
     {
-        $this->resetPage();
-    }
-
-    public function updatingModule(): void
-    {
-        $this->resetPage();
-    }
-
-    public function getPermissionsProperty(): LengthAwarePaginator
-    {
-        return Permission::query()
-            ->when($this->search !== '', function ($query): void {
-                $query->where(function ($query): void {
-                    $query
-                        ->where('code', 'like', '%'.$this->search.'%')
-                        ->orWhere('name', 'like', '%'.$this->search.'%')
-                        ->orWhere('route', 'like', '%'.$this->search.'%');
-                });
-            })
-            ->when($this->module !== '', fn ($query) => $query->where('module', $this->module))
-            ->orderBy('module')
-            ->orderBy('name')
-            ->paginate($this->perPage);
+        return app(PermissionCatalog::class)
+            ->bundles($this->module ?: null, $this->search ?: null)
+            ->values();
     }
 
     public function render(): View
     {
-        $modules = Permission::query()
-            ->select('module')
-            ->distinct()
-            ->orderBy('module')
-            ->pluck('module', 'module')
-            ->prepend('Semua Module', '')
-            ->all();
+        $totalPermissions = Permission::query()
+            ->when($this->module !== '', fn ($query) => $query->where('module', $this->module))
+            ->count();
+
+        $modules = app(PermissionCatalog::class)->modules();
 
         return view('livewire.administration.access-menus.index', [
-            'permissions' => $this->permissions,
+            'permissionBundles' => $this->permissionBundles,
             'moduleOptions' => $modules,
+            'totalPermissions' => $totalPermissions,
         ]);
     }
 }

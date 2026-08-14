@@ -36,5 +36,23 @@ class PermissionSeeder extends Seeder
                 ],
             );
         }
+
+        DB::table('roles')->updateOrInsert(
+            ['nama_role' => 'SuperAdmin'],
+            ['nama_role' => 'SuperAdmin'],
+        );
+
+        $superAdminRoleId = DB::table('roles')
+            ->where('nama_role', 'SuperAdmin')
+            ->value('id');
+
+        $permissionIds = DB::table('permissions')->pluck('id');
+
+        foreach ($permissionIds as $permissionId) {
+            DB::table('role_permissions')->updateOrInsert([
+                'role_id' => $superAdminRoleId,
+                'permission_id' => $permissionId,
+            ]);
+        }
     }
 }

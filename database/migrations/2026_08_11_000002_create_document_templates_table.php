@@ -15,7 +15,7 @@ return new class extends Migration
             $table->id();
             $table->string('document_level', 50);
             $table->unsignedInteger('version_number')->default(1);
-            $table->string('title');
+            $table->string('title')->nullable();
             $table->text('notes')->nullable();
             $table->foreignId('uploaded_by')->constrained('users')->restrictOnDelete();
             $table->boolean('is_active')->default(false);

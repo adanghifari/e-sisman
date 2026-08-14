@@ -185,6 +185,30 @@
                     </div>
                 </section>
 
+                <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <div class="border-b border-slate-100 px-6 py-5">
+                        <h3 class="text-sm font-bold text-slate-900">Riwayat Approver</h3>
+                    </div>
+                    <div class="space-y-2 px-6 py-5">
+                        @forelse ($document->approvals->sortByDesc('assigned_at') as $approval)
+                            <div class="rounded-lg bg-slate-50 px-3 py-2">
+                                <div class="flex items-center justify-between gap-3">
+                                    <p class="truncate text-sm font-semibold text-slate-800">{{ $approval->approver?->name ?? '-' }}</p>
+                                    <x-ui.status-badge :label="$approval->status?->nama_status ?? '-'" :tone="$approval->status?->kode_status === 'APPROVED' ? 'emerald' : ($approval->status?->kode_status === 'REJECTED' ? 'red' : 'sky')" />
+                                </div>
+                                <p class="mt-1 text-xs font-medium text-slate-500">{{ $approval->stages ?: 'Approval' }}</p>
+                                @if ($approval->catatan)
+                                    <p class="mt-2 rounded-md bg-white px-2 py-1 text-xs text-slate-600">{{ $approval->catatan }}</p>
+                                @endif
+                            </div>
+                        @empty
+                            <p class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-6 text-center text-sm font-semibold text-slate-500">
+                                Belum ada approver yang disimpan.
+                            </p>
+                        @endforelse
+                    </div>
+                </section>
+
                 @if ($activeApproval)
                     <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                         <div class="border-b border-slate-200 px-6 py-5">
@@ -212,7 +236,13 @@
                         </p>
                     </div>
 
-                    @if ($approvalFlowStages->isEmpty())
+                    @if (! $canManageApproverAssignment)
+                        <div class="px-6 py-6">
+                            <p class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
+                                Assignment approver dikelola oleh Admin Kontrol Dokumen department terkait.
+                            </p>
+                        </div>
+                    @elseif ($approvalFlowStages->isEmpty())
                         <div class="px-6 py-6">
                             <p class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
                                 Belum ada aturan tahap approval.
@@ -225,16 +255,31 @@
                             @foreach ($approvalFlowStages as $stage)
                                 @php
                                     $stageLabel = $stage->display_label ?: 'Approval';
+                                    $stageApprovals = $document->approvals
+                                        ->filter(fn ($approval) => $approval->stages === $stageLabel)
+                                        ->values();
+                                    $isStageFullyApproved = $stageApprovals->isNotEmpty()
+                                        && $stageApprovals->every(fn ($approval) => $approval->status?->kode_status === \App\Models\ApprovalStatus::APPROVED);
                                     $oldApproverIds = collect(old("stage_approvers.{$stage->id}", []))
                                         ->filter()
                                         ->map(fn ($userId) => (int) $userId)
                                         ->values();
-                                    $stageApprovers = $oldApproverIds->isNotEmpty()
-                                        ? $assignableUsers->whereIn('id', $oldApproverIds)->values()
-                                        : $document->approvals
-                                            ->filter(fn ($approval) => $approval->stages === $stageLabel && $approval->responded_at === null)
-                                            ->map(fn ($approval) => $approval->approver)
-                                            ->filter()
+                                    $stageApprovers = $oldApproverIds->isNotEmpty() && ! $isStageFullyApproved
+                                        ? $assignableUsers
+                                            ->whereIn('id', $oldApproverIds)
+                                            ->map(fn ($user) => [
+                                                'user' => $user,
+                                                'status' => null,
+                                                'locked' => false,
+                                            ])
+                                            ->values()
+                                        : $stageApprovals
+                                            ->map(fn ($approval) => [
+                                                'user' => $approval->approver,
+                                                'status' => $approval->status?->kode_status,
+                                                'locked' => $approval->status?->kode_status === \App\Models\ApprovalStatus::APPROVED || $isStageFullyApproved,
+                                            ])
+                                            ->filter(fn ($item) => $item['user'])
                                             ->values();
                                     if (
                                         $stage->stage_order === 1
@@ -242,7 +287,11 @@
                                         && $document->officialPreparer
                                         && data_get(old('stage_approvers', []), $stage->id) === null
                                     ) {
-                                        $stageApprovers = collect([$document->officialPreparer]);
+                                        $stageApprovers = collect([[
+                                            'user' => $document->officialPreparer,
+                                            'status' => null,
+                                            'locked' => false,
+                                        ]]);
                                     }
                                 @endphp
 
@@ -258,24 +307,51 @@
                                     </div>
 
                                     <div class="mt-4 space-y-3" data-approver-slots>
-                                        @foreach ($stageApprovers as $approver)
+                                        @foreach ($stageApprovers as $item)
+                                            @php
+                                                $approver = $item['user'];
+                                                $approverStatus = $item['status'];
+                                                $locked = $item['locked'];
+                                            @endphp
                                             <div class="flex items-start gap-2" data-approver-slot>
                                                 <div class="min-w-0 flex-1">
-                                                    <x-ui.user-search-select
-                                                        name="stage_approvers[{{ $stage->id }}][]"
-                                                        :users="$assignableUsers"
-                                                        :selected-user="$approver"
-                                                        placeholder="Cari dan pilih approver"
-                                                        required
-                                                    />
+                                                    @if ($locked)
+                                                        <input type="hidden" name="stage_approvers[{{ $stage->id }}][]" value="{{ $approver->id }}">
+                                                        <div class="flex min-h-12 w-full items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600">
+                                                            <span class="grid size-8 shrink-0 place-items-center rounded-full bg-emerald-50 text-xs font-bold text-emerald-700 ring-1 ring-emerald-100">
+                                                                {{ $approver->initials() }}
+                                                            </span>
+                                                            <span class="min-w-0 flex-1">
+                                                                <span class="block truncate font-semibold text-slate-800">{{ $approver->name }}</span>
+                                                                <span class="block truncate text-xs text-slate-500">{{ $approver->jabatan ?: $approver->email }}</span>
+                                                            </span>
+                                                            <span class="shrink-0 rounded-md bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700">
+                                                                {{ $approverStatus ?? 'LOCKED' }}
+                                                            </span>
+                                                        </div>
+                                                    @else
+                                                        <x-ui.user-search-select
+                                                            name="stage_approvers[{{ $stage->id }}][]"
+                                                            :users="$assignableUsers"
+                                                            :selected-user="$approver"
+                                                            placeholder="Cari dan pilih approver"
+                                                            required
+                                                        />
+                                                    @endif
                                                 </div>
-                                                <x-ui.icon-button
-                                                    type="button"
-                                                    icon="trash"
-                                                    label="Hapus approver"
-                                                    variant="ghost"
-                                                    data-remove-approver-slot
-                                                />
+                                                @if (! $locked)
+                                                    <x-ui.icon-button
+                                                        type="button"
+                                                        icon="trash"
+                                                        label="Hapus approver"
+                                                        variant="ghost"
+                                                        data-remove-approver-slot
+                                                    />
+                                                @else
+                                                    <span class="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400" title="Approver terkunci">
+                                                        <flux:icon name="lock-closed" class="size-5" />
+                                                    </span>
+                                                @endif
                                             </div>
                                         @endforeach
                                     </div>
@@ -284,10 +360,12 @@
                                         <span class="mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                     @enderror
 
-                                    <button type="button" class="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-add-approver-slot>
-                                        <flux:icon name="plus" class="size-5" />
-                                        Tambah Approver
-                                    </button>
+                                    @if (! $isStageFullyApproved)
+                                        <button type="button" class="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-add-approver-slot>
+                                            <flux:icon name="plus" class="size-5" />
+                                            Tambah Approver
+                                        </button>
+                                    @endif
                                 </article>
                             @endforeach
 
@@ -296,24 +374,6 @@
                             </x-ui.action-button>
                         </form>
                     @endif
-
-                    <div class="border-t border-slate-100 px-6 py-5">
-                        <h3 class="text-sm font-bold text-slate-900">Riwayat Approver</h3>
-                        <div class="mt-3 space-y-2">
-                            @foreach ($document->approvals->sortByDesc('assigned_at') as $approval)
-                                <div class="rounded-lg bg-slate-50 px-3 py-2">
-                                    <div class="flex items-center justify-between gap-3">
-                                        <p class="truncate text-sm font-semibold text-slate-800">{{ $approval->approver?->name ?? '-' }}</p>
-                                        <x-ui.status-badge :label="$approval->status?->nama_status ?? '-'" :tone="$approval->status?->kode_status === 'APPROVED' ? 'emerald' : ($approval->status?->kode_status === 'REJECTED' ? 'red' : 'sky')" />
-                                    </div>
-                                    <p class="mt-1 text-xs font-medium text-slate-500">{{ $approval->stages ?: 'Approval' }}</p>
-                                    @if ($approval->catatan)
-                                        <p class="mt-2 rounded-md bg-white px-2 py-1 text-xs text-slate-600">{{ $approval->catatan }}</p>
-                                    @endif
-                                </div>
-                            @endforeach
-                        </div>
-                    </div>
                 </section>
             </aside>
         </div>
