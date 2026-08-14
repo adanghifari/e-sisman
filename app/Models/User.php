@@ -96,7 +96,7 @@ class User extends Authenticatable implements PasskeyUser
         }
 
         return $this->roles()
-            ->whereIn('nama_role', ['admin', 'administrator', 'super admin'])
+            ->whereIn('nama_role', ['admin', 'administrator', 'super admin', 'SuperAdmin'])
             ->exists();
     }
 

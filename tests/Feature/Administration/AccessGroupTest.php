@@ -170,6 +170,34 @@ class AccessGroupTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_permission_seeder_creates_superadmin_role_with_all_permissions(): void
+    {
+        $this->seed(PermissionSeeder::class);
+
+        $superAdminRole = Role::query()->where('nama_role', 'SuperAdmin')->firstOrFail();
+        $permissionCount = Permission::query()->count();
+
+        $this->assertGreaterThan(0, $permissionCount);
+        $this->assertSame($permissionCount, $superAdminRole->permissions()->count());
+    }
+
+    public function test_superadmin_role_can_manage_access_groups(): void
+    {
+        $this->seed(PermissionSeeder::class);
+
+        $superAdmin = User::factory()->create();
+        $superAdminRole = Role::query()->where('nama_role', 'SuperAdmin')->firstOrFail();
+
+        $superAdminRole->users()->sync([$superAdmin->id]);
+
+        $this->assertTrue($superAdmin->fresh()->isAdmin());
+        $this->assertTrue($superAdmin->fresh()->hasPermission('access-groups.update'));
+
+        $this->actingAs($superAdmin->fresh())
+            ->get(route('access-groups.index'))
+            ->assertOk();
+    }
+
     public function test_seeded_developer_identity_bypasses_group_permissions(): void
     {
         $this->seed(PermissionSeeder::class);
