@@ -856,34 +856,86 @@ class DocumentInboxTest extends TestCase
             ->assertSee('PS-SMR-MASTER');
     }
 
-    public function test_first_flow_stage_defaults_to_official_preparer_without_saving_assignment(): void
+    public function test_first_flow_stage_defaults_to_official_preparer_when_assignment_is_saved_directly(): void
     {
-        $approver = User::factory()->create();
+        $this->ensureApprovalStatuses();
+
         $officialPreparer = User::factory()->create(['name' => 'Penyusun Resmi Default']);
         $submitter = User::factory()->create();
         $document = $this->createDocument($submitter, [
             'official_preparer_id' => $officialPreparer->id,
         ]);
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
         $flow = ApprovalFlow::create([
             'm_document_level_id' => $document->m_document_level_id,
             'nama_flow' => 'Flow Level II',
         ]);
-        $flow->stages()->create([
+        $firstStage = $flow->stages()->create([
             'stage_order' => 1,
             'keterangan' => 'Dibuat oleh',
             'nama_tahap' => 'Staff',
         ]);
-        $this->createApproval($document, $approver, ApprovalStatus::PENDING);
 
-        $this->actingAs($approver)
+        $this->actingAs($documentControlAdmin)
             ->get(route('documents.approval.show', $document))
             ->assertOk()
             ->assertSee('Penyusun Resmi Default');
+
+        $this->actingAs($documentControlAdmin)
+            ->post(route('documents.approval.assign', $document), [
+                'stage_approvers' => [
+                    $firstStage->id => [],
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document));
+
+        $this->assertTrue(Approval::query()
+            ->where('t_document_id', $document->id)
+            ->where('user_id', $officialPreparer->id)
+            ->where('stages', 'Dibuat oleh Staff')
+            ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::PENDING))
+            ->exists());
+    }
+
+    public function test_document_control_admin_can_replace_default_first_stage_approver_before_save(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $officialPreparer = User::factory()->create(['name' => 'Penyusun Resmi Default']);
+        $replacementApprover = User::factory()->create(['name' => 'Approver Pengganti']);
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'official_preparer_id' => $officialPreparer->id,
+        ]);
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $document->m_document_level_id,
+            'nama_flow' => 'Flow Level II',
+        ]);
+        $firstStage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Dibuat oleh',
+            'nama_tahap' => 'Staff',
+        ]);
+
+        $this->actingAs($documentControlAdmin)
+            ->post(route('documents.approval.assign', $document), [
+                'stage_approvers' => [
+                    $firstStage->id => [$replacementApprover->id],
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document));
 
         $this->assertFalse(Approval::query()
             ->where('t_document_id', $document->id)
             ->where('user_id', $officialPreparer->id)
             ->where('stages', 'Dibuat oleh Staff')
+            ->exists());
+        $this->assertTrue(Approval::query()
+            ->where('t_document_id', $document->id)
+            ->where('user_id', $replacementApprover->id)
+            ->where('stages', 'Dibuat oleh Staff')
+            ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::PENDING))
             ->exists());
     }
 

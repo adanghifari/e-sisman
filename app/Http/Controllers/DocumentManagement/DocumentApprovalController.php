@@ -137,11 +137,7 @@ class DocumentApprovalController extends Controller
         $activeStageOrder = $this->activeStageOrderForAssignment($document, $stages);
 
         foreach ($stages as $stage) {
-            $userIds = collect($request->input("stage_approvers.{$stage->id}", []))
-                ->filter()
-                ->map(fn ($userId) => (int) $userId)
-                ->unique()
-                ->values();
+            $userIds = $this->stageApproverIds($request, $document, $stage);
 
             if ($userIds->isEmpty()) {
                 return back()->withErrors([
@@ -166,11 +162,7 @@ class DocumentApprovalController extends Controller
             $stageLabel = $stage->display_label ?: 'Approval';
             $role = Role::query()->firstOrCreate(['nama_role' => $stage->nama_tahap]);
             $stageStatus = $stage->stage_order === $activeStageOrder ? $pendingStatus : $waitingStatus;
-            $userIds = collect($request->input("stage_approvers.{$stage->id}", []))
-                ->filter()
-                ->map(fn ($userId) => (int) $userId)
-                ->unique()
-                ->values();
+            $userIds = $this->stageApproverIds($request, $document, $stage);
 
             Approval::query()
                 ->where('t_document_id', $document->id)
@@ -295,6 +287,37 @@ class DocumentApprovalController extends Controller
             ->exists();
     }
 
+    private function stageApproverIds(Request $request, Document $document, ApprovalFlowStage $stage): Collection
+    {
+        $inputKey = "stage_approvers.{$stage->id}";
+        $userIds = collect($request->input($inputKey, []))
+            ->filter()
+            ->map(fn ($userId) => (int) $userId)
+            ->unique()
+            ->values();
+
+        if (
+            $stage->stage_order === 1
+            && $userIds->isEmpty()
+            && $document->official_preparer_id !== null
+            && ! $this->hasStageAssignment($document, $stage)
+        ) {
+            return collect([(int) $document->official_preparer_id]);
+        }
+
+        return $userIds;
+    }
+
+    private function hasStageAssignment(Document $document, ApprovalFlowStage $stage): bool
+    {
+        $stageLabel = $stage->display_label ?: 'Approval';
+
+        return Approval::query()
+            ->where('t_document_id', $document->id)
+            ->where('stages', $stageLabel)
+            ->exists();
+    }
+
     /**
      * @return array<string, string>|null
      */
@@ -305,11 +328,7 @@ class DocumentApprovalController extends Controller
         foreach ($stages as $stage) {
             $stageLabel = $stage->display_label ?: 'Approval';
             $field = "stage_approvers.{$stage->id}";
-            $requestedUserIds = collect($request->input($field, []))
-                ->filter()
-                ->map(fn ($userId) => (int) $userId)
-                ->unique()
-                ->values();
+            $requestedUserIds = $this->stageApproverIds($request, $document, $stage);
             $stageApprovals = Approval::query()
                 ->where('t_document_id', $document->id)
                 ->where('stages', $stageLabel)
