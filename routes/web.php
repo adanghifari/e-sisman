@@ -5,6 +5,8 @@ use App\Http\Controllers\DocumentManagement\DocumentController;
 use App\Http\Controllers\DocumentManagement\DocumentInboxController;
 use App\Http\Controllers\DocumentManagement\DocumentMasterController;
 use App\Http\Controllers\DocumentManagement\DocumentTemplateController;
+use App\Http\Controllers\Log\ActivityLogController;
+use App\Http\Controllers\Log\ActivityLogExportController;
 use App\Http\Middleware\EnsureRoutePermission;
 use App\Livewire\Administration\AccessGroup\Index as AccessGroupIndex;
 use App\Livewire\Administration\AccessMenu\Index as AccessMenuIndex;
@@ -51,7 +53,8 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::livewire('master-data/business-processes', BusinessProcessIndex::class)->name('master-data.business-processes');
     Route::livewire('master-data/departments', DepartmentIndex::class)->name('master-data.departments');
     Route::livewire('master-data/document-types', DocumentTypeIndex::class)->name('master-data.document-types');
-    Route::view('activity-log', 'log.activity-log.index')->name('activity-log.index');
+    Route::get('activity-log/export', ActivityLogExportController::class)->name('activity-log.export');
+    Route::get('activity-log', ActivityLogController::class)->name('activity-log.index');
 });
 
 require __DIR__.'/settings.php';
