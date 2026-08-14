@@ -185,6 +185,30 @@
                     </div>
                 </section>
 
+                <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <div class="border-b border-slate-100 px-6 py-5">
+                        <h3 class="text-sm font-bold text-slate-900">Riwayat Approver</h3>
+                    </div>
+                    <div class="space-y-2 px-6 py-5">
+                        @forelse ($document->approvals->sortByDesc('assigned_at') as $approval)
+                            <div class="rounded-lg bg-slate-50 px-3 py-2">
+                                <div class="flex items-center justify-between gap-3">
+                                    <p class="truncate text-sm font-semibold text-slate-800">{{ $approval->approver?->name ?? '-' }}</p>
+                                    <x-ui.status-badge :label="$approval->status?->nama_status ?? '-'" :tone="$approval->status?->kode_status === 'APPROVED' ? 'emerald' : ($approval->status?->kode_status === 'REJECTED' ? 'red' : 'sky')" />
+                                </div>
+                                <p class="mt-1 text-xs font-medium text-slate-500">{{ $approval->stages ?: 'Approval' }}</p>
+                                @if ($approval->catatan)
+                                    <p class="mt-2 rounded-md bg-white px-2 py-1 text-xs text-slate-600">{{ $approval->catatan }}</p>
+                                @endif
+                            </div>
+                        @empty
+                            <p class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-6 text-center text-sm font-semibold text-slate-500">
+                                Belum ada approver yang disimpan.
+                            </p>
+                        @endforelse
+                    </div>
+                </section>
+
                 @if ($activeApproval)
                     <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                         <div class="border-b border-slate-200 px-6 py-5">
@@ -350,28 +374,6 @@
                             </x-ui.action-button>
                         </form>
                     @endif
-
-                    <div class="border-t border-slate-100 px-6 py-5">
-                        <h3 class="text-sm font-bold text-slate-900">Riwayat Approver</h3>
-                        <div class="mt-3 space-y-2">
-                            @forelse ($document->approvals->sortByDesc('assigned_at') as $approval)
-                                <div class="rounded-lg bg-slate-50 px-3 py-2">
-                                    <div class="flex items-center justify-between gap-3">
-                                        <p class="truncate text-sm font-semibold text-slate-800">{{ $approval->approver?->name ?? '-' }}</p>
-                                        <x-ui.status-badge :label="$approval->status?->nama_status ?? '-'" :tone="$approval->status?->kode_status === 'APPROVED' ? 'emerald' : ($approval->status?->kode_status === 'REJECTED' ? 'red' : 'sky')" />
-                                    </div>
-                                    <p class="mt-1 text-xs font-medium text-slate-500">{{ $approval->stages ?: 'Approval' }}</p>
-                                    @if ($approval->catatan)
-                                        <p class="mt-2 rounded-md bg-white px-2 py-1 text-xs text-slate-600">{{ $approval->catatan }}</p>
-                                    @endif
-                                </div>
-                            @empty
-                                <p class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-6 text-center text-sm font-semibold text-slate-500">
-                                    Belum ada approver yang disimpan.
-                                </p>
-                            @endforelse
-                        </div>
-                    </div>
                 </section>
             </aside>
         </div>

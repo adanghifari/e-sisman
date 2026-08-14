@@ -21,9 +21,13 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::view('dashboard', 'main.dashboard')->name('dashboard');
     Route::get('documents/inbox', DocumentInboxController::class)->name('documents.inbox');
     Route::get('documents/inbox/{document}', [DocumentApprovalController::class, 'show'])->name('documents.approval.show');
+    Route::get('documents/inbox/{document}/assign', fn ($document) => redirect()->route('documents.approval.show', $document));
+    Route::post('documents/inbox/{document}', [DocumentApprovalController::class, 'assign'])->name('documents.approval.assign');
     Route::post('documents/inbox/{document}/approve', [DocumentApprovalController::class, 'approve'])->name('documents.approval.approve');
     Route::post('documents/inbox/{document}/reject', [DocumentApprovalController::class, 'reject'])->name('documents.approval.reject');
-    Route::post('documents/inbox/{document}/assign', [DocumentApprovalController::class, 'assign'])->name('documents.approval.assign');
+    Route::post('documents/inbox/{document}/assign', fn ($document) => redirect()
+        ->route('documents.approval.show', $document)
+        ->withErrors(['stage_approvers' => 'Halaman assign sudah diperbarui. Silakan simpan ulang dari detail dokumen.']));
     Route::get('documents/inbox/{document}/files/{file}', [DocumentApprovalController::class, 'file'])->name('documents.approval.files.show');
     Route::get('documents/inbox/{document}/files/{file}/preview', [DocumentApprovalController::class, 'preview'])->name('documents.approval.files.preview');
     Route::view('documents/create', 'document-management.create.index')->name('documents.create');

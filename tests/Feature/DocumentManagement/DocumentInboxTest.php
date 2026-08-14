@@ -535,7 +535,9 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Assign Approver')
             ->assertSee('Dibuat oleh')
             ->assertSee('Tambah Approver')
-            ->assertSee('Save Approver');
+            ->assertSee('Save Approver')
+            ->assertSee('action="'.route('documents.approval.assign', $document).'"', false)
+            ->assertDontSee('action="'.url("documents/inbox/{$document->id}/assign").'"', false);
     }
 
     public function test_assign_approver_requires_each_flow_stage_to_have_approver(): void
@@ -572,6 +574,63 @@ class DocumentInboxTest extends TestCase
             ])
             ->assertRedirect(route('documents.approval.show', $document))
             ->assertSessionHasErrors(["stage_approvers.{$secondStage->id}"]);
+    }
+
+    public function test_assign_approver_validation_redirects_to_document_detail_without_referer(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $approver = User::factory()->create();
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter);
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $document->m_document_level_id,
+            'nama_flow' => 'Flow Level II',
+        ]);
+        $firstStage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Dibuat oleh',
+            'nama_tahap' => 'Staff',
+        ]);
+        $secondStage = $flow->stages()->create([
+            'stage_order' => 2,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+
+        $this->actingAs($documentControlAdmin)
+            ->post(route('documents.approval.assign', $document), [
+                'stage_approvers' => [
+                    $firstStage->id => [$approver->id],
+                    $secondStage->id => [],
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document))
+            ->assertSessionHasErrors(["stage_approvers.{$secondStage->id}"]);
+    }
+
+    public function test_opening_assign_endpoint_with_get_redirects_to_document_detail(): void
+    {
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter);
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
+
+        $this->actingAs($documentControlAdmin)
+            ->get(url("documents/inbox/{$document->id}/assign"))
+            ->assertRedirect(route('documents.approval.show', $document));
+    }
+
+    public function test_posting_to_legacy_assign_endpoint_redirects_to_document_detail(): void
+    {
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter);
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
+
+        $this->actingAs($documentControlAdmin)
+            ->post(url("documents/inbox/{$document->id}/assign"))
+            ->assertRedirect(route('documents.approval.show', $document))
+            ->assertSessionHasErrors(['stage_approvers']);
     }
 
     public function test_assign_approver_sets_first_stage_pending_and_later_stages_waiting(): void

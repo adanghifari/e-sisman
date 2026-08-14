@@ -126,9 +126,9 @@ class DocumentApprovalController extends Controller
         $stages = $this->approvalFlowStages($document);
 
         if ($stages->isEmpty()) {
-            return back()->withErrors([
+            return $this->assignmentErrorRedirect($document, [
                 'stage_approvers' => 'Belum ada aturan tahap approval.',
-            ])->withInput();
+            ]);
         }
 
         $pendingStatus = ApprovalStatus::findByCode(ApprovalStatus::PENDING);
@@ -139,22 +139,22 @@ class DocumentApprovalController extends Controller
             $userIds = $this->stageApproverIds($request, $document, $stage);
 
             if ($userIds->isEmpty()) {
-                return back()->withErrors([
+                return $this->assignmentErrorRedirect($document, [
                     "stage_approvers.{$stage->id}" => "Approver tahap {$stage->stage_order} tidak boleh kosong.",
-                ])->withInput();
+                ]);
             }
 
             if (User::query()->whereIn('id', $userIds)->count() !== $userIds->count()) {
-                return back()->withErrors([
+                return $this->assignmentErrorRedirect($document, [
                     "stage_approvers.{$stage->id}" => "Approver tahap {$stage->stage_order} tidak valid.",
-                ])->withInput();
+                ]);
             }
         }
 
         $approvedStageError = $this->approvedStageAssignmentError($request, $document, $stages);
 
         if ($approvedStageError !== null) {
-            return back()->withErrors($approvedStageError)->withInput();
+            return $this->assignmentErrorRedirect($document, $approvedStageError);
         }
 
         foreach ($stages as $stage) {
@@ -197,6 +197,17 @@ class DocumentApprovalController extends Controller
         return redirect()
             ->route('documents.approval.show', $document)
             ->with('status', 'Approver berhasil disimpan.');
+    }
+
+    /**
+     * @param  array<string, string>  $errors
+     */
+    private function assignmentErrorRedirect(Document $document, array $errors): RedirectResponse
+    {
+        return redirect()
+            ->route('documents.approval.show', $document)
+            ->withErrors($errors)
+            ->withInput();
     }
 
     public function file(Request $request, Document $document, DocumentFile $file): BinaryFileResponse
