@@ -118,6 +118,52 @@ class DocumentInboxTest extends TestCase
             ->assertDontSee('PS-SMR-CLEAN');
     }
 
+    public function test_developer_can_manage_approver_assignment_without_document_control_role(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $developer = User::factory()->create([
+            'nik' => '000000',
+            'name' => 'Developer',
+            'email' => 'developer@example.com',
+        ]);
+        $submitter = User::factory()->create();
+        $approver = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Developer Assign',
+            'nomor_dokumen' => 'PS-SMR-DEV-ASSIGN',
+        ]);
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $document->m_document_level_id,
+            'nama_flow' => 'Flow Level II',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+
+        $this->actingAs($developer)
+            ->get(route('documents.approval.show', $document))
+            ->assertOk()
+            ->assertSee('Tambah Approver')
+            ->assertSee('Save Approver');
+
+        $this->actingAs($developer)
+            ->post(route('documents.approval.assign', $document), [
+                'stage_approvers' => [
+                    $stage->id => [$approver->id],
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document));
+
+        $this->assertTrue(Approval::query()
+            ->where('t_document_id', $document->id)
+            ->where('user_id', $approver->id)
+            ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::PENDING))
+            ->exists());
+    }
+
     public function test_document_control_admin_from_related_department_can_see_proposed_document_to_assign(): void
     {
         $submitter = User::factory()->create(['name' => 'Pengaju Department']);

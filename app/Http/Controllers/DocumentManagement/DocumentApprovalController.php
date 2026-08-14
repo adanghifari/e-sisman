@@ -46,7 +46,7 @@ class DocumentApprovalController extends Controller
             'document' => $document,
             'activeApproval' => $this->activeApproval($request, $document),
             'approvalFlowStages' => $this->approvalFlowStages($document),
-            'canManageApproverAssignment' => $request->user()->canAssignDocument($document) && ! $this->isDocumentAssignmentLocked($document),
+            'canManageApproverAssignment' => $this->canManageApproverAssignment($request, $document),
             'assignableUsers' => User::query()->with('department')->orderBy('name')->get(),
             'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document'])->values(),
             'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
@@ -121,8 +121,7 @@ class DocumentApprovalController extends Controller
 
     public function assign(Request $request, Document $document): RedirectResponse
     {
-        abort_unless($request->user()->canAssignDocument($document), 403);
-        abort_if($this->isDocumentAssignmentLocked($document), 403);
+        abort_unless($this->canManageApproverAssignment($request, $document), 403);
 
         $stages = $this->approvalFlowStages($document);
 
@@ -285,6 +284,15 @@ class DocumentApprovalController extends Controller
         return $document->status()
             ->whereIn('nama_status', $lockedStatuses)
             ->exists();
+    }
+
+    private function canManageApproverAssignment(Request $request, Document $document): bool
+    {
+        if ($this->isDocumentAssignmentLocked($document)) {
+            return false;
+        }
+
+        return $request->user()->isDeveloper() || $request->user()->canAssignDocument($document);
     }
 
     private function stageApproverIds(Request $request, Document $document, ApprovalFlowStage $stage): Collection
