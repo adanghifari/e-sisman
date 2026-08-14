@@ -5,6 +5,7 @@ namespace App\Livewire\Administration\AccessGroup;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
+use App\Support\Access\PermissionCatalog;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\QueryException;
 use Illuminate\Pagination\LengthAwarePaginator;
@@ -33,8 +34,6 @@ class Index extends Component
 
     public string $nama_role = '';
 
-    public string $formStep = 'detail';
-
     public string $selectedUserId = '';
 
     /** @var array<int, int> */
@@ -50,43 +49,25 @@ class Index extends Component
 
     public function create(): void
     {
+        $this->authorizePermission('access-groups.create');
+
         $this->resetForm();
         $this->showForm = true;
     }
 
     public function edit(int $id): void
     {
+        $this->authorizePermission('access-groups.update');
+
         $role = Role::query()
             ->with(['permissions:id', 'users:id'])
             ->findOrFail($id);
 
         $this->showForm = true;
-        $this->formStep = 'detail';
         $this->editingId = $role->id;
         $this->nama_role = $role->nama_role;
         $this->permissionIds = $role->permissions->pluck('id')->all();
         $this->userIds = $role->users->pluck('id')->all();
-    }
-
-    public function manageAccess(): void
-    {
-        $this->validate([
-            'nama_role' => [
-                'required',
-                'string',
-                'max:255',
-                Rule::unique('roles', 'nama_role')->ignore($this->editingId),
-            ],
-            'userIds' => ['array'],
-            'userIds.*' => ['integer', Rule::exists('users', 'id')],
-        ]);
-
-        $this->formStep = 'access';
-    }
-
-    public function backToDetails(): void
-    {
-        $this->formStep = 'detail';
     }
 
     public function addUserFromPicker(string|int $userId): void
@@ -121,6 +102,10 @@ class Index extends Component
 
     public function save(): void
     {
+        $this->authorizePermission($this->editingId ? 'access-groups.update' : 'access-groups.create');
+
+        $this->permissionIds = app(PermissionCatalog::class)->enforceReadDependencies($this->permissionIds);
+
         $validated = $this->validate([
             'nama_role' => [
                 'required',
@@ -146,8 +131,78 @@ class Index extends Component
         $this->resetPage();
     }
 
+    public function togglePermission(int $permissionId): void
+    {
+        $permission = Permission::findOrFail($permissionId);
+
+        if ($this->hasPermissionSelected($permissionId)) {
+            $this->permissionIds = array_values(array_filter(
+                $this->permissionIds,
+                fn (int $selectedPermissionId): bool => $selectedPermissionId !== $permissionId,
+            ));
+            $this->enforceReadDependencies();
+
+            return;
+        }
+
+        $this->permissionIds[] = $permissionId;
+        $this->permissionIds = array_merge(
+            $this->permissionIds,
+            app(PermissionCatalog::class)->readDependenciesFor($permission),
+        );
+        $this->normalizePermissionIds();
+    }
+
+    public function toggleBundle(string $bundleKey): void
+    {
+        $permissionBundles = app(PermissionCatalog::class)->bundles()->all();
+        $bundle = $permissionBundles[$bundleKey] ?? null;
+
+        if ($bundle === null) {
+            return;
+        }
+
+        if ($this->allSelected($bundle['permission_ids'])) {
+            $this->permissionIds = array_values(array_diff($this->permissionIds, $bundle['permission_ids']));
+            $this->enforceReadDependencies();
+
+            return;
+        }
+
+        $this->permissionIds = array_merge($this->permissionIds, $bundle['permission_ids']);
+        $this->normalizePermissionIds();
+    }
+
+    public function toggleActionGroup(string $bundleKey, string $action): void
+    {
+        $permissionBundles = app(PermissionCatalog::class)->bundles()->all();
+        $bundle = $permissionBundles[$bundleKey] ?? null;
+        $actionGroup = $bundle['actions'][$action] ?? null;
+
+        if ($bundle === null || $actionGroup === null) {
+            return;
+        }
+
+        if ($this->allSelected($actionGroup['permission_ids'])) {
+            $this->permissionIds = array_values(array_diff($this->permissionIds, $actionGroup['permission_ids']));
+            $this->enforceReadDependencies();
+
+            return;
+        }
+
+        $this->permissionIds = array_merge($this->permissionIds, $actionGroup['permission_ids']);
+
+        if ($action !== 'read') {
+            $this->permissionIds = array_merge($this->permissionIds, $bundle['read_permission_ids']);
+        }
+
+        $this->normalizePermissionIds();
+    }
+
     public function confirmDelete(int $id): void
     {
+        $this->authorizePermission('access-groups.delete');
+
         Role::findOrFail($id);
 
         $this->resetErrorBag('delete');
@@ -157,6 +212,8 @@ class Index extends Component
 
     public function delete(): void
     {
+        $this->authorizePermission('access-groups.delete');
+
         if ($this->deletingId === null) {
             return;
         }
@@ -199,15 +256,6 @@ class Index extends Component
             ->paginate($this->perPage);
     }
 
-    public function getPermissionsByModuleProperty(): Collection
-    {
-        return Permission::query()
-            ->orderBy('module')
-            ->orderBy('name')
-            ->get()
-            ->groupBy('module');
-    }
-
     public function getUsersProperty(): Collection
     {
         return User::query()
@@ -226,9 +274,12 @@ class Index extends Component
     {
         return view('livewire.administration.access-groups.index', [
             'roles' => $this->roles,
-            'permissionsByModule' => $this->permissionsByModule,
+            'permissionBundles' => app(PermissionCatalog::class)->bundles(),
             'users' => $this->users,
             'selectedUsers' => $this->selectedUsers,
+            'canCreate' => auth()->user()?->hasPermission('access-groups.create') ?? false,
+            'canUpdate' => auth()->user()?->hasPermission('access-groups.update') ?? false,
+            'canDelete' => auth()->user()?->hasPermission('access-groups.delete') ?? false,
         ]);
     }
 
@@ -238,12 +289,42 @@ class Index extends Component
             'editingId',
             'showForm',
             'nama_role',
-            'formStep',
             'selectedUserId',
             'permissionIds',
             'userIds',
         ]);
+    }
 
-        $this->formStep = 'detail';
+    private function normalizePermissionIds(): void
+    {
+        $this->permissionIds = collect($this->permissionIds)
+            ->map(fn ($permissionId): int => (int) $permissionId)
+            ->unique()
+            ->values()
+            ->all();
+    }
+
+    private function enforceReadDependencies(): void
+    {
+        $this->permissionIds = app(PermissionCatalog::class)->enforceReadDependencies($this->permissionIds);
+    }
+
+    private function hasPermissionSelected(int $permissionId): bool
+    {
+        return in_array($permissionId, $this->permissionIds, true);
+    }
+
+    private function allSelected(array $permissionIds): bool
+    {
+        if ($permissionIds === []) {
+            return false;
+        }
+
+        return collect($permissionIds)->every(fn (int $permissionId): bool => $this->hasPermissionSelected($permissionId));
+    }
+
+    private function authorizePermission(string $permissionCode): void
+    {
+        abort_unless(auth()->user()?->hasPermission($permissionCode), 403);
     }
 }

@@ -81,6 +81,43 @@ class AccessGroupTest extends TestCase
         $this->assertTrue($role->users()->where('users.id', $member->id)->exists());
     }
 
+    public function test_access_group_checking_cud_permission_automatically_includes_read(): void
+    {
+        $this->seed(PermissionSeeder::class);
+
+        $admin = User::factory()->create(['email' => 'test@example.com']);
+        $readPermission = Permission::query()->where('code', 'documents.create.view')->firstOrFail();
+        $createPermission = Permission::query()->where('code', 'documents.create.create')->firstOrFail();
+
+        $this->actingAs($admin);
+
+        Livewire::test(AccessGroupIndex::class)
+            ->call('create')
+            ->call('togglePermission', $createPermission->id)
+            ->assertSet('permissionIds', [$createPermission->id, $readPermission->id])
+            ->call('togglePermission', $readPermission->id)
+            ->assertSet('permissionIds', [$createPermission->id, $readPermission->id]);
+    }
+
+    public function test_access_group_viewer_cannot_run_create_action(): void
+    {
+        $this->seed(PermissionSeeder::class);
+
+        $viewer = User::factory()->create();
+        $role = Role::create(['nama_role' => 'Group Access Viewer']);
+        $viewPermission = Permission::query()->where('code', 'access-groups.view')->firstOrFail();
+
+        $role->permissions()->sync([$viewPermission->id]);
+        $role->users()->sync([$viewer->id]);
+
+        $this->actingAs($viewer->fresh());
+
+        Livewire::test(AccessGroupIndex::class)
+            ->assertDontSee('Tambah Group')
+            ->call('create')
+            ->assertForbidden();
+    }
+
     public function test_access_menu_page_lists_permission_catalog(): void
     {
         $this->seed(PermissionSeeder::class);
@@ -88,8 +125,29 @@ class AccessGroupTest extends TestCase
         $this->actingAs(User::factory()->create(['email' => 'test@example.com']));
 
         Livewire::test(AccessMenuIndex::class)
-            ->assertSee('Lihat Inbox Approval')
+            ->assertSee('Bundle Menu Akses')
+            ->assertSee('Fitur Inbox Approval')
+            ->assertSee('Akses Read')
             ->assertSee('documents.inbox.view');
+    }
+
+    public function test_manage_permissions_are_split_into_crud_bundles(): void
+    {
+        $this->seed(PermissionSeeder::class);
+
+        $this->actingAs(User::factory()->create(['email' => 'test@example.com']));
+
+        Livewire::test(AccessMenuIndex::class)
+            ->assertSee('Fitur Approval Flow')
+            ->assertSee('Akses Read')
+            ->assertSee('Akses Create')
+            ->assertSee('Akses Update')
+            ->assertSee('Akses Delete')
+            ->assertSee('approval-flows.view')
+            ->assertSee('approval-flows.create')
+            ->assertSee('approval-flows.update')
+            ->assertSee('approval-flows.delete')
+            ->assertDontSee('approval-flows.manage');
     }
 
     public function test_assigned_user_cannot_open_route_without_group_permission(): void
