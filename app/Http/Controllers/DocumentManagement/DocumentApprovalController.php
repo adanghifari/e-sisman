@@ -360,6 +360,15 @@ class DocumentApprovalController extends Controller
                 continue;
             }
 
+            $respondedUserIds = $stageApprovals
+                ->filter(fn (Approval $approval): bool => $approval->responded_at !== null)
+                ->pluck('user_id')
+                ->values();
+
+            if ($respondedUserIds->diff($requestedUserIds)->isNotEmpty()) {
+                return [$field => "Approver tahap {$stage->stage_order} yang sudah memberikan respon tidak boleh dihapus atau diganti."];
+            }
+
             $approvedUserIds = $stageApprovals
                 ->where('m_approval_status_id', $approvedStatusId)
                 ->pluck('user_id')

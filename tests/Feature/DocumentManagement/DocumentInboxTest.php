@@ -45,7 +45,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Prosedur Kalibrasi Alat')
             ->assertSee('PS-SMR-123')
             ->assertSee('Approval Manager')
-            ->assertSee('PENDING')
+            ->assertSee('Dalam Review')
             ->assertSee('Pengaju Dokumen');
     }
 
@@ -349,7 +349,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Instruksi Kerja Disetujui')
             ->assertSee('IK-SMR-789')
             ->assertSee('Review Kadis')
-            ->assertSee('APPROVED')
+            ->assertSee('Disetujui')
             ->assertSee('Pengaju Riwayat');
     }
 
@@ -727,6 +727,54 @@ class DocumentInboxTest extends TestCase
             ->where('t_document_id', $document->id)
             ->where('user_id', $approvedApprover->id)
             ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::APPROVED))
+            ->exists());
+        $this->assertFalse(Approval::query()
+            ->where('t_document_id', $document->id)
+            ->where('user_id', $replacementApprover->id)
+            ->exists());
+    }
+
+    public function test_responded_approver_cannot_be_removed_from_assignment(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $respondedApprover = User::factory()->create();
+        $pendingApprover = User::factory()->create();
+        $replacementApprover = User::factory()->create();
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter);
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $document->m_document_level_id,
+            'nama_flow' => 'Flow Level II',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+        $this->createApproval($document, $respondedApprover, ApprovalStatus::REJECTED, [
+            'stages' => 'Diperiksa oleh Manager',
+            'responded_at' => now(),
+        ]);
+        $this->createApproval($document, $pendingApprover, ApprovalStatus::PENDING, [
+            'stages' => 'Diperiksa oleh Manager',
+        ]);
+
+        $this->actingAs($documentControlAdmin)
+            ->from(route('documents.approval.show', $document))
+            ->post(route('documents.approval.assign', $document), [
+                'stage_approvers' => [
+                    $stage->id => [$pendingApprover->id, $replacementApprover->id],
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document))
+            ->assertSessionHasErrors(["stage_approvers.{$stage->id}"]);
+
+        $this->assertTrue(Approval::query()
+            ->where('t_document_id', $document->id)
+            ->where('user_id', $respondedApprover->id)
+            ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::REJECTED))
             ->exists());
         $this->assertFalse(Approval::query()
             ->where('t_document_id', $document->id)
@@ -1128,7 +1176,7 @@ class DocumentInboxTest extends TestCase
     {
         $status = ApprovalStatus::query()->firstOrCreate(
             ['kode_status' => $statusCode],
-            ['nama_status' => $statusCode],
+            ['nama_status' => $this->approvalStatusLabel($statusCode)],
         );
         $role = Role::create(['nama_role' => fake()->unique()->word()]);
 
@@ -1148,9 +1196,21 @@ class DocumentInboxTest extends TestCase
         foreach ([ApprovalStatus::PENDING, ApprovalStatus::WAITING, ApprovalStatus::APPROVED, ApprovalStatus::REJECTED, ApprovalStatus::TERMINATED] as $statusCode) {
             ApprovalStatus::query()->firstOrCreate(
                 ['kode_status' => $statusCode],
-                ['nama_status' => $statusCode],
+                ['nama_status' => $this->approvalStatusLabel($statusCode)],
             );
         }
+    }
+
+    private function approvalStatusLabel(string $statusCode): string
+    {
+        return match ($statusCode) {
+            ApprovalStatus::PENDING => 'Dalam Review',
+            ApprovalStatus::WAITING => 'Menunggu',
+            ApprovalStatus::APPROVED => 'Disetujui',
+            ApprovalStatus::REJECTED => 'Ditolak',
+            ApprovalStatus::TERMINATED => 'Dihentikan',
+            default => $statusCode,
+        };
     }
 
     private function documentControlAdmin(Department $department): User

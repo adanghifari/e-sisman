@@ -205,10 +205,20 @@
                     </div>
                     <div class="space-y-2 px-6 py-5">
                         @forelse ($document->approvals->sortByDesc('assigned_at') as $approval)
+                            @php
+                                $approvalStatusCode = $approval->status?->kode_status;
+                                $approvalStatusTone = match ($approvalStatusCode) {
+                                    \App\Models\ApprovalStatus::PENDING => 'amber',
+                                    \App\Models\ApprovalStatus::WAITING => 'sky',
+                                    \App\Models\ApprovalStatus::APPROVED => 'emerald',
+                                    \App\Models\ApprovalStatus::REJECTED => 'red',
+                                    default => 'slate',
+                                };
+                            @endphp
                             <div class="rounded-lg bg-slate-50 px-3 py-2">
                                 <div class="flex items-center justify-between gap-3">
                                     <p class="truncate text-sm font-semibold text-slate-800">{{ $approval->approver?->name ?? '-' }}</p>
-                                    <x-ui.status-badge :label="$approval->status?->kode_status ?? '-'" :tone="$approval->status?->kode_status === \App\Models\ApprovalStatus::APPROVED ? 'emerald' : ($approval->status?->kode_status === \App\Models\ApprovalStatus::REJECTED ? 'red' : 'sky')" />
+                                    <x-ui.status-badge :label="$approval->status?->nama_status ?? '-'" :tone="$approvalStatusTone" />
                                 </div>
                                 <p class="mt-1 text-xs font-medium text-slate-500">{{ $approval->stages ?: 'Approval' }}</p>
                                 @if ($approval->catatan)

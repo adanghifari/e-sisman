@@ -9,6 +9,7 @@
         $isLevelOne = $levelKey === 'level-1';
         $ownerLabel = $isLevelOne ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
         $statusCode = $activeApproval?->status?->kode_status ?? $document->status?->nama_status ?? '-';
+        $statusLabel = $activeApproval?->status?->nama_status ?? $document->status?->nama_status ?? '-';
         $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
         $readonlySelect = 'h-12 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
     @endphp
@@ -36,7 +37,7 @@
                 <p class="mt-2 text-base font-medium text-slate-500">{{ $document->nama_dokumen }}</p>
             </div>
 
-            <x-ui.status-badge :label="$statusCode" :tone="$statusCode === 'PENDING' ? 'sky' : ($statusCode === 'APPROVED' ? 'emerald' : 'red')" class="mt-1" />
+            <x-ui.status-badge :label="$statusLabel" :tone="$statusCode === 'PENDING' ? 'amber' : ($statusCode === 'APPROVED' ? 'emerald' : 'red')" class="mt-1" />
         </div>
 
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
@@ -189,14 +190,57 @@
                     <div class="border-b border-slate-100 px-6 py-5">
                         <h3 class="text-sm font-bold text-slate-900">Riwayat Approver</h3>
                     </div>
+                    @php
+                        $approvalStageOrders = $approvalFlowStages
+                            ->mapWithKeys(fn ($stage) => [($stage->display_label ?: 'Approval') => $stage->stage_order]);
+                        $approvalHistory = $document->approvals
+                            ->sortBy(fn ($approval) => sprintf(
+                                '%04d-%010d-%04d',
+                                $approvalStageOrders->get($approval->stages, 9999),
+                                $approval->assigned_at?->timestamp ?? 0,
+                                $approval->id,
+                            ))
+                            ->values();
+                        $approvalStatusLabels = [
+                            \App\Models\ApprovalStatus::WAITING => 'Menunggu',
+                            \App\Models\ApprovalStatus::PENDING => 'Dalam Review',
+                            \App\Models\ApprovalStatus::APPROVED => 'Disetujui',
+                            \App\Models\ApprovalStatus::REJECTED => 'Ditolak',
+                            \App\Models\ApprovalStatus::TERMINATED => 'Dihentikan',
+                        ];
+                        $approvalStatusTones = [
+                            \App\Models\ApprovalStatus::WAITING => 'sky',
+                            \App\Models\ApprovalStatus::PENDING => 'amber',
+                            \App\Models\ApprovalStatus::APPROVED => 'emerald',
+                            \App\Models\ApprovalStatus::REJECTED => 'red',
+                            \App\Models\ApprovalStatus::TERMINATED => 'slate',
+                        ];
+                    @endphp
                     <div class="space-y-2 px-6 py-5">
-                        @forelse ($document->approvals->sortByDesc('assigned_at') as $approval)
-                            <div class="rounded-lg bg-slate-50 px-3 py-2">
-                                <div class="flex items-center justify-between gap-3">
-                                    <p class="truncate text-sm font-semibold text-slate-800">{{ $approval->approver?->name ?? '-' }}</p>
-                                    <x-ui.status-badge :label="$approval->status?->nama_status ?? '-'" :tone="$approval->status?->kode_status === 'APPROVED' ? 'emerald' : ($approval->status?->kode_status === 'REJECTED' ? 'red' : 'sky')" />
+                        @forelse ($approvalHistory as $approval)
+                            @php
+                                $approvalStatusCode = $approval->status?->kode_status;
+                                $stageOrder = $approvalStageOrders->get($approval->stages);
+                            @endphp
+                            <div class="rounded-lg bg-slate-50 px-3 py-3">
+                                <div class="flex items-start justify-between gap-3">
+                                    <div class="flex min-w-0 items-start gap-3">
+                                        <span class="grid size-8 shrink-0 place-items-center rounded-lg bg-sky-100 text-xs font-bold text-sky-700">
+                                            {{ $stageOrder ?? '-' }}
+                                        </span>
+                                        <div class="min-w-0">
+                                            <p class="truncate text-sm font-semibold text-slate-800">{{ $approval->approver?->name ?? '-' }}</p>
+                                            <p class="mt-1 text-xs font-medium text-slate-500">
+                                                Tahap {{ $stageOrder ?? '-' }} - {{ $approval->stages ?: 'Approval' }}
+                                            </p>
+                                        </div>
+                                    </div>
+                                    <x-ui.status-badge
+                                        :label="$approvalStatusLabels[$approvalStatusCode] ?? ($approval->status?->nama_status ?? '-')"
+                                        :tone="$approvalStatusTones[$approvalStatusCode] ?? 'sky'"
+                                        class="shrink-0"
+                                    />
                                 </div>
-                                <p class="mt-1 text-xs font-medium text-slate-500">{{ $approval->stages ?: 'Approval' }}</p>
                                 @if ($approval->catatan)
                                     <p class="mt-2 rounded-md bg-white px-2 py-1 text-xs text-slate-600">{{ $approval->catatan }}</p>
                                 @endif
@@ -249,8 +293,32 @@
                             </p>
                         </div>
                     @else
-                        <form method="POST" action="{{ route('documents.approval.assign', $document) }}" class="space-y-5 px-6 py-6" data-approver-assignment-form>
+                        @php
+                            $hasSavedApprovers = $document->approvals->isNotEmpty();
+                            $hasAssignmentErrors = collect($errors->getMessages())
+                                ->keys()
+                                ->contains(fn ($key) => $key === 'stage_approvers' || str_starts_with($key, 'stage_approvers.'));
+                            $hasAssignmentValidationState = old('stage_approvers') !== null || $hasAssignmentErrors;
+                            $assignmentStartsReadonly = $hasSavedApprovers && ! $hasAssignmentValidationState;
+                        @endphp
+
+                        <form
+                            method="POST"
+                            action="{{ route('documents.approval.assign', $document) }}"
+                            class="space-y-5 px-6 py-6"
+                            data-approver-assignment-form
+                            data-readonly="{{ $assignmentStartsReadonly ? 'true' : 'false' }}"
+                        >
                             @csrf
+
+                            @if ($hasSavedApprovers)
+                                <div class="flex justify-end" data-approver-readonly-action @class(['hidden' => ! $assignmentStartsReadonly])>
+                                    <button type="button" class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" data-approver-edit-open>
+                                        <flux:icon name="pencil-square" class="size-4" />
+                                        Edit Approver
+                                    </button>
+                                </div>
+                            @endif
 
                             @foreach ($approvalFlowStages as $stage)
                                 @php
@@ -258,26 +326,40 @@
                                     $stageApprovals = $document->approvals
                                         ->filter(fn ($approval) => $approval->stages === $stageLabel)
                                         ->values();
+                                    $respondedApprovals = $stageApprovals
+                                        ->filter(fn ($approval) => $approval->responded_at !== null)
+                                        ->values();
                                     $isStageFullyApproved = $stageApprovals->isNotEmpty()
                                         && $stageApprovals->every(fn ($approval) => $approval->status?->kode_status === \App\Models\ApprovalStatus::APPROVED);
+                                    $hasOldStageInput = data_get(old('stage_approvers', []), $stage->id) !== null;
                                     $oldApproverIds = collect(old("stage_approvers.{$stage->id}", []))
                                         ->filter()
                                         ->map(fn ($userId) => (int) $userId)
                                         ->values();
-                                    $stageApprovers = $oldApproverIds->isNotEmpty() && ! $isStageFullyApproved
-                                        ? $assignableUsers
-                                            ->whereIn('id', $oldApproverIds)
-                                            ->map(fn ($user) => [
-                                                'user' => $user,
-                                                'status' => null,
-                                                'locked' => false,
+                                    $stageApprovers = $hasOldStageInput && ! $isStageFullyApproved
+                                        ? $respondedApprovals
+                                            ->map(fn ($approval) => [
+                                                'user' => $approval->approver,
+                                                'status' => $approval->status?->kode_status,
+                                                'locked' => true,
                                             ])
+                                            ->merge(
+                                                $assignableUsers
+                                                    ->whereIn('id', $oldApproverIds->diff($respondedApprovals->pluck('user_id')))
+                                                    ->map(fn ($user) => [
+                                                        'user' => $user,
+                                                        'status' => null,
+                                                        'locked' => false,
+                                                    ])
+                                                    ->values()
+                                            )
+                                            ->filter(fn ($item) => $item['user'])
                                             ->values()
                                         : $stageApprovals
                                             ->map(fn ($approval) => [
                                                 'user' => $approval->approver,
                                                 'status' => $approval->status?->kode_status,
-                                                'locked' => $approval->status?->kode_status === \App\Models\ApprovalStatus::APPROVED || $isStageFullyApproved,
+                                                'locked' => $approval->responded_at !== null,
                                             ])
                                             ->filter(fn ($item) => $item['user'])
                                             ->values();
@@ -285,7 +367,7 @@
                                         $stage->stage_order === 1
                                         && $stageApprovers->isEmpty()
                                         && $document->officialPreparer
-                                        && data_get(old('stage_approvers', []), $stage->id) === null
+                                        && ! $hasOldStageInput
                                     ) {
                                         $stageApprovers = collect([[
                                             'user' => $document->officialPreparer,
@@ -326,27 +408,47 @@
                                                                 <span class="block truncate text-xs text-slate-500">{{ $approver->jabatan ?: $approver->email }}</span>
                                                             </span>
                                                             <span class="shrink-0 rounded-md bg-emerald-50 px-2 py-1 text-xs font-bold text-emerald-700">
-                                                                {{ $approverStatus ?? 'LOCKED' }}
+                                                                {{ $approvalStatusLabels[$approverStatus] ?? 'Terkunci' }}
                                                             </span>
                                                         </div>
                                                     @else
-                                                        <x-ui.user-search-select
-                                                            name="stage_approvers[{{ $stage->id }}][]"
-                                                            :users="$assignableUsers"
-                                                            :selected-user="$approver"
-                                                            placeholder="Cari dan pilih approver"
-                                                            required
-                                                        />
+                                                        <div data-approver-readonly-card @class(['hidden' => ! $assignmentStartsReadonly])>
+                                                            <div class="flex min-h-12 w-full items-center gap-3 rounded-lg border border-slate-200 bg-white px-3 text-sm font-medium text-slate-600">
+                                                                <span class="grid size-8 shrink-0 place-items-center rounded-full bg-sky-50 text-xs font-bold text-sky-700 ring-1 ring-sky-100">
+                                                                    {{ $approver->initials() }}
+                                                                </span>
+                                                                <span class="min-w-0 flex-1">
+                                                                    <span class="block truncate font-semibold text-slate-800">{{ $approver->name }}</span>
+                                                                    <span class="block truncate text-xs text-slate-500">{{ $approver->jabatan ?: $approver->email }}</span>
+                                                                </span>
+                                                                @if ($approverStatus)
+                                                                    <span class="shrink-0 rounded-md bg-sky-50 px-2 py-1 text-xs font-bold text-sky-700">
+                                                                        {{ $approvalStatusLabels[$approverStatus] ?? $approverStatus }}
+                                                                    </span>
+                                                                @endif
+                                                            </div>
+                                                        </div>
+                                                        <div data-approver-edit-control @class(['hidden' => $assignmentStartsReadonly])>
+                                                            <x-ui.user-search-select
+                                                                name="stage_approvers[{{ $stage->id }}][]"
+                                                                :users="$assignableUsers"
+                                                                :selected-user="$approver"
+                                                                placeholder="Cari dan pilih approver"
+                                                                required
+                                                            />
+                                                        </div>
                                                     @endif
                                                 </div>
                                                 @if (! $locked)
-                                                    <x-ui.icon-button
-                                                        type="button"
-                                                        icon="trash"
-                                                        label="Hapus approver"
-                                                        variant="ghost"
-                                                        data-remove-approver-slot
-                                                    />
+                                                    <div data-approver-edit-control @class(['hidden' => $assignmentStartsReadonly])>
+                                                        <x-ui.icon-button
+                                                            type="button"
+                                                            icon="trash"
+                                                            label="Hapus approver"
+                                                            variant="ghost"
+                                                            data-remove-approver-slot
+                                                        />
+                                                    </div>
                                                 @else
                                                     <span class="inline-flex size-10 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-400" title="Approver terkunci">
                                                         <flux:icon name="lock-closed" class="size-5" />
@@ -361,7 +463,7 @@
                                     @enderror
 
                                     @if (! $isStageFullyApproved)
-                                        <button type="button" class="mt-4 inline-flex h-12 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-add-approver-slot>
+                                        <button type="button" class="mt-4 h-12 w-full items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 {{ $assignmentStartsReadonly ? 'hidden' : 'inline-flex' }}" data-add-approver-slot data-approver-edit-control>
                                             <flux:icon name="plus" class="size-5" />
                                             Tambah Approver
                                         </button>
@@ -369,9 +471,11 @@
                                 </article>
                             @endforeach
 
-                            <x-ui.action-button type="submit" class="w-full">
-                                Save Approver
-                            </x-ui.action-button>
+                            <div data-approver-edit-control @class(['hidden' => $assignmentStartsReadonly])>
+                                <x-ui.action-button type="submit" class="w-full">
+                                    Save Approver
+                                </x-ui.action-button>
+                            </div>
                         </form>
                     @endif
                 </section>
@@ -411,6 +515,30 @@
         </form>
     </div>
 
+    <div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/40 px-4 py-6" data-approver-edit-modal>
+        <div class="w-full max-w-md overflow-hidden rounded-lg bg-white shadow-xl">
+            <div class="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
+                <div>
+                    <h2 class="text-lg font-semibold text-slate-900">Edit Approver?</h2>
+                    <p class="mt-1 text-sm text-slate-500">
+                        Approver yang sudah memberikan respon akan tetap terkunci. Hanya approver yang belum merespon yang bisa diubah.
+                    </p>
+                </div>
+                <button type="button" class="text-slate-400 transition hover:text-slate-700" data-approver-edit-close>
+                    <flux:icon name="x-mark" class="size-5" />
+                </button>
+            </div>
+            <div class="flex justify-end gap-2 border-t border-slate-100 px-6 py-4">
+                <x-ui.action-button type="button" variant="secondary" data-approver-edit-close>
+                    Batal
+                </x-ui.action-button>
+                <button type="button" class="inline-flex h-10 items-center justify-center rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white transition hover:bg-sky-700" data-approver-edit-confirm>
+                    Ya, Edit
+                </button>
+            </div>
+        </div>
+    </div>
+
     <script>
         (() => {
             const modal = document.querySelector('[data-reject-modal]');
@@ -424,6 +552,62 @@
                 if (event.target.closest('[data-reject-modal-close]')) {
                     modal?.classList.add('hidden');
                     modal?.classList.remove('flex');
+                }
+            });
+        })();
+    </script>
+
+    <script>
+        (() => {
+            const form = document.querySelector('[data-approver-assignment-form]');
+            const modal = document.querySelector('[data-approver-edit-modal]');
+
+            if (!form) {
+                return;
+            }
+
+            const showModal = () => {
+                modal?.classList.remove('hidden');
+                modal?.classList.add('flex');
+            };
+
+            const hideModal = () => {
+                modal?.classList.add('hidden');
+                modal?.classList.remove('flex');
+            };
+
+            const enableEditMode = () => {
+                form.dataset.readonly = 'false';
+                form.querySelector('[data-approver-readonly-action]')?.classList.add('hidden');
+
+                form.querySelectorAll('[data-approver-readonly-card]').forEach((element) => {
+                    element.classList.add('hidden');
+                });
+
+                form.querySelectorAll('[data-approver-edit-control]').forEach((element) => {
+                    element.classList.remove('hidden');
+
+                    if (element.matches('[data-add-approver-slot]')) {
+                        element.classList.add('inline-flex');
+                    }
+                });
+
+                hideModal();
+            };
+
+            document.addEventListener('click', (event) => {
+                if (event.target.closest('[data-approver-edit-open]')) {
+                    showModal();
+                    return;
+                }
+
+                if (event.target.closest('[data-approver-edit-close]')) {
+                    hideModal();
+                    return;
+                }
+
+                if (event.target.closest('[data-approver-edit-confirm]')) {
+                    enableEditMode();
                 }
             });
         })();
