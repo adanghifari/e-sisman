@@ -30,6 +30,13 @@ class DatabaseSeeder extends Seeder
             'nama_department' => 'Default Department',
         ]);
 
+        foreach (['Superadmin', 'Admin Kontrol Dokumen', 'User'] as $role) {
+            DB::table('roles')->updateOrInsert(
+                ['nama_role' => $role],
+                ['nama_role' => $role],
+            );
+        }
+
         $departmentId = DB::table('departments')->where('kode_department', 'DEFAULT')->value('id');
 
         User::updateOrCreate(
