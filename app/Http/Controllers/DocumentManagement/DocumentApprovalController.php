@@ -14,6 +14,7 @@ use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -65,7 +66,7 @@ class DocumentApprovalController extends Controller
                 'catatan' => $request->string('catatan')->trim()->value() ?: null,
             ]);
 
-            $this->markDocumentApprovedWhenComplete($document->refresh());
+            $this->advanceApprovalFlow($document->refresh());
         });
 
         return redirect()
@@ -115,6 +116,8 @@ class DocumentApprovalController extends Controller
         }
 
         $pendingStatus = ApprovalStatus::findByCode(ApprovalStatus::PENDING);
+        $waitingStatus = ApprovalStatus::findByCode(ApprovalStatus::WAITING);
+        $activeStageOrder = $this->activeStageOrderForAssignment($document, $stages);
 
         foreach ($stages as $stage) {
             $userIds = collect($request->input("stage_approvers.{$stage->id}", []))
@@ -139,6 +142,7 @@ class DocumentApprovalController extends Controller
         foreach ($stages as $stage) {
             $stageLabel = $stage->display_label ?: 'Approval';
             $role = Role::query()->firstOrCreate(['nama_role' => $stage->nama_tahap]);
+            $stageStatus = $stage->stage_order === $activeStageOrder ? $pendingStatus : $waitingStatus;
             $userIds = collect($request->input("stage_approvers.{$stage->id}", []))
                 ->filter()
                 ->map(fn ($userId) => (int) $userId)
@@ -154,22 +158,25 @@ class DocumentApprovalController extends Controller
                 ->delete();
 
             foreach ($userIds as $userId) {
-                Approval::query()->updateOrCreate(
-                    [
-                        't_document_id' => $document->id,
-                        'user_id' => $userId,
-                        'role_id' => $role->id,
-                    ],
-                    [
-                        'm_approval_status_id' => $pendingStatus->id,
-                        'assigned_by' => $request->user()->id,
-                        'assigned_at' => now(),
-                        'responded_at' => null,
-                        'created_at' => now(),
-                        'stages' => $stageLabel,
-                        'catatan' => null,
-                    ],
-                );
+                $approval = Approval::query()->firstOrNew([
+                    't_document_id' => $document->id,
+                    'user_id' => $userId,
+                    'role_id' => $role->id,
+                ]);
+
+                if ($approval->exists && $approval->responded_at !== null) {
+                    continue;
+                }
+
+                $approval->fill([
+                    'm_approval_status_id' => $stageStatus->id,
+                    'assigned_by' => $request->user()->id,
+                    'assigned_at' => now(),
+                    'responded_at' => null,
+                    'created_at' => $approval->created_at ?? now(),
+                    'stages' => $stageLabel,
+                    'catatan' => null,
+                ])->save();
             }
         }
 
@@ -207,14 +214,25 @@ class DocumentApprovalController extends Controller
 
     private function authorizeDocumentAccess(Request $request, Document $document): void
     {
-        if ($request->user()->isDeveloper()) {
+        $user = $request->user();
+
+        if ($user->isAdmin()) {
             return;
         }
 
         abort_unless(
-            $document->approvals()->where('user_id', $request->user()->id)->exists(),
+            $user->canAssignDocument($document) || $this->hasActiveApproval($request, $document),
             403,
         );
+    }
+
+    private function hasActiveApproval(Request $request, Document $document): bool
+    {
+        return $document->approvals()
+            ->where('user_id', $request->user()->id)
+            ->whereNull('responded_at')
+            ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::PENDING))
+            ->exists();
     }
 
     private function activeApproval(Request $request, Document $document): ?Approval
@@ -239,6 +257,52 @@ class DocumentApprovalController extends Controller
             ->sortBy('stage_order')
             ->values()
             ?? collect();
+    }
+
+    private function advanceApprovalFlow(Document $document): void
+    {
+        if ($this->activateNextStageIfCurrentStageComplete($document)) {
+            return;
+        }
+
+        $this->markDocumentApprovedWhenComplete($document);
+    }
+
+    private function activateNextStageIfCurrentStageComplete(Document $document): bool
+    {
+        $pendingStatus = ApprovalStatus::findByCode(ApprovalStatus::PENDING);
+        $waitingStatus = ApprovalStatus::findByCode(ApprovalStatus::WAITING);
+        $approvedStatus = ApprovalStatus::findByCode(ApprovalStatus::APPROVED);
+        $stages = $this->approvalFlowStages($document);
+
+        foreach ($stages as $stage) {
+            $stageLabel = $stage->display_label ?: 'Approval';
+            $stageApprovals = Approval::query()
+                ->where('t_document_id', $document->id)
+                ->where('stages', $stageLabel);
+
+            if ((clone $stageApprovals)->where('m_approval_status_id', $pendingStatus->id)->exists()) {
+                return false;
+            }
+
+            if (
+                (clone $stageApprovals)->exists()
+                && ! (clone $stageApprovals)->where('m_approval_status_id', '!=', $approvedStatus->id)->exists()
+            ) {
+                continue;
+            }
+
+            $activated = (clone $stageApprovals)
+                ->where('m_approval_status_id', $waitingStatus->id)
+                ->update([
+                    'm_approval_status_id' => $pendingStatus->id,
+                    'assigned_at' => now(),
+                ]);
+
+            return $activated > 0;
+        }
+
+        return false;
     }
 
     private function markDocumentApprovedWhenComplete(Document $document): void
@@ -289,5 +353,26 @@ class DocumentApprovalController extends Controller
         }
 
         return true;
+    }
+
+    private function activeStageOrderForAssignment(Document $document, Collection $stages): int
+    {
+        $approvedStatusId = ApprovalStatus::findByCode(ApprovalStatus::APPROVED)->id;
+
+        foreach ($stages as $stage) {
+            $stageLabel = $stage->display_label ?: 'Approval';
+            $stageApprovals = Approval::query()
+                ->where('t_document_id', $document->id)
+                ->where('stages', $stageLabel);
+
+            if (
+                ! (clone $stageApprovals)->exists()
+                || (clone $stageApprovals)->where('m_approval_status_id', '!=', $approvedStatusId)->exists()
+            ) {
+                return $stage->stage_order;
+            }
+        }
+
+        return $stages->last()?->stage_order ?? 1;
     }
 }

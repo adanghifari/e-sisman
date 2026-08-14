@@ -105,6 +105,36 @@ class User extends Authenticatable implements PasskeyUser
         return $this->nik === '000000' || $this->email === 'developer@example.com';
     }
 
+    public function isDocumentControlAdmin(): bool
+    {
+        if ($this->isDeveloper()) {
+            return true;
+        }
+
+        return $this->roles()
+            ->where('nama_role', 'Admin Kontrol Dokumen')
+            ->exists();
+    }
+
+    public function canAssignDocument(Document $document): bool
+    {
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        if (! $this->isDocumentControlAdmin() || $this->m_department_id === null) {
+            return false;
+        }
+
+        if ($document->relationLoaded('departments')) {
+            return $document->departments->contains('id', $this->m_department_id);
+        }
+
+        return $document->departments()
+            ->whereKey($this->m_department_id)
+            ->exists();
+    }
+
     public function hasPermission(string $permissionCode): bool
     {
         if ($this->isAdmin()) {

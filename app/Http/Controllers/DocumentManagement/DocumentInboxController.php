@@ -118,6 +118,7 @@ class DocumentInboxController extends Controller
     private function myTasks(Request $request): array
     {
         $approvalScope = $this->approvalScope($request, processed: false);
+        $assignableDocumentScope = $this->assignableDocumentScope($request);
 
         $query = Document::query()
             ->with([
@@ -131,22 +132,21 @@ class DocumentInboxController extends Controller
                 },
             ]);
 
-        if ($request->user()->isDeveloper()) {
-            $query->where(function ($query) use ($approvalScope): void {
-                $query
-                    ->whereHas('approvals', $approvalScope)
-                    ->orWhere(function ($query): void {
-                        $query
-                            ->whereDoesntHave('approvals')
-                            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED));
-                    });
-            });
-        } else {
+        $query->where(function ($query) use ($approvalScope, $assignableDocumentScope): void {
             $query->whereHas('approvals', $approvalScope);
-        }
+
+            if ($assignableDocumentScope !== null) {
+                $query
+                    ->orWhere($assignableDocumentScope);
+            }
+        });
 
         return $query->get()
-            ->map(fn (Document $document): array => $this->approvalRow($document, $document->approvals->first(), $request->user()->isDeveloper()))
+            ->map(fn (Document $document): array => $this->approvalRow(
+                $document,
+                $document->approvals->first(),
+                $request->user()->canAssignDocument($document),
+            ))
             ->all();
     }
 
@@ -185,7 +185,24 @@ class DocumentInboxController extends Controller
         };
     }
 
-    private function approvalRow(Document $document, ?Approval $approval, bool $developer = false): array
+    private function assignableDocumentScope(Request $request): ?callable
+    {
+        $user = $request->user();
+
+        if (! $user->isAdmin() && (! $user->isDocumentControlAdmin() || $user->m_department_id === null)) {
+            return null;
+        }
+
+        return function ($query) use ($user): void {
+            $query->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED));
+
+            if (! $user->isAdmin()) {
+                $query->whereHas('departments', fn ($query) => $query->whereKey($user->m_department_id));
+            }
+        };
+    }
+
+    private function approvalRow(Document $document, ?Approval $approval, bool $canAssign = false): array
     {
         $assignedAt = $approval?->assigned_at;
         $respondedAt = $approval?->responded_at;
@@ -201,8 +218,8 @@ class DocumentInboxController extends Controller
             'number' => $document->nomor_dokumen ?? '-',
             'name' => $document->nama_dokumen ?? '-',
             'type' => $document->documentType?->nama_types ?? '-',
-            'stage' => $approval?->stages ?: ($developer ? 'Belum assign approver' : 'Approval'),
-            'waiting_for' => $approval?->approver?->name ?? ($developer ? 'Developer bypass' : '-'),
+            'stage' => $approval?->stages ?: ($canAssign ? 'Belum assign approver' : 'Approval'),
+            'waiting_for' => $approval?->approver?->name ?? ($canAssign ? 'Admin Kontrol Dokumen' : '-'),
             'owner' => $document->creator?->name ?? '-',
             'department' => $document->departments
                 ->map(fn ($department) => $department->kode_department ?: $department->nama_department)

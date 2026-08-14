@@ -10,6 +10,8 @@ class ApprovalStatus extends Model
 {
     public const PENDING = 'PENDING';
 
+    public const WAITING = 'WAITING';
+
     public const APPROVED = 'APPROVED';
 
     public const REJECTED = 'REJECTED';

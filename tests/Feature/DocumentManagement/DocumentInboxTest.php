@@ -12,6 +12,7 @@ use App\Models\Document;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\StatusDocument;
 use App\Models\User;
@@ -117,6 +118,152 @@ class DocumentInboxTest extends TestCase
             ->assertDontSee('PS-SMR-CLEAN');
     }
 
+    public function test_document_control_admin_from_related_department_can_see_proposed_document_to_assign(): void
+    {
+        $submitter = User::factory()->create(['name' => 'Pengaju Department']);
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Assign Department Terkait',
+            'nomor_dokumen' => 'PS-SMR-ASSIGN',
+        ]);
+        $admin = $this->documentControlAdmin($document->departments()->firstOrFail());
+
+        $this->actingAs($admin)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee('Dokumen Assign Department Terkait')
+            ->assertSee('PS-SMR-ASSIGN')
+            ->assertSee('Belum assign approver')
+            ->assertSee('Assign')
+            ->assertSee(route('documents.approval.show', $document));
+    }
+
+    public function test_document_control_admin_from_unrelated_department_cannot_see_proposed_document_to_assign(): void
+    {
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Assign Department Lain',
+            'nomor_dokumen' => 'PS-SMR-OTHER-DEPT',
+        ]);
+        $otherDepartment = Department::create([
+            'kode_department' => 'HR',
+            'nama_department' => 'Human Resources',
+        ]);
+        $admin = $this->documentControlAdmin($otherDepartment);
+
+        $this->actingAs($admin)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertDontSee('Dokumen Assign Department Lain')
+            ->assertDontSee('PS-SMR-OTHER-DEPT');
+    }
+
+    public function test_regular_user_from_related_department_cannot_see_proposed_document_to_assign(): void
+    {
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Assign Bukan Admin',
+            'nomor_dokumen' => 'PS-SMR-NON-ADMIN',
+        ]);
+        $user = User::factory()->create([
+            'm_department_id' => $document->departments()->firstOrFail()->id,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertDontSee('Dokumen Assign Bukan Admin')
+            ->assertDontSee('PS-SMR-NON-ADMIN');
+    }
+
+    public function test_document_control_admin_can_see_multi_department_document_when_one_department_matches(): void
+    {
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Multi Department Assign',
+            'nomor_dokumen' => 'PS-SMR-MULTI',
+        ]);
+        $hr = Department::create([
+            'kode_department' => 'HR',
+            'nama_department' => 'Human Resources',
+        ]);
+        $document->departments()->syncWithoutDetaching([$hr->id]);
+        $admin = $this->documentControlAdmin($hr);
+
+        $this->actingAs($admin)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee('Dokumen Multi Department Assign')
+            ->assertSee('PS-SMR-MULTI')
+            ->assertSee('Assign');
+    }
+
+    public function test_document_control_admin_from_related_department_can_open_proposed_document_detail(): void
+    {
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Detail Assign Department Terkait',
+            'nomor_dokumen' => 'PS-SMR-DETAIL-ASSIGN',
+        ]);
+        $admin = $this->documentControlAdmin($document->departments()->firstOrFail());
+
+        $this->actingAs($admin)
+            ->get(route('documents.approval.show', $document))
+            ->assertOk()
+            ->assertSee('Detail Assign Department Terkait')
+            ->assertSee('Assign Approver');
+    }
+
+    public function test_document_control_admin_from_unrelated_department_cannot_open_proposed_document_detail(): void
+    {
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Detail Assign Department Lain',
+            'nomor_dokumen' => 'PS-SMR-DETAIL-OTHER',
+        ]);
+        $otherDepartment = Department::create([
+            'kode_department' => 'HR',
+            'nama_department' => 'Human Resources',
+        ]);
+        $admin = $this->documentControlAdmin($otherDepartment);
+
+        $this->actingAs($admin)
+            ->get(route('documents.approval.show', $document))
+            ->assertForbidden();
+    }
+
+    public function test_regular_user_from_related_department_cannot_open_unassigned_document_detail(): void
+    {
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Detail Assign Bukan Admin',
+            'nomor_dokumen' => 'PS-SMR-DETAIL-NON-ADMIN',
+        ]);
+        $user = User::factory()->create([
+            'm_department_id' => $document->departments()->firstOrFail()->id,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.approval.show', $document))
+            ->assertForbidden();
+    }
+
+    public function test_future_waiting_approver_cannot_open_document_detail_before_stage_is_active(): void
+    {
+        $waitingApprover = User::factory()->create();
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Future Stage',
+            'nomor_dokumen' => 'PS-SMR-WAITING',
+        ]);
+        $this->createApproval($document, $waitingApprover, ApprovalStatus::WAITING, [
+            'stages' => 'Diperiksa oleh Manager',
+        ]);
+
+        $this->actingAs($waitingApprover)
+            ->get(route('documents.approval.show', $document))
+            ->assertForbidden();
+    }
+
     public function test_responded_approval_for_login_user_is_shown_in_processed_history_tab(): void
     {
         $approver = User::factory()->create(['name' => 'Approver Login']);
@@ -167,6 +314,8 @@ class DocumentInboxTest extends TestCase
 
     public function test_approval_detail_page_shows_readonly_document_and_actions(): void
     {
+        $this->ensureApprovalStatuses();
+
         Storage::fake('local');
 
         $approver = User::factory()->create(['name' => 'Approver Detail']);
@@ -266,6 +415,8 @@ class DocumentInboxTest extends TestCase
 
     public function test_assign_approver_requires_each_flow_stage_to_have_approver(): void
     {
+        $this->ensureApprovalStatuses();
+
         $approver = User::factory()->create();
         $submitter = User::factory()->create();
         $document = $this->createDocument($submitter);
@@ -297,8 +448,128 @@ class DocumentInboxTest extends TestCase
             ->assertSessionHasErrors(["stage_approvers.{$secondStage->id}"]);
     }
 
+    public function test_assign_approver_sets_first_stage_pending_and_later_stages_waiting(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $developer = User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
+        $submitter = User::factory()->create();
+        $firstApprover = User::factory()->create();
+        $secondApprover = User::factory()->create();
+        $document = $this->createDocument($submitter);
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $document->m_document_level_id,
+            'nama_flow' => 'Flow Level II',
+        ]);
+        $firstStage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Dibuat oleh',
+            'nama_tahap' => 'Staff',
+        ]);
+        $secondStage = $flow->stages()->create([
+            'stage_order' => 2,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+
+        $this->actingAs($developer)
+            ->post(route('documents.approval.assign', $document), [
+                'stage_approvers' => [
+                    $firstStage->id => [$firstApprover->id],
+                    $secondStage->id => [$secondApprover->id],
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document));
+
+        $this->assertSame(
+            ApprovalStatus::PENDING,
+            Approval::query()
+                ->where('t_document_id', $document->id)
+                ->where('user_id', $firstApprover->id)
+                ->firstOrFail()
+                ->status
+                ->kode_status,
+        );
+        $this->assertSame(
+            ApprovalStatus::WAITING,
+            Approval::query()
+                ->where('t_document_id', $document->id)
+                ->where('user_id', $secondApprover->id)
+                ->firstOrFail()
+                ->status
+                ->kode_status,
+        );
+    }
+
+    public function test_next_stage_is_activated_after_current_stage_is_fully_approved(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $firstApprover = User::factory()->create();
+        $secondApprover = User::factory()->create();
+        $nextStageApprover = User::factory()->create();
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter);
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $document->m_document_level_id,
+            'nama_flow' => 'Flow Level II',
+        ]);
+        $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Dibuat oleh',
+            'nama_tahap' => 'Staff',
+        ]);
+        $flow->stages()->create([
+            'stage_order' => 2,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+        $this->createApproval($document, $firstApprover, ApprovalStatus::PENDING, [
+            'stages' => 'Dibuat oleh Staff',
+        ]);
+        $this->createApproval($document, $secondApprover, ApprovalStatus::PENDING, [
+            'stages' => 'Dibuat oleh Staff',
+        ]);
+        $this->createApproval($document, $nextStageApprover, ApprovalStatus::WAITING, [
+            'stages' => 'Diperiksa oleh Manager',
+        ]);
+
+        $this->actingAs($firstApprover)
+            ->post(route('documents.approval.approve', $document))
+            ->assertRedirect(route('documents.approval.show', $document));
+
+        $this->assertSame(
+            ApprovalStatus::WAITING,
+            Approval::query()
+                ->where('t_document_id', $document->id)
+                ->where('user_id', $nextStageApprover->id)
+                ->firstOrFail()
+                ->status
+                ->kode_status,
+        );
+
+        $this->actingAs($secondApprover)
+            ->post(route('documents.approval.approve', $document))
+            ->assertRedirect(route('documents.approval.show', $document));
+
+        $this->assertSame(
+            ApprovalStatus::PENDING,
+            Approval::query()
+                ->where('t_document_id', $document->id)
+                ->where('user_id', $nextStageApprover->id)
+                ->firstOrFail()
+                ->status
+                ->kode_status,
+        );
+    }
+
     public function test_document_becomes_master_after_all_flow_stage_approvals_are_approved(): void
     {
+        $this->ensureApprovalStatuses();
+
         $firstApprover = User::factory()->create(['name' => 'Approver Tahap Satu']);
         $secondApprover = User::factory()->create(['name' => 'Approver Tahap Dua']);
         $submitter = User::factory()->create();
@@ -321,14 +592,6 @@ class DocumentInboxTest extends TestCase
             'nama_tahap' => 'Manager',
         ]);
         StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
-        ApprovalStatus::create([
-            'kode_status' => ApprovalStatus::APPROVED,
-            'nama_status' => ApprovalStatus::APPROVED,
-        ]);
-        ApprovalStatus::create([
-            'kode_status' => ApprovalStatus::REJECTED,
-            'nama_status' => ApprovalStatus::REJECTED,
-        ]);
 
         $this->createApproval($document, $firstApprover, ApprovalStatus::PENDING, [
             'stages' => 'Dibuat oleh Staff',
@@ -472,5 +735,35 @@ class DocumentInboxTest extends TestCase
             'assigned_at' => now(),
             'stages' => 'Approval',
         ]);
+    }
+
+    private function ensureApprovalStatuses(): void
+    {
+        foreach ([ApprovalStatus::PENDING, ApprovalStatus::WAITING, ApprovalStatus::APPROVED, ApprovalStatus::REJECTED, ApprovalStatus::TERMINATED] as $statusCode) {
+            ApprovalStatus::query()->firstOrCreate(
+                ['kode_status' => $statusCode],
+                ['nama_status' => $statusCode],
+            );
+        }
+    }
+
+    private function documentControlAdmin(Department $department): User
+    {
+        $role = Role::query()->firstOrCreate(['nama_role' => 'Admin Kontrol Dokumen']);
+        $permission = Permission::query()->firstOrCreate(
+            ['code' => 'documents.inbox.view'],
+            [
+                'name' => 'Lihat Inbox Approval',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.inbox',
+                'action' => 'view',
+            ],
+        );
+        $role->permissions()->syncWithoutDetaching([$permission->id]);
+
+        $user = User::factory()->create(['m_department_id' => $department->id]);
+        $user->roles()->attach($role);
+
+        return $user->refresh();
     }
 }

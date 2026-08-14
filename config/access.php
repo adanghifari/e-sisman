@@ -69,6 +69,13 @@ return [
             'action' => 'view',
         ],
         [
+            'code' => 'documents.approval.assign',
+            'name' => 'Assign Approver Dokumen',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.approval.assign',
+            'action' => 'assign',
+        ],
+        [
             'code' => 'document-templates.view',
             'name' => 'Lihat Template Dokumen',
             'module' => 'Manajemen Dokumen',
