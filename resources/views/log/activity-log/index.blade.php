@@ -1,41 +1,20 @@
 <x-layouts::app :title="__('Catatan Aktivitas')">
-    @php
-        $filters = [
-            'document_name' => trim((string) request('document_name', '')),
-            'document_number' => trim((string) request('document_number', '')),
-            'downloaded_by' => trim((string) request('downloaded_by', '')),
-        ];
-
-        $activities = [
-            ['name' => 'Pengadaan Material Stock dan Material Konsinyasi', 'number' => 'IK-PGD-01-02', 'revision' => '00.02', 'downloaded_by' => 'Ismail Aulia Rahman', 'downloaded_at' => '10/08/2026 13:19', 'count' => 13],
-            ['name' => 'Pembuatan LSTP', 'number' => 'IK-PGD-01-06', 'revision' => '00.06', 'downloaded_by' => 'Veryantoyo Eka Yunanda', 'downloaded_at' => '10/08/2026 12:25', 'count' => 35],
-            ['name' => 'Berita Acara Pelayanan Jasa', 'number' => 'IK-PMS-01-02', 'revision' => '00.01', 'downloaded_by' => 'Adi Wibowo', 'downloaded_at' => '10/08/2026 11:36', 'count' => 25],
-            ['name' => 'Penerbitan Invoice dan Faktur Pajak', 'number' => 'IK-KEU-01-03', 'revision' => '01.00', 'downloaded_by' => 'Rina Puspita', 'downloaded_at' => '10/08/2026 10:12', 'count' => 18],
-            ['name' => 'Pengendalian Dokumen dan Rekaman', 'number' => 'IK-SMR-01-04', 'revision' => '00.01', 'downloaded_by' => 'Admin Kontrol Dokumen', 'downloaded_at' => '09/08/2026 16:45', 'count' => 42],
-            ['name' => 'SOP Penanganan Temuan Audit', 'number' => 'SOP-QA-04-01', 'revision' => '01.00', 'downloaded_by' => 'Dewi Lestari', 'downloaded_at' => '09/08/2026 15:02', 'count' => 21],
-            ['name' => 'Form Checklist Inspeksi Area Dermaga', 'number' => 'FM-HSE-01-08', 'revision' => '00.02', 'downloaded_by' => 'Bima Pratama', 'downloaded_at' => '09/08/2026 13:28', 'count' => 9],
-        ];
-
-        $filteredActivities = collect($activities)
-            ->filter(fn ($activity) => $filters['document_name'] === '' || str_contains(strtolower($activity['name']), strtolower($filters['document_name'])))
-            ->filter(fn ($activity) => $filters['document_number'] === '' || str_contains(strtolower($activity['number']), strtolower($filters['document_number'])))
-            ->filter(fn ($activity) => $filters['downloaded_by'] === '' || str_contains(strtolower($activity['downloaded_by']), strtolower($filters['downloaded_by'])))
-            ->values();
-    @endphp
-
     <div class="space-y-6">
         <x-ui.page-header title="Catatan Aktivitas" />
 
         <x-ui.panel
             title="List Aktivitas"
-            description="Menampilkan {{ $filteredActivities->count() }} aktivitas dari total {{ count($activities) }} aktivitas."
+            description="Menampilkan {{ $activities->count() }} aktivitas dari total {{ $totalActivities }} aktivitas."
             :padded="false"
         >
             <x-slot:actions>
-                <x-ui.action-button type="button" class="gap-2">
+                <a
+                    href="{{ route('activity-log.export', array_filter($filters, fn ($value) => $value !== '')) }}"
+                    class="inline-flex h-10 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
+                >
                     <flux:icon name="arrow-down-tray" class="size-4" />
                     Export Dokumen
-                </x-ui.action-button>
+                </a>
             </x-slot:actions>
 
             <form method="GET" action="{{ route('activity-log.index') }}" class="grid gap-4 border-b border-slate-200 p-5 lg:grid-cols-3">
@@ -73,7 +52,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
-                    @forelse ($filteredActivities as $activity)
+                    @forelse ($activities as $activity)
                         <tr class="hover:bg-slate-50/70">
                             <td class="px-5 py-5 font-semibold uppercase leading-7 text-slate-800">{{ $activity['name'] }}</td>
                             <td class="px-5 py-5 font-semibold text-slate-700">{{ $activity['number'] }}</td>

@@ -13,12 +13,6 @@ use App\Livewire\MasterData\BusinessFunction\Index as BusinessFunctionIndex;
 use App\Livewire\MasterData\BusinessProcess\Index as BusinessProcessIndex;
 use App\Livewire\MasterData\Department\Index as DepartmentIndex;
 use App\Livewire\MasterData\DocumentType\Index as DocumentTypeIndex;
-use App\Http\Controllers\DocumentManagement\DocumentController;
-use App\Http\Controllers\DocumentManagement\DocumentApprovalController;
-use App\Http\Controllers\DocumentManagement\DocumentInboxController;
-use App\Http\Controllers\DocumentManagement\DocumentMasterController;
-use App\Http\Controllers\DocumentManagement\DocumentTemplateController;
-use App\Http\Middleware\EnsureRoutePermission;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
@@ -47,6 +41,9 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::get('document-templates', [DocumentTemplateController::class, 'index'])->name('document-templates.index');
     Route::post('document-templates', [DocumentTemplateController::class, 'store'])->name('document-templates.store');
     Route::get('document-templates/files/{file}', [DocumentTemplateController::class, 'file'])->name('document-templates.files.show');
+    Route::get('documents/master/{document}', [DocumentMasterController::class, 'show'])->name('documents.master.show');
+    Route::get('documents/master/{document}/files/{file}', [DocumentMasterController::class, 'file'])->name('documents.master.files.show');
+    Route::get('documents/master/{document}/files/{file}/preview', [DocumentMasterController::class, 'preview'])->name('documents.master.files.preview');
     Route::view('reports', 'reporting.index')->name('reports.index');
     Route::livewire('users', UserIndex::class)->name('users.index');
     Route::livewire('access-groups', AccessGroupIndex::class)->name('access-groups.index');
@@ -56,7 +53,8 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::livewire('master-data/business-processes', BusinessProcessIndex::class)->name('master-data.business-processes');
     Route::livewire('master-data/departments', DepartmentIndex::class)->name('master-data.departments');
     Route::livewire('master-data/document-types', DocumentTypeIndex::class)->name('master-data.document-types');
-    Route::view('activity-log', 'log.activity-log.index')->name('activity-log.index');
+    Route::get('activity-log/export', ActivityLogExportController::class)->name('activity-log.export');
+    Route::get('activity-log', ActivityLogController::class)->name('activity-log.index');
 });
 
 require __DIR__.'/settings.php';

@@ -102,6 +102,11 @@ class Document extends Model
             ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::OBSOLETE));
     }
 
+    public function getFormattedRevisionAttribute(): string
+    {
+        return '00.'.str_pad((string) $this->nomor_revisi, 2, '0', STR_PAD_LEFT);
+    }
+
     public function departments(): BelongsToMany
     {
         return $this->belongsToMany(

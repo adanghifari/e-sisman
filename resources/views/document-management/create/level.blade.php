@@ -77,6 +77,7 @@
         };
         $assignableUsers = \App\Models\User::query()
             ->with('department')
+            ->whereKeyNot(auth()->id())
             ->orderBy('name')
             ->get();
     @endphp

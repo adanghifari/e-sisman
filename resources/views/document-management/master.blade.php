@@ -90,7 +90,7 @@
                                 </p>
                             </td>
                             <td class="px-3 py-4 font-semibold text-slate-700">{{ $document->nomor_dokumen ?: '-' }}</td>
-                            <td class="px-3 py-4 text-slate-600">{{ str_pad((string) $document->nomor_revisi, 2, '0', STR_PAD_LEFT) }}</td>
+                            <td class="px-3 py-4 text-slate-600">{{ $document->formatted_revision }}</td>
                             <td class="px-3 py-4 text-slate-600">{{ $document->documentLevel?->nama_dokumen ?: '-' }}</td>
                             <td class="px-3 py-4 text-slate-600">{{ $processLabel ?: '-' }}</td>
                             <td class="px-3 py-4 text-slate-600">{{ $publishedAt?->format('d/m/Y') ?: '-' }}</td>
@@ -98,7 +98,7 @@
                                 <x-ui.status-badge label="Master" tone="sky" />
                             </td>
                             <td class="px-2 py-4">
-                                <x-ui.icon-button icon="eye" label="Lihat detail" size="sm" />
+                                <x-ui.icon-button :href="route('documents.master.show', $document)" icon="eye" label="Lihat detail" size="sm" />
                             </td>
                         </tr>
 
@@ -118,7 +118,7 @@
                                     <p class="mt-1 font-semibold uppercase tracking-wide text-slate-700">{{ $obsolete->nama_dokumen }}</p>
                                 </td>
                                 <td class="px-3 py-3 font-semibold text-slate-600">{{ $obsolete->nomor_dokumen ?: '-' }}</td>
-                                <td class="px-3 py-3 text-slate-600">{{ str_pad((string) $obsolete->nomor_revisi, 2, '0', STR_PAD_LEFT) }}</td>
+                                <td class="px-3 py-3 text-slate-600">{{ $obsolete->formatted_revision }}</td>
                                 <td class="px-3 py-3 text-slate-500">{{ $obsolete->documentLevel?->nama_dokumen ?: '-' }}</td>
                                 <td class="px-3 py-3 text-slate-500">{{ $obsoleteProcessLabel ?: '-' }}</td>
                                 <td class="px-3 py-3 text-slate-500">{{ $obsoletePublishedAt?->format('d/m/Y') ?: '-' }}</td>
@@ -126,7 +126,7 @@
                                     <x-ui.status-badge label="Obsolete" tone="red" />
                                 </td>
                                 <td class="px-2 py-3">
-                                    <x-ui.icon-button icon="eye" label="Lihat detail obsolete" size="sm" />
+                                    <x-ui.icon-button :href="route('documents.master.show', $obsolete)" icon="eye" label="Lihat detail obsolete" size="sm" />
                                 </td>
                             </tr>
                         @endforeach

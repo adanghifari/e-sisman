@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\DocumentManagement;
 
+use App\Actions\Log\RecordDocumentDownload;
 use App\Http\Controllers\Controller;
 use App\Models\Approval;
 use App\Models\ApprovalFlowStage;
@@ -210,13 +211,15 @@ class DocumentApprovalController extends Controller
             ->withInput();
     }
 
-    public function file(Request $request, Document $document, DocumentFile $file): BinaryFileResponse
+    public function file(Request $request, Document $document, DocumentFile $file, RecordDocumentDownload $recordDocumentDownload): BinaryFileResponse
     {
         $this->authorizeDocumentAccess($request, $document);
         abort_unless($file->t_document_id === $document->id, 404);
 
         $path = Storage::disk('local')->path($file->path_file);
         abort_unless(is_file($path), 404);
+
+        $recordDocumentDownload->handle($request, $document, $file);
 
         return response()->file($path, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
