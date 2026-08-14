@@ -162,7 +162,7 @@
 
                         <label class="block">
                             <span class="mb-2 block text-base font-medium text-slate-500">Revisi</span>
-                            <input type="text" value="{{ str_pad((string) $document->nomor_revisi, 2, '0', STR_PAD_LEFT) }}.00" readonly class="{{ $readonlyInput }}">
+                            <input type="text" value="{{ $document->formatted_revision }}" readonly class="{{ $readonlyInput }}">
                         </label>
 
                         <div class="space-y-4 pt-1 text-base font-medium text-slate-500">

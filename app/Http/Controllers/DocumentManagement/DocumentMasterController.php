@@ -2,13 +2,18 @@
 
 namespace App\Http\Controllers\DocumentManagement;
 
+use App\Actions\Log\RecordDocumentDownload;
 use App\Http\Controllers\Controller;
 use App\Models\BusinessProcess;
 use App\Models\Document;
+use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\StatusDocument;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class DocumentMasterController extends Controller
 {
@@ -123,5 +128,74 @@ class DocumentMasterController extends Controller
                 'revision_desc' => 'Revisi Tertinggi',
             ],
         ]);
+    }
+
+    public function show(Document $document): View
+    {
+        $document->load([
+            'status',
+            'documentLevel',
+            'documentType',
+            'businessProcess',
+            'businessFunction',
+            'creator',
+            'officialPreparer',
+            'departments',
+            'files.uploader',
+            'approvals.status',
+            'approvals.approver',
+            'approvals.role',
+            'referenceDocument',
+            'revisedFrom.status',
+        ]);
+
+        abort_unless(
+            in_array($document->status?->nama_status, [StatusDocument::APPROVED, StatusDocument::OBSOLETE], true),
+            404,
+        );
+
+        return view('document-management.master-detail', [
+            'document' => $document,
+            'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document'])->values(),
+            'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
+        ]);
+    }
+
+    public function file(Request $request, Document $document, DocumentFile $file, RecordDocumentDownload $recordDocumentDownload): BinaryFileResponse
+    {
+        $this->authorizeMasterFileAccess($document, $file);
+
+        $path = Storage::disk('local')->path($file->path_file);
+        abort_unless(is_file($path), 404);
+
+        $recordDocumentDownload->handle($request, $document, $file);
+
+        return response()->file($path, [
+            'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
+        ]);
+    }
+
+    public function preview(Document $document, DocumentFile $file): BinaryFileResponse
+    {
+        $this->authorizeMasterFileAccess($document, $file);
+        abort_unless(Str::of($file->original_file_name)->lower()->endsWith('.pdf'), 415);
+
+        $path = Storage::disk('local')->path($file->path_file);
+        abort_unless(is_file($path), 404);
+
+        return response()->file($path, [
+            'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
+        ]);
+    }
+
+    private function authorizeMasterFileAccess(Document $document, DocumentFile $file): void
+    {
+        $document->loadMissing('status');
+
+        abort_unless($file->t_document_id === $document->id, 404);
+        abort_unless(
+            in_array($document->status?->nama_status, [StatusDocument::APPROVED, StatusDocument::OBSOLETE], true),
+            404,
+        );
     }
 }
