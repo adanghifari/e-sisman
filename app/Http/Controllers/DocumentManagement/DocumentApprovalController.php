@@ -46,6 +46,7 @@ class DocumentApprovalController extends Controller
             'document' => $document,
             'activeApproval' => $this->activeApproval($request, $document),
             'approvalFlowStages' => $this->approvalFlowStages($document),
+            'canManageApproverAssignment' => $request->user()->canAssignDocument($document) && ! $this->isDocumentAssignmentLocked($document),
             'assignableUsers' => User::query()->with('department')->orderBy('name')->get(),
             'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document'])->values(),
             'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),

@@ -366,10 +366,9 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Tolak')
             ->assertSee('Assign Approver')
             ->assertSee('Approval Flow Dokumen Level II : Prosedur SKMBS')
-            ->assertSee('Diperiksa oleh')
-            ->assertSee('Manager')
-            ->assertSee('Tambah Approver')
-            ->assertSee('Save Approver');
+            ->assertSee('Assignment approver dikelola oleh Admin Kontrol Dokumen department terkait.')
+            ->assertDontSee('Tambah Approver')
+            ->assertDontSee('Save Approver');
 
         $nextApprover = User::factory()->create(['name' => 'Next Approver']);
         $secondApprover = User::factory()->create(['name' => 'Second Approver']);
@@ -446,6 +445,32 @@ class DocumentInboxTest extends TestCase
             ->where('t_document_id', $document->id)
             ->where('user_id', $nextApprover->id)
             ->exists());
+    }
+
+    public function test_document_control_admin_can_see_assign_approver_controls(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter);
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $document->m_document_level_id,
+            'nama_flow' => 'Flow Level II',
+        ]);
+        $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Dibuat oleh',
+            'nama_tahap' => 'Staff',
+        ]);
+
+        $this->actingAs($documentControlAdmin)
+            ->get(route('documents.approval.show', $document))
+            ->assertOk()
+            ->assertSee('Assign Approver')
+            ->assertSee('Dibuat oleh')
+            ->assertSee('Tambah Approver')
+            ->assertSee('Save Approver');
     }
 
     public function test_assign_approver_requires_each_flow_stage_to_have_approver(): void
