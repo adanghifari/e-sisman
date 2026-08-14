@@ -264,6 +264,25 @@ class DocumentInboxTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_waiting_approval_is_not_shown_in_needs_process_tab(): void
+    {
+        $waitingApprover = User::factory()->create();
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Menunggu Tahap Berikutnya',
+            'nomor_dokumen' => 'PS-SMR-WAITING-INBOX',
+        ]);
+        $this->createApproval($document, $waitingApprover, ApprovalStatus::WAITING, [
+            'stages' => 'Diperiksa oleh Manager',
+        ]);
+
+        $this->actingAs($waitingApprover)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertDontSee('Dokumen Menunggu Tahap Berikutnya')
+            ->assertDontSee('PS-SMR-WAITING-INBOX');
+    }
+
     public function test_responded_approval_for_login_user_is_shown_in_processed_history_tab(): void
     {
         $approver = User::factory()->create(['name' => 'Approver Login']);
