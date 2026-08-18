@@ -2,6 +2,7 @@
     'documentLevels',
     'templates' => collect(),
     'canEdit' => false,
+    'canDelete' => false,
     'uploadLimits' => [],
     'activeLevel' => null,
 ])
@@ -30,9 +31,14 @@
     class="space-y-6"
     data-template-builder
     data-can-edit="{{ $canEdit ? 'true' : 'false' }}"
+    data-can-delete="{{ $canDelete ? 'true' : 'false' }}"
     data-active-level="{{ $activeLevel }}"
     data-templates='@json($templatePayload)'
 >
+    <template data-template-trash-icon>
+        <flux:icon name="trash" class="size-4" />
+    </template>
+
     <x-ui.page-header
         title="Template Dokumen"
         description="Atur template file yang digunakan saat pengajuan dokumen berdasarkan level dokumen."
@@ -78,10 +84,23 @@
                         <p class="mt-2 hidden max-w-2xl text-sm leading-6 text-slate-500" data-template-mode-text></p>
                     </div>
 
-                    @if ($canEdit)
-                        <x-ui.action-button type="button" variant="secondary" data-template-edit-toggle>
-                            Edit Template
-                        </x-ui.action-button>
+                    @if ($canEdit || $canDelete)
+                        <div class="flex flex-wrap items-center justify-end gap-2">
+                            @if ($canDelete)
+                                <button
+                                    type="button"
+                                    class="hidden h-10 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                                    data-template-delete-all
+                                >
+                                    <flux:icon name="trash" class="size-4" />
+                                    Delete All
+                                </button>
+                            @endif
+
+                            <x-ui.action-button type="button" variant="secondary" data-template-edit-toggle>
+                                Edit Template
+                            </x-ui.action-button>
+                        </div>
                     @endif
                 </div>
 
@@ -216,6 +235,7 @@
                 const actions = builder.querySelector('[data-template-actions]');
                 const modeText = builder.querySelector('[data-template-mode-text]');
                 const editToggle = builder.querySelector('[data-template-edit-toggle]');
+                const deleteAllButton = builder.querySelector('[data-template-delete-all]');
                 const cancelButton = builder.querySelector('[data-template-cancel]');
                 const readPanel = builder.querySelector('[data-template-read-panel]');
                 const editForm = builder.querySelector('[data-template-edit-form]');
@@ -231,14 +251,21 @@
                 const summary = builder.querySelector('[data-template-summary]');
                 const summaryTitle = builder.querySelector('[data-template-summary-title]');
                 const summaryNotes = builder.querySelector('[data-template-summary-notes]');
+                const trashIconTemplate = builder.querySelector('[data-template-trash-icon]');
                 const templatesByLevel = JSON.parse(builder.dataset.templates || '{}');
                 const canEdit = builder.dataset.canEdit === 'true';
+                const canDelete = builder.dataset.canDelete === 'true';
                 let activeLevelKey = null;
                 let isEditing = false;
                 let retainedTemplateFiles = [];
 
                 const selectedFiles = () => Array.from(fileInput.files || []);
                 const hasActiveTemplateFiles = () => retainedTemplateFiles.length > 0 || selectedFiles().length > 0;
+                const hasTemplateContent = () => {
+                    const template = activeLevelKey ? (templatesByLevel[activeLevelKey] || {}) : {};
+
+                    return Boolean(template.title || template.notes || (template.files || []).length > 0 || hasActiveTemplateFiles());
+                };
                 const clearSelectedFiles = () => {
                     fileInput.value = '';
                     fileInput.dispatchEvent(new Event('change', { bubbles: true }));
@@ -304,18 +331,24 @@
                         meta.className = 'mt-1 block text-xs text-slate-500';
                         meta.textContent = formatStoredFileSize(file.size_kb);
 
-                        const removeButton = document.createElement('button');
-                        removeButton.type = 'button';
-                        removeButton.className = 'absolute right-2 top-2 inline-flex size-7 items-center justify-center rounded-full border border-red-200 bg-white text-sm font-bold text-red-600 opacity-0 shadow-sm transition hover:bg-red-50 group-hover:opacity-100 focus:opacity-100';
-                        removeButton.setAttribute('aria-label', `Hapus ${file.name}`);
-                        removeButton.textContent = 'x';
-                        removeButton.addEventListener('click', () => {
-                            retainedTemplateFiles = retainedTemplateFiles.filter((retainedFile) => retainedFile.id !== file.id);
-                            renderRetainedFiles();
-                            syncTitleRequirement();
-                        });
+                        item.append(hidden, icon, name, meta);
 
-                        item.append(hidden, icon, name, meta, removeButton);
+                        if (canDelete) {
+                            const removeButton = document.createElement('button');
+                            removeButton.type = 'button';
+                            removeButton.className = 'absolute right-2 top-2 inline-flex size-7 items-center justify-center rounded-full border border-red-200 bg-white text-sm font-bold text-red-600 opacity-0 shadow-sm transition hover:bg-red-50 group-hover:opacity-100 focus:opacity-100';
+                            removeButton.setAttribute('aria-label', `Hapus ${file.name}`);
+                            removeButton.title = `Hapus ${file.name}`;
+                            removeButton.append(trashIconTemplate.content.cloneNode(true));
+                            removeButton.addEventListener('click', () => {
+                                retainedTemplateFiles = retainedTemplateFiles.filter((retainedFile) => retainedFile.id !== file.id);
+                                renderRetainedFiles();
+                                syncTitleRequirement();
+                            });
+
+                            item.append(removeButton);
+                        }
+
                         retainedFiles.append(item);
                     });
 
@@ -406,11 +439,11 @@
                 };
 
                 const setEditing = (editing) => {
-                    isEditing = canEdit && editing;
+                    isEditing = (canEdit || canDelete) && editing;
 
-                    titleInput.toggleAttribute('readonly', ! isEditing);
-                    notesInput.toggleAttribute('readonly', ! isEditing);
-                    fileInput.toggleAttribute('disabled', ! isEditing);
+                    titleInput.toggleAttribute('readonly', ! isEditing || ! canEdit);
+                    notesInput.toggleAttribute('readonly', ! isEditing || ! canEdit);
+                    fileInput.toggleAttribute('disabled', ! isEditing || ! canEdit);
                     actions.classList.toggle('hidden', ! isEditing);
                     actions.classList.toggle('flex', isEditing);
                     readPanel.classList.toggle('hidden', isEditing);
@@ -423,7 +456,14 @@
 
                     if (editToggle) {
                         editToggle.classList.toggle('hidden', isEditing);
-                        editToggle.textContent = 'Edit Template';
+                        editToggle.textContent = canEdit ? 'Edit Template' : 'Kelola Template';
+                    }
+
+                    if (deleteAllButton) {
+                        const showDeleteAll = canDelete && hasTemplateContent();
+
+                        deleteAllButton.classList.toggle('hidden', ! showDeleteAll);
+                        deleteAllButton.classList.toggle('inline-flex', showDeleteAll);
                     }
 
                     if (! isEditing) {
@@ -488,6 +528,23 @@
                 if (editToggle) {
                     editToggle.addEventListener('click', () => setEditing(true));
                 }
+
+                deleteAllButton?.addEventListener('click', () => {
+                    if (! window.confirm('Hapus semua file template untuk level dokumen ini?')) {
+                        return;
+                    }
+
+                    retainedTemplateFiles = [];
+                    titleInput.value = '';
+                    notesInput.value = '';
+                    clearSelectedFiles();
+                    renderRetainedFiles();
+                    syncTitleRequirement();
+
+                    if (! isEditing) {
+                        editForm.requestSubmit();
+                    }
+                });
 
                 cancelButton?.addEventListener('click', () => setEditing(false));
 

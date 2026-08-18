@@ -346,6 +346,74 @@ class DocumentTemplateControllerTest extends TestCase
         $this->assertCount(0, $newTemplate->files);
     }
 
+    public function test_template_deleter_can_remove_existing_files_without_edit_permission(): void
+    {
+        Storage::fake('local');
+        $this->seed(PermissionSeeder::class);
+
+        $editor = $this->templateEditor();
+
+        $this->actingAs($editor)
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-2',
+                'title' => 'Template Awal',
+                'notes' => 'Catatan lama.',
+                'template_files' => [
+                    UploadedFile::fake()->create('dipakai.docx', 32, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                    UploadedFile::fake()->create('dihapus.docx', 32, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                ],
+            ])
+            ->assertRedirect(route('document-templates.index'));
+
+        $activeTemplate = DocumentTemplate::query()
+            ->forLevel('level-2')
+            ->active()
+            ->with('files')
+            ->firstOrFail();
+        $retainedFile = $activeTemplate->files->firstWhere('original_file_name', 'dipakai.docx');
+        $deleter = $this->templateDeleter();
+
+        $this->actingAs($deleter)
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-2',
+                'title' => 'Judul yang tidak boleh dipakai',
+                'notes' => 'Catatan yang tidak boleh dipakai.',
+                'retained_template_file_ids_present' => '1',
+                'retained_template_file_ids' => [$retainedFile->id],
+            ])
+            ->assertRedirect(route('document-templates.index'));
+
+        $newTemplate = DocumentTemplate::query()
+            ->forLevel('level-2')
+            ->active()
+            ->with('files')
+            ->firstOrFail();
+
+        $this->assertFalse($activeTemplate->fresh()->is_active);
+        $this->assertSame('Template Awal', $newTemplate->title);
+        $this->assertSame('Catatan lama.', $newTemplate->notes);
+        $this->assertCount(1, $newTemplate->files);
+        $this->assertSame('dipakai.docx', $newTemplate->files->first()->original_file_name);
+    }
+
+    public function test_template_deleter_cannot_upload_new_files_without_edit_permission(): void
+    {
+        Storage::fake('local');
+        $this->seed(PermissionSeeder::class);
+
+        $deleter = $this->templateDeleter();
+
+        $this->actingAs($deleter)
+            ->post(route('document-templates.store'), [
+                'document_level' => 'level-2',
+                'title' => 'Template Baru',
+                'template_files' => [
+                    UploadedFile::fake()->create('template.docx', 32, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                ],
+            ])
+            ->assertForbidden();
+    }
+
     private function templateEditor(): User
     {
         $editor = User::factory()->create();
@@ -357,5 +425,18 @@ class DocumentTemplateControllerTest extends TestCase
         $editorRole->users()->sync([$editor->id]);
 
         return $editor->refresh();
+    }
+
+    private function templateDeleter(): User
+    {
+        $deleter = User::factory()->create();
+        $deleterRole = Role::query()->create(['nama_role' => 'Template Deleter']);
+        $viewPermission = Permission::query()->where('code', 'document-templates.view')->firstOrFail();
+        $deletePermission = Permission::query()->where('code', 'document-templates.delete')->firstOrFail();
+
+        $deleterRole->permissions()->sync([$viewPermission->id, $deletePermission->id]);
+        $deleterRole->users()->sync([$deleter->id]);
+
+        return $deleter->refresh();
     }
 }

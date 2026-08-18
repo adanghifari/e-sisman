@@ -118,6 +118,13 @@ return [
             'action' => 'edit',
         ],
         [
+            'code' => 'document-templates.delete',
+            'name' => 'Delete',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'document-templates.index',
+            'action' => 'delete',
+        ],
+        [
             'code' => 'reports.view',
             'name' => 'Lihat Reporting',
             'module' => 'Reporting',
