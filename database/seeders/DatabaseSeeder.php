@@ -25,14 +25,14 @@ class DatabaseSeeder extends Seeder
             PermissionSeeder::class,
         ]);
 
-        $itDepartmentId = DB::table('departments')->where('kode_department', 'ITMS')->value('id');
+        $itDepartmentId = DB::table('departments')->where('kode_department', 'ITSM')->value('id');
         $hcgaDepartmentId = DB::table('departments')->where('kode_department', 'HCGA')->value('id');
         $marketingDepartmentId = DB::table('departments')->where('kode_department', 'PMKT')->value('id');
         $hsseDepartmentId = DB::table('departments')->where('kode_department', 'HSSE')->value('id');
         $marineDepartmentId = DB::table('departments')->where('kode_department', 'MOPS')->value('id');
         $strategicDepartmentId = DB::table('departments')->where('kode_department', 'SDD')->value('id');
 
-        $developer = User::updateOrCreate(
+        User::updateOrCreate(
             ['nik' => '000000'],
             [
                 'm_department_id' => $itDepartmentId,

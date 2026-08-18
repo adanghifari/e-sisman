@@ -18,9 +18,12 @@ class DatabaseSeederTest extends TestCase
     {
         $this->seed(DatabaseSeeder::class);
 
-        foreach (['ITMS', 'HCGA', 'PMKT', 'HSSE', 'MOPS', 'SDD'] as $departmentCode) {
+        foreach (['ITSM', 'HCGA', 'PMKT', 'HSSE', 'MOPS', 'SDD'] as $departmentCode) {
             $this->assertTrue(Department::query()->where('kode_department', $departmentCode)->exists());
         }
+
+        $this->assertFalse(Department::query()->where('kode_department', 'ITMS')->exists());
+        $this->assertFalse(Department::query()->where('kode_department', 'DEFAULT')->exists());
 
         $userRole = Role::query()->where('nama_role', 'User')->firstOrFail();
         $documentControlRole = Role::query()->where('nama_role', 'Admin Kontrol Dokumen')->firstOrFail();
