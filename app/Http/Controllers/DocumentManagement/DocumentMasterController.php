@@ -145,6 +145,7 @@ class DocumentMasterController extends Controller
             'approvals.status',
             'approvals.approver',
             'approvals.role',
+            'documentLevel.approvalFlows.stages',
             'referenceDocument',
             'revisedFrom.status',
         ]);
@@ -156,6 +157,12 @@ class DocumentMasterController extends Controller
 
         return view('document-management.master-detail', [
             'document' => $document,
+            'approvalFlowStages' => $document->documentLevel
+                ?->approvalFlows
+                ->flatMap(fn ($flow) => $flow->stages)
+                ->sortBy('stage_order')
+                ->values()
+                ?? collect(),
             'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document'])->values(),
             'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
         ]);

@@ -7,6 +7,7 @@ use App\Models\Approval;
 use App\Models\ApprovalStatus;
 use App\Models\Document;
 use App\Models\StatusDocument;
+use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
@@ -153,20 +154,35 @@ class DocumentInboxController extends Controller
     private function myProcessedHistory(Request $request): array
     {
         $approvalScope = $this->approvalScope($request, processed: true);
+        $user = $request->user();
 
         return Document::query()
             ->with([
                 'documentType',
                 'creator',
+                'status',
                 'departments',
                 'approvals' => function ($query) use ($approvalScope): void {
                     $approvalScope($query);
                     $query->with(['status', 'approver'])->orderByDesc('responded_at');
                 },
             ])
-            ->whereHas('approvals', $approvalScope)
+            ->where(function ($query) use ($approvalScope, $user): void {
+                $query->whereHas('approvals', $approvalScope);
+
+                if (! $user->isDeveloper()) {
+                    $query
+                        ->orWhere('user_id', $user->id)
+                        ->orWhere('official_preparer_id', $user->id);
+                }
+            })
             ->get()
-            ->map(fn (Document $document): array => $this->approvalRow($document, $document->approvals->first(), $request->user()->isDeveloper()))
+            ->map(fn (Document $document): array => $this->processedHistoryRow(
+                $document,
+                $document->approvals->first(fn (Approval $approval): bool => $approval->stages !== 'TTD Penyusun Resmi')
+                    ?? $document->approvals->first(),
+                $user,
+            ))
             ->all();
     }
 
@@ -188,6 +204,12 @@ class DocumentInboxController extends Controller
     private function assignableDocumentScope(Request $request): ?callable
     {
         $user = $request->user();
+
+        if ($user->isDeveloper() || $user->hasExplicitPermission('documents.approval.assign')) {
+            return function ($query): void {
+                $query->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED));
+            };
+        }
 
         if (! $user->isAdmin() && (! $user->isDocumentControlAdmin() || $user->m_department_id === null)) {
             return null;
@@ -235,6 +257,26 @@ class DocumentInboxController extends Controller
             'tone' => $this->approvalTone($statusCode),
             'action' => $approval ? 'Proses' : 'Assign',
         ];
+    }
+
+    private function processedHistoryRow(Document $document, ?Approval $approval, User $user): array
+    {
+        if ($approval !== null || $user->isDeveloper()) {
+            return $this->approvalRow($document, $approval, $user->isDeveloper());
+        }
+
+        $row = $this->approvalRow($document, null);
+        $submittedAt = $document->submitted_at ?? $document->created_at;
+
+        $row['stage'] = $document->official_preparer_id === $user->id
+            ? 'TTD Penyusun Resmi'
+            : 'Pengajuan Dokumen';
+        $row['waiting_for'] = '-';
+        $row['updated_at'] = $submittedAt?->translatedFormat('d M Y H:i') ?? '-';
+        $row['updated_at_sort'] = $submittedAt?->timestamp ?? 0;
+        $row['action'] = 'Lihat';
+
+        return $row;
     }
 
     private function approvalTone(string $statusCode): string

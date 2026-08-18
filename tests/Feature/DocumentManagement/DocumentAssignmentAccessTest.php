@@ -8,6 +8,7 @@ use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\StatusDocument;
 use App\Models\User;
@@ -59,6 +60,34 @@ class DocumentAssignmentAccessTest extends TestCase
 
         $this->assertFalse($user->isDocumentControlAdmin());
         $this->assertFalse($user->canAssignDocument($document));
+    }
+
+    public function test_user_with_assign_permission_can_assign_document_from_any_department(): void
+    {
+        $userDepartment = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $documentDepartment = Department::create([
+            'kode_department' => 'HR',
+            'nama_department' => 'Human Resources',
+        ]);
+        $role = Role::query()->firstOrCreate(['nama_role' => 'Admin Kontrol Dokumen']);
+        $permission = Permission::query()->firstOrCreate(
+            ['code' => 'documents.approval.assign'],
+            [
+                'name' => 'Assign Approver Dokumen',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.approval.assign',
+                'action' => 'assign',
+            ],
+        );
+        $admin = User::factory()->create(['m_department_id' => $userDepartment->id]);
+        $admin->roles()->attach($role);
+        $role->permissions()->attach($permission);
+        $document = $this->proposedDocumentForDepartments([$documentDepartment]);
+
+        $this->assertTrue($admin->refresh()->canAssignDocument($document));
     }
 
     public function test_document_control_admin_can_assign_multi_department_document_when_one_department_matches(): void

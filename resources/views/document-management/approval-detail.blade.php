@@ -188,6 +188,7 @@
                         $approvalStageOrders = $approvalFlowStages
                             ->mapWithKeys(fn ($stage) => [($stage->display_label ?: 'Approval') => $stage->stage_order]);
                         $approvalHistory = $document->approvals
+                            ->reject(fn ($approval) => $approval->stages === 'TTD Penyusun Resmi')
                             ->sortBy(fn ($approval) => sprintf(
                                 '%04d-%010d-%04d',
                                 $approvalStageOrders->get($approval->stages, 9999),
@@ -215,6 +216,7 @@
                             @php
                                 $approvalStatusCode = $approval->status?->kode_status;
                                 $stageOrder = $approvalStageOrders->get($approval->stages);
+                                $approvalTimestamp = $approval->responded_at;
                             @endphp
                             <div class="rounded-lg bg-slate-50 px-3 py-3">
                                 <div class="flex items-start justify-between gap-3">
@@ -225,8 +227,13 @@
                                         <div class="min-w-0">
                                             <p class="truncate text-sm font-semibold text-slate-800">{{ $approval->approver?->name ?? '-' }}</p>
                                             <p class="mt-1 text-xs font-medium text-slate-500">
-                                                Tahap {{ $stageOrder ?? '-' }} - {{ $approval->stages ?: 'Approval' }}
+                                                {{ $approval->stages ?: 'Approval' }}
                                             </p>
+                                            @if ($approvalTimestamp)
+                                                <p class="mt-1 text-xs font-medium text-slate-500">
+                                                    Diproses pada {{ $approvalTimestamp->translatedFormat('d M Y H:i:s') }}
+                                                </p>
+                                            @endif
                                         </div>
                                     </div>
                                     <x-ui.status-badge
@@ -283,7 +290,9 @@
                         </div>
                     @else
                         @php
-                            $hasSavedApprovers = $document->approvals->isNotEmpty();
+                            $hasSavedApprovers = $document->approvals
+                                ->reject(fn ($approval) => $approval->stages === 'TTD Penyusun Resmi')
+                                ->isNotEmpty();
                             $hasAssignmentErrors = collect($errors->getMessages())
                                 ->keys()
                                 ->contains(fn ($key) => $key === 'stage_approvers' || str_starts_with($key, 'stage_approvers.'));
@@ -352,18 +361,6 @@
                                             ])
                                             ->filter(fn ($item) => $item['user'])
                                             ->values();
-                                    if (
-                                        $stage->stage_order === 1
-                                        && $stageApprovers->isEmpty()
-                                        && $document->officialPreparer
-                                        && ! $hasOldStageInput
-                                    ) {
-                                        $stageApprovers = collect([[
-                                            'user' => $document->officialPreparer,
-                                            'status' => null,
-                                            'locked' => false,
-                                        ]]);
-                                    }
                                 @endphp
 
                                 <article class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-approver-stage="{{ $stage->id }}">

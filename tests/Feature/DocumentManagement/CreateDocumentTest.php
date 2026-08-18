@@ -8,6 +8,7 @@ use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
+use App\Models\ApprovalStatus;
 use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -167,7 +168,7 @@ class CreateDocumentTest extends TestCase
         $this->assertTrue($document->departments()->whereKey($department->id)->exists());
     }
 
-    public function test_submitted_document_keeps_approval_assignment_clean_until_saved(): void
+    public function test_submitted_document_records_official_preparer_signature_without_stage_assignment(): void
     {
         Storage::fake('local');
 
@@ -188,6 +189,10 @@ class CreateDocumentTest extends TestCase
 
         StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
         StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::APPROVED,
+            'nama_status' => 'Disetujui',
+        ]);
         DocumentType::create(['nama_types' => 'Prosedur']);
 
         $this->actingAs($user)
@@ -207,7 +212,41 @@ class CreateDocumentTest extends TestCase
 
         $this->assertSame(StatusDocument::PROPOSED, $document->status->nama_status);
         $this->assertSame($officialPreparer->id, $document->official_preparer_id);
-        $this->assertFalse($document->approvals()->exists());
+        $this->assertTrue($document->approvals()
+            ->where('user_id', $officialPreparer->id)
+            ->where('stages', 'TTD Penyusun Resmi')
+            ->whereNotNull('responded_at')
+            ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::APPROVED))
+            ->exists());
+
+        $this->actingAs($officialPreparer)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertDontSee('Prosedur Submit Approval');
+
+        $this->actingAs($officialPreparer)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Prosedur Submit Approval')
+            ->assertSee('TTD Penyusun Resmi')
+            ->assertSee('Disetujui');
+
+        $this->actingAs($officialPreparer)
+            ->get(route('documents.approval.show', $document))
+            ->assertOk()
+            ->assertSee('Prosedur Submit Approval');
+
+        $this->actingAs($user)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Prosedur Submit Approval')
+            ->assertSee('Pengajuan Dokumen')
+            ->assertSee(StatusDocument::PROPOSED);
+
+        $this->actingAs($user)
+            ->get(route('documents.approval.show', $document))
+            ->assertOk()
+            ->assertSee('Prosedur Submit Approval');
     }
 
     public function test_level_three_document_can_be_saved_as_draft(): void

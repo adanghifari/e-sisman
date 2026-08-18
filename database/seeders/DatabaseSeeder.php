@@ -56,6 +56,8 @@ class DatabaseSeeder extends Seeder
             ['nik' => '0000114', 'name' => 'Nadia Putri', 'email' => 'nadia.putri@example.com', 'jabatan' => 'Quality Assurance Officer'],
             ['nik' => '0000115', 'name' => 'Dimas Pratama', 'email' => 'dimas.pratama@example.com', 'jabatan' => 'Operations Supervisor'],
             ['nik' => '0000116', 'name' => 'Farhan Selatan', 'email' => 'parhan@example.com', 'jabatan' => 'Compliance Officer'],
+            ['nik' => '0000117', 'name' => 'Moreno', 'email' => 'moreno@example.com', 'jabatan' => 'IT STAFF'],
+
         ];
 
         foreach ($users as $user) {

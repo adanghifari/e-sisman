@@ -16,6 +16,10 @@ class EnsureRoutePermission
     {
         $routeName = $request->route()?->getName();
 
+        if ($routeName !== null && str_starts_with($routeName, 'documents.approval.')) {
+            return $next($request);
+        }
+
         if ($routeName === null || ! Permission::query()->where('route', $routeName)->exists()) {
             return $next($request);
         }

@@ -3,11 +3,13 @@
 namespace App\Http\Controllers\DocumentManagement;
 
 use App\Http\Controllers\Controller;
+use App\Models\ApprovalStatus;
 use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
 use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
+use App\Models\Role;
 use App\Models\StatusDocument;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -51,6 +53,7 @@ class DocumentController extends Controller
         );
 
         DB::transaction(function () use ($request, $validated, $documentNumber, $documentLevel, $documentType, $status, $level): void {
+            $submittedAt = $validated['submit_action'] === 'submit' ? now() : null;
             $document = Document::create([
                 'm_document_level_id' => $documentLevel->id,
                 'm_status_document_id' => $status->id,
@@ -65,7 +68,7 @@ class DocumentController extends Controller
                 'nomor_revisi' => $this->normalizeRevision($validated['nomor_revisi'] ?? null),
                 'catatan_revisi' => $validated['catatan_revisi'] ?? null,
                 'tanggal_terbit' => $validated['tanggal_terbit'] ?? null,
-                'submitted_at' => $validated['submit_action'] === 'submit' ? now() : null,
+                'submitted_at' => $submittedAt,
             ]);
 
             $document->departments()->sync($validated['department_ids'] ?? []);
@@ -82,6 +85,9 @@ class DocumentController extends Controller
                 $this->storeDocumentFile($document, $attachment, 'attachment', $request->user()->id);
             }
 
+            if ($submittedAt !== null) {
+                $this->recordOfficialPreparerApproval($document, $request->user()->id, $submittedAt);
+            }
         });
 
         if ($validated['submit_action'] === 'submit') {
@@ -226,4 +232,24 @@ class DocumentController extends Controller
         ]);
     }
 
+    private function recordOfficialPreparerApproval(Document $document, int $assignedBy, mixed $respondedAt): void
+    {
+        if ($document->official_preparer_id === null) {
+            return;
+        }
+
+        $role = Role::query()->firstOrCreate(['nama_role' => 'Penyusun Resmi']);
+        $approvedStatus = ApprovalStatus::findByCode(ApprovalStatus::APPROVED);
+
+        $document->approvals()->create([
+            'm_approval_status_id' => $approvedStatus->id,
+            'user_id' => $document->official_preparer_id,
+            'role_id' => $role->id,
+            'assigned_by' => $assignedBy,
+            'assigned_at' => $respondedAt,
+            'responded_at' => $respondedAt,
+            'stages' => 'TTD Penyusun Resmi',
+            'catatan' => 'Tanda tangan penyusun resmi tercatat saat submit dokumen.',
+        ]);
+    }
 }
