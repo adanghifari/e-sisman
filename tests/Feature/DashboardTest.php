@@ -24,4 +24,24 @@ class DashboardTest extends TestCase
         $response = $this->get(route('dashboard'));
         $response->assertOk();
     }
+
+    public function test_department_warning_popup_is_rendered_when_session_exists(): void
+    {
+        $user = User::factory()->create(['m_department_id' => null]);
+        $this->actingAs($user);
+
+        $response = $this
+            ->withSession([
+                'department_warning' => [
+                    'title' => 'Department Belum Terdaftar',
+                    'message' => 'Akun Anda belum terdaftar di department manapun. Silakan hubungi admin untuk melengkapi data department.',
+                ],
+            ])
+            ->get(route('dashboard'));
+
+        $response
+            ->assertOk()
+            ->assertSee('Department Belum Terdaftar')
+            ->assertSee('Akun Anda belum terdaftar di department manapun.');
+    }
 }

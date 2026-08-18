@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\Auth;
 
+use App\Models\Department;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Laravel\Fortify\Features;
@@ -32,6 +33,59 @@ class AuthenticationTest extends TestCase
             ->assertRedirect(route('dashboard', absolute: false));
 
         $this->assertAuthenticated();
+    }
+
+    public function test_user_without_department_gets_warning_after_login(): void
+    {
+        $user = User::factory()->create(['m_department_id' => null]);
+
+        $response = $this->post(route('login.store'), [
+            'nik' => $user->nik,
+            'password' => 'Password123!',
+        ]);
+
+        $response
+            ->assertSessionHasNoErrors()
+            ->assertSessionHas('department_warning.title', 'Department Belum Terdaftar')
+            ->assertRedirect(route('dashboard', absolute: false));
+    }
+
+    public function test_user_with_department_does_not_get_department_warning_after_login(): void
+    {
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $user = User::factory()->create(['m_department_id' => $department->id]);
+
+        $response = $this->post(route('login.store'), [
+            'nik' => $user->nik,
+            'password' => 'Password123!',
+        ]);
+
+        $response
+            ->assertSessionHasNoErrors()
+            ->assertSessionMissing('department_warning')
+            ->assertRedirect(route('dashboard', absolute: false));
+    }
+
+    public function test_developer_without_department_does_not_get_department_warning_after_login(): void
+    {
+        $developer = User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+            'm_department_id' => null,
+        ]);
+
+        $response = $this->post(route('login.store'), [
+            'nik' => $developer->nik,
+            'password' => 'Password123!',
+        ]);
+
+        $response
+            ->assertSessionHasNoErrors()
+            ->assertSessionMissing('department_warning')
+            ->assertRedirect(route('dashboard', absolute: false));
     }
 
     public function test_users_can_not_authenticate_with_invalid_password(): void

@@ -2,7 +2,23 @@
     'title' => 'Berhasil',
     'message' => null,
     'closeLabel' => 'Tutup',
+    'variant' => 'success',
 ])
+
+@php
+    $isWarning = $variant === 'warning';
+    $accent = $isWarning
+        ? [
+            'border' => 'border-amber-100',
+            'iconWrap' => 'bg-amber-50 ring-amber-100',
+            'button' => 'bg-amber-500 hover:bg-amber-600 focus:ring-amber-200',
+        ]
+        : [
+            'border' => 'border-emerald-100',
+            'iconWrap' => 'bg-emerald-50 ring-emerald-100',
+            'button' => 'bg-emerald-600 hover:bg-emerald-700 focus:ring-emerald-200',
+        ];
+@endphp
 
 <div
     class="fixed inset-0 z-50 grid place-items-center bg-slate-950/35 px-4 py-6 backdrop-blur-sm"
@@ -11,28 +27,32 @@
     aria-modal="true"
     aria-labelledby="success-dialog-title"
 >
-    <div class="w-full max-w-md scale-95 rounded-lg border border-emerald-100 bg-white p-6 text-center opacity-0 shadow-2xl shadow-slate-900/15 transition duration-300 ease-out data-[ready=true]:scale-100 data-[ready=true]:opacity-100">
-        <div class="mx-auto grid size-20 place-items-center rounded-full bg-emerald-50 ring-1 ring-emerald-100">
-            <svg class="size-12" viewBox="0 0 52 52" aria-hidden="true">
-                <circle
-                    class="success-dialog-circle"
-                    cx="26"
-                    cy="26"
-                    r="23"
-                    fill="none"
-                    stroke="#10b981"
-                    stroke-width="4"
-                />
-                <path
-                    class="success-dialog-check"
-                    fill="none"
-                    stroke="#059669"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                    stroke-width="5"
-                    d="M15 27.5 22.5 35 38 18"
-                />
-            </svg>
+    <div class="w-full max-w-md scale-95 rounded-lg border {{ $accent['border'] }} bg-white p-6 text-center opacity-0 shadow-2xl shadow-slate-900/15 transition duration-300 ease-out data-[ready=true]:scale-100 data-[ready=true]:opacity-100">
+        <div class="mx-auto grid size-20 place-items-center rounded-full {{ $accent['iconWrap'] }} ring-1">
+            @if ($isWarning)
+                <flux:icon name="exclamation-triangle" class="size-11 text-amber-500" />
+            @else
+                <svg class="size-12" viewBox="0 0 52 52" aria-hidden="true">
+                    <circle
+                        class="success-dialog-circle"
+                        cx="26"
+                        cy="26"
+                        r="23"
+                        fill="none"
+                        stroke="#10b981"
+                        stroke-width="4"
+                    />
+                    <path
+                        class="success-dialog-check"
+                        fill="none"
+                        stroke="#059669"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                        stroke-width="5"
+                        d="M15 27.5 22.5 35 38 18"
+                    />
+                </svg>
+            @endif
         </div>
 
         <h2 id="success-dialog-title" class="mt-5 text-xl font-bold text-slate-950">
@@ -47,7 +67,7 @@
 
         <button
             type="button"
-            class="mt-6 inline-flex h-11 min-w-32 items-center justify-center rounded-lg bg-emerald-600 px-5 text-sm font-semibold text-white shadow-sm transition hover:bg-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-200"
+            class="mt-6 inline-flex h-11 min-w-32 items-center justify-center rounded-lg {{ $accent['button'] }} px-5 text-sm font-semibold text-white shadow-sm transition focus:outline-none focus:ring-2"
             data-success-dialog-close
         >
             {{ $closeLabel }}

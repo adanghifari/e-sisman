@@ -17,6 +17,7 @@ class DatabaseSeeder extends Seeder
     public function run(): void
     {
         $this->call([
+            DepartmentSeeder::class,
             DocumentStatusSeeder::class,
             ApprovalStatusSeeder::class,
             DocumentLevelSeeder::class,
@@ -24,77 +25,84 @@ class DatabaseSeeder extends Seeder
             PermissionSeeder::class,
         ]);
 
-        DB::table('departments')->updateOrInsert([
-            'kode_department' => 'DEFAULT',
-        ], [
-            'nama_department' => 'Default Department',
-        ]);
-
-        foreach (['Superadmin', 'Admin Kontrol Dokumen', 'User'] as $role) {
-            DB::table('roles')->updateOrInsert(
-                ['nama_role' => $role],
-                ['nama_role' => $role],
-            );
-        }
-
-        $departmentId = DB::table('departments')->where('kode_department', 'DEFAULT')->value('id');
+        $itDepartmentId = DB::table('departments')->where('kode_department', 'ITSM')->value('id');
+        $hcgaDepartmentId = DB::table('departments')->where('kode_department', 'HCGA')->value('id');
+        $marketingDepartmentId = DB::table('departments')->where('kode_department', 'PMKT')->value('id');
+        $hsseDepartmentId = DB::table('departments')->where('kode_department', 'HSSE')->value('id');
+        $marineDepartmentId = DB::table('departments')->where('kode_department', 'MOPS')->value('id');
+        $strategicDepartmentId = DB::table('departments')->where('kode_department', 'SDD')->value('id');
 
         User::updateOrCreate(
             ['nik' => '000000'],
             [
-                'm_department_id' => $departmentId,
+                'm_department_id' => $itDepartmentId,
                 'name' => 'Developer',
                 'email' => 'developer@example.com',
                 'password' => 'Password123!',
             ],
         );
 
-        $users = [
-            ['nik' => '0000111', 'name' => 'Muhammad Akhdan Ghifari', 'email' => 'akhdan@example.com', 'jabatan' => 'Manager'],
-            ['nik' => '0000112', 'name' => 'Muhammad Azigha Azhar', 'email' => 'azigha.lestari@example.com', 'jabatan' => 'Manager'],
-            ['nik' => '0000113', 'name' => 'Hafiz Fawwaz Aydil', 'email' => 'aydil@example.com', 'jabatan' => 'Business Process Analyst'],
-            ['nik' => '0000114', 'name' => 'Nadia Putri', 'email' => 'nadia.putri@example.com', 'jabatan' => 'Quality Assurance Officer'],
-            ['nik' => '0000115', 'name' => 'Dimas Pratama', 'email' => 'dimas.pratama@example.com', 'jabatan' => 'Operations Supervisor'],
-            ['nik' => '0000116', 'name' => 'Farhan Selatan', 'email' => 'parhan@example.com', 'jabatan' => 'Compliance Officer'],
-            ['nik' => '0000117', 'name' => 'Moreno', 'email' => 'moreno@example.com', 'jabatan' => 'IT STAFF'],
+        $superAdmin = User::updateOrCreate(
+            ['nik' => '000001'],
+            [
+                'm_department_id' => $itDepartmentId,
+                'name' => 'Super Admin',
+                'email' => 'superadmin@example.com',
+                'password' => 'Password123!',
+                'jabatan' => 'Super Administrator',
+            ],
+        );
 
+        $documentControlAdmin = User::updateOrCreate(
+            ['nik' => '000002'],
+            [
+                'm_department_id' => $itDepartmentId,
+                'name' => 'Admin Kontrol Dokumen',
+                'email' => 'admin.kontrol@example.com',
+                'password' => 'Password123!',
+                'jabatan' => 'Document Control Administrator',
+            ],
+        );
+
+        $users = [
+            ['nik' => '0000111', 'name' => 'Muhammad Akhdan Ghifari', 'email' => 'akhdan@example.com', 'jabatan' => 'Manager', 'department_id' => $strategicDepartmentId],
+            ['nik' => '0000112', 'name' => 'Muhammad Azigha Azhar', 'email' => 'azigha.lestari@example.com', 'jabatan' => 'Manager', 'department_id' => $hcgaDepartmentId],
+            ['nik' => '0000113', 'name' => 'Hafiz Fawwaz Aydil', 'email' => 'aydil@example.com', 'jabatan' => 'Business Process Analyst', 'department_id' => $itDepartmentId],
+            ['nik' => '0000114', 'name' => 'Nadia Putri', 'email' => 'nadia.putri@example.com', 'jabatan' => 'Quality Assurance Officer', 'department_id' => $hsseDepartmentId],
+            ['nik' => '0000115', 'name' => 'Dimas Pratama', 'email' => 'dimas.pratama@example.com', 'jabatan' => 'Operations Supervisor', 'department_id' => $marineDepartmentId],
+            ['nik' => '0000116', 'name' => 'Farhan Selatan', 'email' => 'parhan@example.com', 'jabatan' => 'Compliance Officer', 'department_id' => $marketingDepartmentId],
+            ['nik' => '0000117', 'name' => 'Moreno', 'email' => 'moreno@example.com', 'jabatan' => 'IT STAFF', 'department_id' => $itDepartmentId],
         ];
 
+        $seededUsers = collect();
+
         foreach ($users as $user) {
-            User::updateOrCreate(
+            $seededUsers->push(User::updateOrCreate(
                 ['nik' => $user['nik']],
                 [
-                    'm_department_id' => $departmentId,
+                    'm_department_id' => $user['department_id'],
                     'name' => $user['name'],
                     'email' => $user['email'],
                     'password' => 'Password123!',
                     'jabatan' => $user['jabatan'],
                 ],
-            );
+            ));
         }
 
         $userRoleId = DB::table('roles')->where('nama_role', 'User')->value('id');
+        $documentControlAdminRoleId = DB::table('roles')->where('nama_role', 'Admin Kontrol Dokumen')->value('id');
+        $superAdminRoleId = DB::table('roles')->where('nama_role', 'SuperAdmin')->value('id');
 
         if ($userRoleId !== null) {
-            $nonDeveloperUserIds = User::query()
-                ->where(function ($query): void {
-                    $query
-                        ->where('nik', '!=', '000000')
-                        ->orWhereNull('nik');
-                })
-                ->where(function ($query): void {
-                    $query
-                        ->where('email', '!=', 'developer@example.com')
-                        ->orWhereNull('email');
-                })
-                ->pluck('id');
+            $seededUsers->each(fn (User $user): array => $user->roles()->sync([$userRoleId]));
+        }
 
-            foreach ($nonDeveloperUserIds as $userId) {
-                DB::table('user_roles')->updateOrInsert([
-                    'role_id' => $userRoleId,
-                    'user_id' => $userId,
-                ]);
-            }
+        if ($documentControlAdminRoleId !== null) {
+            $documentControlAdmin->roles()->sync([$documentControlAdminRoleId]);
+        }
+
+        if ($superAdminRoleId !== null) {
+            $superAdmin->roles()->sync([$superAdminRoleId]);
         }
     }
 }

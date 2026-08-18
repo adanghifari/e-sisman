@@ -9,6 +9,10 @@ class PermissionSeeder extends Seeder
 {
     private const DEFAULT_USER_ROLE = 'User';
 
+    private const DOCUMENT_CONTROL_ADMIN_ROLE = 'Admin Kontrol Dokumen';
+
+    private const SUPER_ADMIN_ROLE = 'SuperAdmin';
+
     private const DEFAULT_USER_PERMISSION_CODES = [
         'dashboard.view',
         'documents.inbox.view',
@@ -26,6 +30,8 @@ class PermissionSeeder extends Seeder
     {
         $permissions = collect(config('access.permissions', []));
         $permissionCodes = $permissions->pluck('code')->all();
+
+        $this->normalizeSuperAdminRole();
 
         DB::table('role_permissions')
             ->whereIn(
@@ -53,19 +59,53 @@ class PermissionSeeder extends Seeder
         }
 
         DB::table('roles')->updateOrInsert(
-            ['nama_role' => 'SuperAdmin'],
-            ['nama_role' => 'SuperAdmin'],
+            ['nama_role' => self::SUPER_ADMIN_ROLE],
+            ['nama_role' => self::SUPER_ADMIN_ROLE],
         );
 
         $superAdminRoleId = DB::table('roles')
-            ->where('nama_role', 'SuperAdmin')
+            ->where('nama_role', self::SUPER_ADMIN_ROLE)
             ->value('id');
 
         $permissionIds = DB::table('permissions')->pluck('id');
 
+        DB::table('role_permissions')
+            ->where('role_id', $superAdminRoleId)
+            ->whereNotIn('permission_id', $permissionIds)
+            ->delete();
+
         foreach ($permissionIds as $permissionId) {
             DB::table('role_permissions')->updateOrInsert([
                 'role_id' => $superAdminRoleId,
+                'permission_id' => $permissionId,
+            ]);
+        }
+
+        DB::table('roles')->updateOrInsert(
+            ['nama_role' => self::DOCUMENT_CONTROL_ADMIN_ROLE],
+            ['nama_role' => self::DOCUMENT_CONTROL_ADMIN_ROLE],
+        );
+
+        $documentControlAdminRoleId = DB::table('roles')
+            ->where('nama_role', self::DOCUMENT_CONTROL_ADMIN_ROLE)
+            ->value('id');
+
+        $documentControlPermissionIds = DB::table('permissions')
+            ->where(function ($query): void {
+                $query
+                    ->where('module', '!=', 'Administrasi')
+                    ->orWhere('action', 'view');
+            })
+            ->pluck('id');
+
+        DB::table('role_permissions')
+            ->where('role_id', $documentControlAdminRoleId)
+            ->whereNotIn('permission_id', $documentControlPermissionIds)
+            ->delete();
+
+        foreach ($documentControlPermissionIds as $permissionId) {
+            DB::table('role_permissions')->updateOrInsert([
+                'role_id' => $documentControlAdminRoleId,
                 'permission_id' => $permissionId,
             ]);
         }
@@ -82,6 +122,11 @@ class PermissionSeeder extends Seeder
         $defaultUserPermissionIds = DB::table('permissions')
             ->whereIn('code', self::DEFAULT_USER_PERMISSION_CODES)
             ->pluck('id');
+
+        DB::table('role_permissions')
+            ->where('role_id', $defaultUserRoleId)
+            ->whereNotIn('permission_id', $defaultUserPermissionIds)
+            ->delete();
 
         foreach ($defaultUserPermissionIds as $permissionId) {
             DB::table('role_permissions')->updateOrInsert([
@@ -109,5 +154,49 @@ class PermissionSeeder extends Seeder
                 'user_id' => $userId,
             ]);
         }
+    }
+
+    private function normalizeSuperAdminRole(): void
+    {
+        $legacyRoleId = DB::table('roles')->where('nama_role', 'Superadmin')->value('id');
+        $superAdminRoleId = DB::table('roles')->where('nama_role', self::SUPER_ADMIN_ROLE)->value('id');
+
+        if ($legacyRoleId === null) {
+            return;
+        }
+
+        if ($superAdminRoleId === null) {
+            DB::table('roles')
+                ->where('id', $legacyRoleId)
+                ->update(['nama_role' => self::SUPER_ADMIN_ROLE]);
+
+            return;
+        }
+
+        $legacyUserIds = DB::table('user_roles')
+            ->where('role_id', $legacyRoleId)
+            ->pluck('user_id');
+
+        foreach ($legacyUserIds as $userId) {
+            DB::table('user_roles')->updateOrInsert([
+                'role_id' => $superAdminRoleId,
+                'user_id' => $userId,
+            ]);
+        }
+
+        $legacyPermissionIds = DB::table('role_permissions')
+            ->where('role_id', $legacyRoleId)
+            ->pluck('permission_id');
+
+        foreach ($legacyPermissionIds as $permissionId) {
+            DB::table('role_permissions')->updateOrInsert([
+                'role_id' => $superAdminRoleId,
+                'permission_id' => $permissionId,
+            ]);
+        }
+
+        DB::table('user_roles')->where('role_id', $legacyRoleId)->delete();
+        DB::table('role_permissions')->where('role_id', $legacyRoleId)->delete();
+        DB::table('roles')->where('id', $legacyRoleId)->delete();
     }
 }
