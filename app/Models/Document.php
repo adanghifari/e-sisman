@@ -7,6 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Support\Collection;
 
 #[Fillable([
     'm_status_document_id',
@@ -94,6 +95,41 @@ class Document extends Model
     public function revisions(): HasMany
     {
         return $this->hasMany(self::class, 'revised_from');
+    }
+
+    public function revisionRootId(): int
+    {
+        $document = $this;
+
+        while ($document->revised_from !== null) {
+            $document = self::query()
+                ->select(['id', 'revised_from'])
+                ->findOrFail($document->revised_from);
+        }
+
+        return $document->id;
+    }
+
+    public function revisionFamily(): Collection
+    {
+        $documents = self::query()
+            ->select(['id', 'revised_from'])
+            ->get();
+        $rootId = $this->revisionRootId();
+        $familyIds = collect([$rootId]);
+        $previousCount = 0;
+
+        while ($familyIds->count() !== $previousCount) {
+            $previousCount = $familyIds->count();
+            $childIds = $documents
+                ->whereIn('revised_from', $familyIds)
+                ->pluck('id');
+            $familyIds = $familyIds->merge($childIds)->unique()->values();
+        }
+
+        return self::query()
+            ->whereIn('id', $familyIds)
+            ->get();
     }
 
     public function obsoleteRevisions(): HasMany
