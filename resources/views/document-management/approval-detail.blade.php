@@ -23,12 +23,6 @@
             <span class="text-slate-700">{{ $document->nomor_dokumen ?: 'Detail Dokumen' }}</span>
         </nav>
 
-        @if (session('status'))
-            <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-semibold text-emerald-700">
-                {{ session('status') }}
-            </div>
-        @endif
-
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
                 <h1 class="text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
@@ -272,21 +266,16 @@
                     </section>
                 @endif
 
-                <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm">
-                    <div class="border-b border-slate-200 px-6 py-5">
-                        <h2 class="text-lg font-bold text-slate-900">Assign Approver</h2>
-                        <p class="mt-2 text-sm font-medium text-slate-500">
-                            Approval Flow {{ $document->documentLevel?->nama_dokumen ?? $document->documentLevel?->nama_level ?? '-' }}
-                        </p>
-                    </div>
-
-                    @if (! $canManageApproverAssignment)
-                        <div class="px-6 py-6">
-                            <p class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
-                                Assignment approver dikelola oleh Admin Kontrol Dokumen department terkait.
+                @if ($canManageApproverAssignment)
+                    <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm">
+                        <div class="border-b border-slate-200 px-6 py-5">
+                            <h2 class="text-lg font-bold text-slate-900">Assign Approver</h2>
+                            <p class="mt-2 text-sm font-medium text-slate-500">
+                                Approval Flow {{ $document->documentLevel?->nama_dokumen ?? $document->documentLevel?->nama_level ?? '-' }}
                             </p>
                         </div>
-                    @elseif ($approvalFlowStages->isEmpty())
+
+                        @if ($approvalFlowStages->isEmpty())
                         <div class="px-6 py-6">
                             <p class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-8 text-center text-sm font-semibold text-slate-500">
                                 Belum ada aturan tahap approval.
@@ -477,8 +466,9 @@
                                 </x-ui.action-button>
                             </div>
                         </form>
-                    @endif
-                </section>
+                        @endif
+                    </section>
+                @endif
             </aside>
         </div>
     </div>

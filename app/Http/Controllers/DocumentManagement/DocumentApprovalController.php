@@ -73,7 +73,10 @@ class DocumentApprovalController extends Controller
 
         return redirect()
             ->route('documents.approval.show', $document)
-            ->with('status', 'Dokumen berhasil di-approve.');
+            ->with('document_success', [
+                'title' => 'Dokumen Berhasil Disetujui',
+                'message' => 'Approval Anda sudah tercatat pada riwayat dokumen.',
+            ]);
     }
 
     public function reject(Request $request, Document $document): RedirectResponse
@@ -117,7 +120,10 @@ class DocumentApprovalController extends Controller
 
         return redirect()
             ->route('documents.approval.show', $document)
-            ->with('status', 'Dokumen berhasil ditolak.');
+            ->with('document_success', [
+                'title' => 'Dokumen Berhasil Ditolak',
+                'message' => 'Catatan penolakan Anda sudah tersimpan pada riwayat dokumen.',
+            ]);
     }
 
     public function assign(Request $request, Document $document): RedirectResponse

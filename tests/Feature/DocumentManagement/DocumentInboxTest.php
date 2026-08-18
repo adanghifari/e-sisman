@@ -449,9 +449,9 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Lampiran')
             ->assertSee('Approve')
             ->assertSee('Tolak')
-            ->assertSee('Assign Approver')
-            ->assertSee('Approval Flow Dokumen Level II : Prosedur SKMBS')
-            ->assertSee('Assignment approver dikelola oleh Admin Kontrol Dokumen department terkait.')
+            ->assertDontSee('Assign Approver')
+            ->assertDontSee('Approval Flow Dokumen Level II : Prosedur SKMBS')
+            ->assertDontSee('Assignment approver dikelola oleh Admin Kontrol Dokumen department terkait.')
             ->assertDontSee('Tambah Approver')
             ->assertDontSee('Save Approver');
 
@@ -911,7 +911,8 @@ class DocumentInboxTest extends TestCase
 
         $this->actingAs($firstApprover)
             ->post(route('documents.approval.approve', $document))
-            ->assertRedirect(route('documents.approval.show', $document));
+            ->assertRedirect(route('documents.approval.show', $document))
+            ->assertSessionHas('document_success.title', 'Dokumen Berhasil Disetujui');
 
         $this->assertSame(
             ApprovalStatus::WAITING,
@@ -967,7 +968,8 @@ class DocumentInboxTest extends TestCase
             ->post(route('documents.approval.reject', $document), [
                 'catatan' => 'Dokumen belum sesuai.',
             ])
-            ->assertRedirect(route('documents.approval.show', $document));
+            ->assertRedirect(route('documents.approval.show', $document))
+            ->assertSessionHas('document_success.title', 'Dokumen Berhasil Ditolak');
 
         $this->assertSame(StatusDocument::REJECTED, $document->refresh()->status->nama_status);
         $this->assertSame(
