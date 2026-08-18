@@ -58,10 +58,12 @@
                             </p>
                         </div>
 
-                        <x-ui.action-button type="button" wire:click="createStage">
-                            <flux:icon name="plus" class="mr-2 size-4" />
-                            Tambah Tahap
-                        </x-ui.action-button>
+                        @if ($canCreate)
+                            <x-ui.action-button type="button" wire:click="createStage">
+                                <flux:icon name="plus" class="mr-2 size-4" />
+                                Tambah Tahap
+                            </x-ui.action-button>
+                        @endif
                     </div>
 
                     <div class="space-y-4 p-5">
@@ -87,19 +89,23 @@
                                     </div>
 
                                     <div class="flex items-center justify-end gap-2">
-                                        <x-ui.icon-button
-                                            icon="pencil"
-                                            label="Edit tahap approval"
-                                            size="sm"
-                                            wire:click="editStage({{ $stage->id }})"
-                                        />
+                                        @if ($canUpdate)
+                                            <x-ui.icon-button
+                                                icon="pencil"
+                                                label="Edit tahap approval"
+                                                size="sm"
+                                                wire:click="editStage({{ $stage->id }})"
+                                            />
+                                        @endif
 
-                                        <x-ui.icon-button
-                                            icon="trash"
-                                            label="Hapus tahap approval"
-                                            size="sm"
-                                            wire:click="confirmDeleteStage({{ $stage->id }})"
-                                        />
+                                        @if ($canDelete)
+                                            <x-ui.icon-button
+                                                icon="trash"
+                                                label="Hapus tahap approval"
+                                                size="sm"
+                                                wire:click="confirmDeleteStage({{ $stage->id }})"
+                                            />
+                                        @endif
                                     </div>
                                 </div>
                             </section>
@@ -108,10 +114,12 @@
                                 title="Belum Ada Tahap"
                                 description="Tambahkan tahap approval untuk level dokumen ini."
                             >
-                                <x-ui.action-button type="button" wire:click="createStage">
-                                    <flux:icon name="plus" class="mr-2 size-4" />
-                                    Tambah Tahap
-                                </x-ui.action-button>
+                                @if ($canCreate)
+                                    <x-ui.action-button type="button" wire:click="createStage">
+                                        <flux:icon name="plus" class="mr-2 size-4" />
+                                        Tambah Tahap
+                                    </x-ui.action-button>
+                                @endif
                             </x-ui.empty-state>
                         @endforelse
                     </div>
