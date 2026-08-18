@@ -4,6 +4,9 @@ use App\Http\Controllers\DocumentManagement\DocumentApprovalController;
 use App\Http\Controllers\DocumentManagement\DocumentController;
 use App\Http\Controllers\DocumentManagement\DocumentInboxController;
 use App\Http\Controllers\DocumentManagement\DocumentMasterController;
+use App\Http\Controllers\DocumentManagement\DocumentTemplateController;
+use App\Http\Controllers\Log\ActivityLogController;
+use App\Http\Controllers\Log\ActivityLogExportController;
 use App\Http\Middleware\EnsureRoutePermission;
 use App\Livewire\Administration\AccessGroup\Index as AccessGroupIndex;
 use App\Livewire\Administration\AccessMenu\Index as AccessMenuIndex;
@@ -31,7 +34,7 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::get('documents/inbox/{document}/files/{file}', [DocumentApprovalController::class, 'file'])->name('documents.approval.files.show');
     Route::get('documents/inbox/{document}/files/{file}/preview', [DocumentApprovalController::class, 'preview'])->name('documents.approval.files.preview');
     Route::view('documents/create', 'document-management.create.index')->name('documents.create');
-    Route::view('documents/create/{level}', 'document-management.create.level')
+    Route::get('documents/create/{level}', [DocumentController::class, 'create'])
         ->whereIn('level', array_keys(config('document-levels')))
         ->name('documents.create.level');
     Route::post('documents/create/{level}', [DocumentController::class, 'store'])

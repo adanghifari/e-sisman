@@ -197,20 +197,67 @@
                             </div>
                         </div>
                     </div>
+
+                    @if ($canRequestRevision)
+                        <div class="border-t border-dashed border-slate-200 px-6 py-5">
+                            <div class="grid gap-3">
+                                <a
+                                    href="{{ route('documents.create.level', [$levelKey, 'revised_from' => $document->id]) }}"
+                                    class="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+                                    wire:navigate
+                                >
+                                    <flux:icon name="arrow-path" class="size-4" />
+                                    Ajukan Revisi
+                                </a>
+                            </div>
+                        </div>
+                    @endif
                 </section>
 
                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <div class="border-b border-slate-100 px-6 py-5">
                         <h3 class="text-sm font-bold text-slate-900">Riwayat Approver</h3>
                     </div>
+                    @php
+                        $approvalStageOrders = $approvalFlowStages
+                            ->mapWithKeys(fn ($stage) => [($stage->display_label ?: 'Approval') => $stage->stage_order]);
+                        $approvalHistory = $document->approvals
+                            ->reject(fn ($approval) => $approval->stages === 'TTD Penyusun Resmi')
+                            ->sortBy(fn ($approval) => sprintf(
+                                '%04d-%010d-%04d',
+                                $approvalStageOrders->get($approval->stages, 9999),
+                                $approval->assigned_at?->timestamp ?? 0,
+                                $approval->id,
+                            ))
+                            ->values();
+                    @endphp
                     <div class="space-y-2 px-6 py-5">
-                        @forelse ($document->approvals->sortByDesc('assigned_at') as $approval)
+                        @forelse ($approvalHistory as $approval)
+                            @php
+                                $approvalStatusCode = $approval->status?->kode_status;
+                                $stageOrder = $approvalStageOrders->get($approval->stages);
+                                $approvalTimestamp = $approval->responded_at;
+                                $approvalStatusTone = match ($approvalStatusCode) {
+                                    \App\Models\ApprovalStatus::PENDING => 'amber',
+                                    \App\Models\ApprovalStatus::WAITING => 'sky',
+                                    \App\Models\ApprovalStatus::APPROVED => 'emerald',
+                                    \App\Models\ApprovalStatus::REJECTED => 'red',
+                                    default => 'slate',
+                                };
+                            @endphp
                             <div class="rounded-lg bg-slate-50 px-3 py-2">
                                 <div class="flex items-center justify-between gap-3">
                                     <p class="truncate text-sm font-semibold text-slate-800">{{ $approval->approver?->name ?? '-' }}</p>
-                                    <x-ui.status-badge :label="$approval->status?->kode_status ?? '-'" :tone="$approval->status?->kode_status === \App\Models\ApprovalStatus::APPROVED ? 'emerald' : ($approval->status?->kode_status === \App\Models\ApprovalStatus::REJECTED ? 'red' : 'sky')" />
+                                    <x-ui.status-badge :label="$approval->status?->nama_status ?? '-'" :tone="$approvalStatusTone" />
                                 </div>
-                                <p class="mt-1 text-xs font-medium text-slate-500">{{ $approval->stages ?: 'Approval' }}</p>
+                                <p class="mt-1 text-xs font-medium text-slate-500">
+                                    {{ $approval->stages ?: 'Approval' }}
+                                </p>
+                                @if ($approvalTimestamp)
+                                    <p class="mt-1 text-xs font-medium text-slate-500">
+                                        Diproses pada {{ $approvalTimestamp->translatedFormat('d M Y H:i:s') }}
+                                    </p>
+                                @endif
                                 @if ($approval->catatan)
                                     <p class="mt-2 rounded-md bg-white px-2 py-1 text-xs text-slate-600">{{ $approval->catatan }}</p>
                                 @endif

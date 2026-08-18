@@ -8,6 +8,11 @@ use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
+use App\Models\Approval;
+use App\Models\ApprovalFlow;
+use App\Models\ApprovalFlowStage;
+use App\Models\ApprovalStatus;
+use App\Models\Role;
 use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -68,6 +73,103 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Dokumen Obsolete')
             ->assertSee('Prosedur Pengendalian Dokumen')
             ->assertSee('Obsolete');
+    }
+
+    public function test_master_detail_shows_approval_history_sorted_by_stage_with_response_timestamp(): void
+    {
+        $viewer = User::factory()->create();
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $approvedApprovalStatus = ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::APPROVED,
+            'nama_status' => 'Disetujui',
+        ]);
+        $document = $this->createDocument($viewer, $approvedStatus, [
+            'nama_dokumen' => 'Master Dengan Riwayat',
+            'nomor_dokumen' => 'PS-SMR-HISTORY',
+        ]);
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $document->m_document_level_id,
+            'nama_flow' => 'Flow Master',
+        ]);
+        ApprovalFlowStage::create([
+            'm_approval_flow_id' => $flow->id,
+            'stage_order' => 1,
+            'keterangan' => 'Dibuat oleh',
+            'nama_tahap' => 'Staff',
+        ]);
+        ApprovalFlowStage::create([
+            'm_approval_flow_id' => $flow->id,
+            'stage_order' => 2,
+            'keterangan' => 'Disetujui oleh',
+            'nama_tahap' => 'Direktur Utama',
+        ]);
+        $staffRole = Role::create(['nama_role' => 'Staff']);
+        $directorRole = Role::create(['nama_role' => 'Direktur Utama']);
+        $staffApprover = User::factory()->create(['name' => 'Staff Approver']);
+        $directorApprover = User::factory()->create(['name' => 'Director Approver']);
+
+        Approval::create([
+            't_document_id' => $document->id,
+            'm_approval_status_id' => $approvedApprovalStatus->id,
+            'user_id' => $directorApprover->id,
+            'role_id' => $directorRole->id,
+            'assigned_by' => $viewer->id,
+            'assigned_at' => now()->subDay(),
+            'responded_at' => now()->setDate(2026, 8, 18)->setTime(15, 10, 20),
+            'stages' => 'Disetujui oleh Direktur Utama',
+        ]);
+        Approval::create([
+            't_document_id' => $document->id,
+            'm_approval_status_id' => $approvedApprovalStatus->id,
+            'user_id' => $staffApprover->id,
+            'role_id' => $staffRole->id,
+            'assigned_by' => $viewer->id,
+            'assigned_at' => now(),
+            'responded_at' => now()->setDate(2026, 8, 18)->setTime(14, 25, 36),
+            'stages' => 'Dibuat oleh Staff',
+        ]);
+
+        $response = $this->actingAs($viewer)
+            ->get(route('documents.master.show', $document))
+            ->assertOk()
+            ->assertSee('Dibuat oleh Staff')
+            ->assertSee('Diproses pada 18 Aug 2026 14:25:36')
+            ->assertSee('Disetujui oleh Direktur Utama')
+            ->assertDontSee('Tahap 1')
+            ->assertDontSee('Tahap 2');
+
+        $this->assertLessThan(
+            strpos($response->getContent(), 'Disetujui oleh Direktur Utama'),
+            strpos($response->getContent(), 'Dibuat oleh Staff'),
+        );
+    }
+
+    public function test_revision_button_only_shows_for_user_from_document_department(): void
+    {
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $owner = User::factory()->create();
+        $document = $this->createDocument($owner, $approvedStatus, [
+            'nama_dokumen' => 'Master Bisa Direvisi',
+            'nomor_dokumen' => 'PS-SMR-REV',
+        ]);
+        $documentDepartment = $document->departments()->firstOrFail();
+        $sameDepartmentUser = User::factory()->create(['m_department_id' => $documentDepartment->id]);
+        $otherDepartment = Department::create([
+            'kode_department' => 'HR',
+            'nama_department' => 'Human Resources',
+        ]);
+        $otherDepartmentUser = User::factory()->create(['m_department_id' => $otherDepartment->id]);
+
+        $this->actingAs($sameDepartmentUser)
+            ->get(route('documents.master.show', $document))
+            ->assertOk()
+            ->assertSee('Ajukan Revisi')
+            ->assertSee(route('documents.create.level', ['level-2', 'revised_from' => $document->id]), false);
+
+        $this->actingAs($otherDepartmentUser)
+            ->get(route('documents.master.show', $document))
+            ->assertOk()
+            ->assertDontSee('Ajukan Revisi');
     }
 
     private function createDocument(User $user, StatusDocument $status, array $attributes = []): Document

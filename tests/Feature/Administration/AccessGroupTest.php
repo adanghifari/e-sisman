@@ -20,7 +20,7 @@ class AccessGroupTest extends TestCase
     {
         $this->seed(PermissionSeeder::class);
 
-        $admin = User::factory()->create(['email' => 'test@example.com']);
+        $admin = $this->developerUser();
         $member = User::factory()->create(['name' => 'Document Controller']);
         $permission = Permission::query()->where('code', 'documents.inbox.view')->firstOrFail();
 
@@ -45,7 +45,7 @@ class AccessGroupTest extends TestCase
     {
         $this->seed(PermissionSeeder::class);
 
-        $admin = User::factory()->create(['email' => 'test@example.com']);
+        $admin = $this->developerUser();
         $firstUser = User::factory()->create(['name' => 'First Member']);
         $secondUser = User::factory()->create(['name' => 'Second Member']);
 
@@ -63,7 +63,7 @@ class AccessGroupTest extends TestCase
     {
         $this->seed(PermissionSeeder::class);
 
-        $admin = User::factory()->create(['email' => 'test@example.com']);
+        $admin = $this->developerUser();
         $member = User::factory()->create(['name' => 'Member Without Access']);
 
         $this->actingAs($admin);
@@ -85,7 +85,7 @@ class AccessGroupTest extends TestCase
     {
         $this->seed(PermissionSeeder::class);
 
-        $admin = User::factory()->create(['email' => 'test@example.com']);
+        $admin = $this->developerUser();
         $readPermission = Permission::query()->where('code', 'documents.create.view')->firstOrFail();
         $createPermission = Permission::query()->where('code', 'documents.create.create')->firstOrFail();
 
@@ -122,7 +122,7 @@ class AccessGroupTest extends TestCase
     {
         $this->seed(PermissionSeeder::class);
 
-        $this->actingAs(User::factory()->create(['email' => 'test@example.com']));
+        $this->actingAs($this->developerUser());
 
         Livewire::test(AccessMenuIndex::class)
             ->assertSee('Bundle Menu Akses')
@@ -135,7 +135,7 @@ class AccessGroupTest extends TestCase
     {
         $this->seed(PermissionSeeder::class);
 
-        $this->actingAs(User::factory()->create(['email' => 'test@example.com']));
+        $this->actingAs($this->developerUser());
 
         Livewire::test(AccessMenuIndex::class)
             ->assertSee('Fitur Approval Flow')
@@ -238,6 +238,39 @@ class AccessGroupTest extends TestCase
         $this->assertStringNotContainsString('data-template-edit-toggle="data-template-edit-toggle"', $response->getContent());
     }
 
+    public function test_permission_seeder_assigns_default_user_role_to_non_developers(): void
+    {
+        $regularUser = User::factory()->create();
+        $developer = User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
+
+        $this->seed(PermissionSeeder::class);
+
+        $this->assertTrue($regularUser->fresh()->roles()->where('nama_role', 'User')->exists());
+        $this->assertFalse($developer->fresh()->roles()->where('nama_role', 'User')->exists());
+        $this->assertTrue($regularUser->fresh()->hasPermission('documents.approval.view'));
+        $this->assertNull(Permission::query()->where('code', 'documents.approval.approve')->first());
+        $this->assertNull(Permission::query()->where('code', 'documents.approval.reject')->first());
+        $this->assertTrue($regularUser->fresh()->hasPermission('document-templates.download'));
+        $this->assertFalse($regularUser->fresh()->hasPermission('document-templates.edit'));
+    }
+
+    public function test_new_non_developer_user_gets_default_user_role_when_role_exists(): void
+    {
+        $this->seed(PermissionSeeder::class);
+
+        $regularUser = User::factory()->create();
+        $developer = User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
+
+        $this->assertTrue($regularUser->fresh()->roles()->where('nama_role', 'User')->exists());
+        $this->assertFalse($developer->fresh()->roles()->where('nama_role', 'User')->exists());
+    }
+
     public function test_template_editor_can_see_template_edit_button(): void
     {
         $this->seed(PermissionSeeder::class);
@@ -257,5 +290,13 @@ class AccessGroupTest extends TestCase
             ->assertOk();
 
         $this->assertStringContainsString('data-template-edit-toggle="data-template-edit-toggle"', $response->getContent());
+    }
+
+    private function developerUser(): User
+    {
+        return User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
     }
 }

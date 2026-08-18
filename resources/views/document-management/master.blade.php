@@ -98,7 +98,17 @@
                                 <x-ui.status-badge label="Master" tone="sky" />
                             </td>
                             <td class="px-2 py-4">
-                                <x-ui.icon-button :href="route('documents.master.show', $document)" icon="eye" label="Lihat detail" size="sm" />
+                                <div class="flex items-center gap-2">
+                                    <x-ui.icon-button :href="route('documents.master.show', $document)" icon="eye" label="Lihat detail" size="sm" />
+                                    @if ($document->can_request_revision)
+                                        <x-ui.icon-button
+                                            :href="route('documents.create.level', [$document->documentLevel?->kode ?? 'level-3', 'revised_from' => $document->id])"
+                                            icon="arrow-path"
+                                            label="Ajukan revisi"
+                                            size="sm"
+                                        />
+                                    @endif
+                                </div>
                             </td>
                         </tr>
 

@@ -152,7 +152,7 @@ class DocumentTemplateController extends Controller
 
     public function file(Request $request, DocumentTemplateFile $file): BinaryFileResponse
     {
-        abort_unless($request->user()->hasAnyPermission(['document-templates.view', 'document-templates.edit', 'document-templates.manage']), 403);
+        abort_unless($request->user()->hasAnyPermission(['document-templates.download', 'document-templates.edit', 'document-templates.manage']), 403);
         abort_unless($file->documentTemplate()->where('is_active', true)->exists(), 404);
 
         $path = Storage::disk($file->disk)->path($file->path_file);

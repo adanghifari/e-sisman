@@ -56,6 +56,8 @@ class DatabaseSeeder extends Seeder
             ['nik' => '0000114', 'name' => 'Nadia Putri', 'email' => 'nadia.putri@example.com', 'jabatan' => 'Quality Assurance Officer'],
             ['nik' => '0000115', 'name' => 'Dimas Pratama', 'email' => 'dimas.pratama@example.com', 'jabatan' => 'Operations Supervisor'],
             ['nik' => '0000116', 'name' => 'Farhan Selatan', 'email' => 'parhan@example.com', 'jabatan' => 'Compliance Officer'],
+            ['nik' => '0000117', 'name' => 'Moreno', 'email' => 'moreno@example.com', 'jabatan' => 'IT STAFF'],
+
         ];
 
         foreach ($users as $user) {
@@ -69,6 +71,30 @@ class DatabaseSeeder extends Seeder
                     'jabatan' => $user['jabatan'],
                 ],
             );
+        }
+
+        $userRoleId = DB::table('roles')->where('nama_role', 'User')->value('id');
+
+        if ($userRoleId !== null) {
+            $nonDeveloperUserIds = User::query()
+                ->where(function ($query): void {
+                    $query
+                        ->where('nik', '!=', '000000')
+                        ->orWhereNull('nik');
+                })
+                ->where(function ($query): void {
+                    $query
+                        ->where('email', '!=', 'developer@example.com')
+                        ->orWhereNull('email');
+                })
+                ->pluck('id');
+
+            foreach ($nonDeveloperUserIds as $userId) {
+                DB::table('user_roles')->updateOrInsert([
+                    'role_id' => $userRoleId,
+                    'user_id' => $userId,
+                ]);
+            }
         }
     }
 }

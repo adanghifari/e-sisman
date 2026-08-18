@@ -8,6 +8,7 @@ use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
+use App\Models\ApprovalStatus;
 use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -167,7 +168,7 @@ class CreateDocumentTest extends TestCase
         $this->assertTrue($document->departments()->whereKey($department->id)->exists());
     }
 
-    public function test_submitted_document_keeps_approval_assignment_clean_until_saved(): void
+    public function test_submitted_document_records_official_preparer_signature_without_stage_assignment(): void
     {
         Storage::fake('local');
 
@@ -188,6 +189,10 @@ class CreateDocumentTest extends TestCase
 
         StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
         StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::APPROVED,
+            'nama_status' => 'Disetujui',
+        ]);
         DocumentType::create(['nama_types' => 'Prosedur']);
 
         $this->actingAs($user)
@@ -207,7 +212,153 @@ class CreateDocumentTest extends TestCase
 
         $this->assertSame(StatusDocument::PROPOSED, $document->status->nama_status);
         $this->assertSame($officialPreparer->id, $document->official_preparer_id);
-        $this->assertFalse($document->approvals()->exists());
+        $this->assertTrue($document->approvals()
+            ->where('user_id', $officialPreparer->id)
+            ->where('stages', 'TTD Penyusun Resmi')
+            ->whereNotNull('responded_at')
+            ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::APPROVED))
+            ->exists());
+
+        $this->actingAs($officialPreparer)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertDontSee('Prosedur Submit Approval');
+
+        $this->actingAs($officialPreparer)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Prosedur Submit Approval')
+            ->assertSee('TTD Penyusun Resmi')
+            ->assertSee('Disetujui');
+
+        $this->actingAs($officialPreparer)
+            ->get(route('documents.approval.show', $document))
+            ->assertOk()
+            ->assertSee('Prosedur Submit Approval');
+
+        $this->actingAs($user)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Prosedur Submit Approval')
+            ->assertSee('Pengajuan Dokumen')
+            ->assertSee(StatusDocument::PROPOSED);
+
+        $this->actingAs($user)
+            ->get(route('documents.approval.show', $document))
+            ->assertOk()
+            ->assertSee('Prosedur Submit Approval');
+    }
+
+    public function test_user_from_document_department_can_submit_revision_from_master_document(): void
+    {
+        Storage::fake('local');
+
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $sourceDepartment = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $otherDepartment = Department::create([
+            'kode_department' => 'HR',
+            'nama_department' => 'Human Resources',
+        ]);
+        $submitter = User::factory()->create(['m_department_id' => $sourceDepartment->id]);
+        $officialPreparer = User::factory()->create();
+        $otherUser = User::factory()->create(['m_department_id' => $otherDepartment->id]);
+        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::APPROVED,
+            'nama_status' => 'Disetujui',
+        ]);
+        DocumentType::create(['nama_types' => 'Prosedur']);
+        $source = Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => DocumentType::query()->where('nama_types', 'Prosedur')->firstOrFail()->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'nama_dokumen' => 'Prosedur Revisi Master',
+            'nomor_dokumen' => 'PS-SMR-010',
+            'nomor_revisi' => 0,
+            'tanggal_terbit' => '2026-08-12',
+            'approved_at' => now(),
+        ]);
+        $source->departments()->sync([$sourceDepartment->id]);
+
+        $this->actingAs($otherUser)
+            ->get(route('documents.create.level', ['level-2', 'revised_from' => $source->id]))
+            ->assertForbidden();
+
+        $this->actingAs($submitter)
+            ->get(route('documents.create.level', ['level-2', 'revised_from' => $source->id]))
+            ->assertOk()
+            ->assertSee('Ajukan Revisi Dokumen Level II')
+            ->assertSee('FMPS')
+            ->assertSee('PS-SMR-010')
+            ->assertSee('00.01')
+            ->assertSee('Quality Assurance')
+            ->assertDontSee('Tambah Department')
+            ->assertDontSee('-Pilih-');
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-2'), [
+                'revised_from' => $source->id,
+                'nama_dokumen' => 'Prosedur Revisi Master Updated',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$sourceDepartment->id],
+                'official_preparer_id' => $officialPreparer->id,
+                'nomor_dokumen_suffix' => '999',
+                'filled_template' => UploadedFile::fake()->create('template-revisi.pdf', 24, 'application/pdf'),
+                'submit_action' => 'submit',
+            ])
+            ->assertRedirect(route('documents.create'));
+
+        $revision = Document::query()
+            ->where('nama_dokumen', 'Prosedur Revisi Master Updated')
+            ->firstOrFail();
+
+        $this->assertSame($source->id, $revision->revised_from);
+        $this->assertSame('FMPS-SMR-010', $revision->nomor_dokumen);
+        $this->assertSame(1, $revision->nomor_revisi);
+        $this->assertSame($businessProcess->id, $revision->m_proses_bisnis_id);
+        $this->assertSame($businessFunction->id, $revision->m_proses_fungsi_id);
+        $this->assertTrue($revision->departments()->whereKey($sourceDepartment->id)->exists());
+        $this->assertFalse($revision->departments()->whereKey($otherDepartment->id)->exists());
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-2'), [
+                'revised_from' => $source->id,
+                'nama_dokumen' => 'Prosedur Revisi Master Kedua',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$sourceDepartment->id],
+                'official_preparer_id' => $officialPreparer->id,
+                'nomor_dokumen_suffix' => '999',
+                'filled_template' => UploadedFile::fake()->create('template-revisi-2.pdf', 24, 'application/pdf'),
+                'submit_action' => 'submit',
+            ])
+            ->assertRedirect(route('documents.create'));
+
+        $secondRevision = Document::query()
+            ->where('nama_dokumen', 'Prosedur Revisi Master Kedua')
+            ->firstOrFail();
+
+        $this->assertSame($source->id, $secondRevision->revised_from);
+        $this->assertSame('FMPS-SMR-010', $secondRevision->nomor_dokumen);
+        $this->assertSame(2, $secondRevision->nomor_revisi);
     }
 
     public function test_level_three_document_can_be_saved_as_draft(): void

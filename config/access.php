@@ -48,6 +48,27 @@ return [
             'action' => 'view',
         ],
         [
+            'code' => 'documents.approval.view',
+            'name' => 'Lihat Detail Approval Dokumen',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.approval.show',
+            'action' => 'view',
+        ],
+        [
+            'code' => 'documents.approval.download',
+            'name' => 'Download File Approval Dokumen',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.approval.files.show',
+            'action' => 'download',
+        ],
+        [
+            'code' => 'documents.approval.preview',
+            'name' => 'Preview File Approval Dokumen',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.approval.files.preview',
+            'action' => 'preview',
+        ],
+        [
             'code' => 'documents.create.view',
             'name' => 'Lihat Tambah Dokumen',
             'module' => 'Manajemen Dokumen',
@@ -81,6 +102,13 @@ return [
             'module' => 'Manajemen Dokumen',
             'route' => 'document-templates.index',
             'action' => 'view',
+        ],
+        [
+            'code' => 'document-templates.download',
+            'name' => 'Download Template Dokumen',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'document-templates.files.show',
+            'action' => 'download',
         ],
         [
             'code' => 'document-templates.edit',

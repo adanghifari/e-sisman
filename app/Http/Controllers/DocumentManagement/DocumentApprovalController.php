@@ -23,6 +23,8 @@ use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class DocumentApprovalController extends Controller
 {
+    private const OFFICIAL_PREPARER_STAGE = 'TTD Penyusun Resmi';
+
     public function show(Request $request, Document $document): View
     {
         $this->authorizeDocumentAccess($request, $document);
@@ -73,7 +75,10 @@ class DocumentApprovalController extends Controller
 
         return redirect()
             ->route('documents.approval.show', $document)
-            ->with('status', 'Dokumen berhasil di-approve.');
+            ->with('document_success', [
+                'title' => 'Dokumen Berhasil Disetujui',
+                'message' => 'Approval Anda sudah tercatat pada riwayat dokumen.',
+            ]);
     }
 
     public function reject(Request $request, Document $document): RedirectResponse
@@ -117,7 +122,10 @@ class DocumentApprovalController extends Controller
 
         return redirect()
             ->route('documents.approval.show', $document)
-            ->with('status', 'Dokumen berhasil ditolak.');
+            ->with('document_success', [
+                'title' => 'Dokumen Berhasil Ditolak',
+                'message' => 'Catatan penolakan Anda sudah tersimpan pada riwayat dokumen.',
+            ]);
     }
 
     public function assign(Request $request, Document $document): RedirectResponse
@@ -134,7 +142,9 @@ class DocumentApprovalController extends Controller
 
         $pendingStatus = ApprovalStatus::findByCode(ApprovalStatus::PENDING);
         $waitingStatus = ApprovalStatus::findByCode(ApprovalStatus::WAITING);
+        $approvedStatus = ApprovalStatus::findByCode(ApprovalStatus::APPROVED);
         $activeStageOrder = $this->activeStageOrderForAssignment($document, $stages);
+        $officialPreparerSignature = $this->officialPreparerSignature($document);
 
         foreach ($stages as $stage) {
             $userIds = $this->stageApproverIds($request, $document, $stage);
@@ -183,17 +193,24 @@ class DocumentApprovalController extends Controller
                     continue;
                 }
 
+                $alreadySignedAsOfficialPreparer = $document->official_preparer_id === $userId
+                    && $officialPreparerSignature !== null;
+
                 $approval->fill([
-                    'm_approval_status_id' => $stageStatus->id,
+                    'm_approval_status_id' => $alreadySignedAsOfficialPreparer ? $approvedStatus->id : $stageStatus->id,
                     'assigned_by' => $request->user()->id,
                     'assigned_at' => now(),
-                    'responded_at' => null,
+                    'responded_at' => $alreadySignedAsOfficialPreparer
+                        ? ($officialPreparerSignature->responded_at ?? $officialPreparerSignature->assigned_at ?? now())
+                        : null,
                     'created_at' => $approval->created_at ?? now(),
                     'stages' => $stageLabel,
                     'catatan' => null,
                 ])->save();
             }
         }
+
+        $this->advanceApprovalFlow($document);
 
         return redirect()
             ->route('documents.approval.show', $document)
@@ -249,18 +266,41 @@ class DocumentApprovalController extends Controller
         }
 
         abort_unless(
-            $user->canAssignDocument($document) || $this->hasActiveApproval($request, $document),
+            $document->user_id === $user->id
+                || $document->official_preparer_id === $user->id
+                || $user->canAssignDocument($document)
+                || $this->hasAccessibleApproval($request, $document),
             403,
         );
     }
 
-    private function hasActiveApproval(Request $request, Document $document): bool
+    private function hasAccessibleApproval(Request $request, Document $document): bool
     {
         return $document->approvals()
             ->where('user_id', $request->user()->id)
-            ->whereNull('responded_at')
-            ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::PENDING))
+            ->where(function ($query): void {
+                $query
+                    ->whereNotNull('responded_at')
+                    ->orWhere(function ($query): void {
+                        $query
+                            ->whereNull('responded_at')
+                            ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::PENDING));
+                    });
+            })
             ->exists();
+    }
+
+    private function officialPreparerSignature(Document $document): ?Approval
+    {
+        if ($document->official_preparer_id === null) {
+            return null;
+        }
+
+        return $document->approvals()
+            ->where('user_id', $document->official_preparer_id)
+            ->where('stages', self::OFFICIAL_PREPARER_STAGE)
+            ->whereNotNull('responded_at')
+            ->first();
     }
 
     private function activeApproval(Request $request, Document $document): ?Approval
@@ -312,32 +352,11 @@ class DocumentApprovalController extends Controller
     private function stageApproverIds(Request $request, Document $document, ApprovalFlowStage $stage): Collection
     {
         $inputKey = "stage_approvers.{$stage->id}";
-        $userIds = collect($request->input($inputKey, []))
+        return collect($request->input($inputKey, []))
             ->filter()
             ->map(fn ($userId) => (int) $userId)
             ->unique()
             ->values();
-
-        if (
-            $stage->stage_order === 1
-            && $userIds->isEmpty()
-            && $document->official_preparer_id !== null
-            && ! $this->hasStageAssignment($document, $stage)
-        ) {
-            return collect([(int) $document->official_preparer_id]);
-        }
-
-        return $userIds;
-    }
-
-    private function hasStageAssignment(Document $document, ApprovalFlowStage $stage): bool
-    {
-        $stageLabel = $stage->display_label ?: 'Approval';
-
-        return Approval::query()
-            ->where('t_document_id', $document->id)
-            ->where('stages', $stageLabel)
-            ->exists();
     }
 
     /**
@@ -358,6 +377,15 @@ class DocumentApprovalController extends Controller
 
             if ($stageApprovals->isEmpty()) {
                 continue;
+            }
+
+            $respondedUserIds = $stageApprovals
+                ->filter(fn (Approval $approval): bool => $approval->responded_at !== null)
+                ->pluck('user_id')
+                ->values();
+
+            if ($respondedUserIds->diff($requestedUserIds)->isNotEmpty()) {
+                return [$field => "Approver tahap {$stage->stage_order} yang sudah memberikan respon tidak boleh dihapus atau diganti."];
             }
 
             $approvedUserIds = $stageApprovals
