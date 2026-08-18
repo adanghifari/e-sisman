@@ -361,6 +361,13 @@ class CreateDocumentTest extends TestCase
         $this->assertFalse($revision->departments()->whereKey($otherDepartment->id)->exists());
 
         $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Prosedur Revisi Master Updated')
+            ->assertSee('Pengajuan Revisi')
+            ->assertSee(StatusDocument::PROPOSED);
+
+        $this->actingAs($submitter)
             ->post(route('documents.store', 'level-2'), [
                 'revised_from' => $source->id,
                 'nama_dokumen' => 'Prosedur Revisi Master Kedua',

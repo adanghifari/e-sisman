@@ -358,6 +358,44 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Pengaju Riwayat');
     }
 
+    public function test_submitter_history_uses_document_status_when_only_official_signature_exists(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create(['name' => 'Pengaju Revisi']);
+        $parent = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Parent',
+            'nomor_dokumen' => 'IK-SMR-PARENT',
+        ]);
+        $document = Document::create([
+            'm_document_level_id' => $parent->m_document_level_id,
+            'm_status_document_id' => $parent->m_status_document_id,
+            'm_document_types_id' => $parent->m_document_types_id,
+            'm_proses_bisnis_id' => $parent->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $parent->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'nama_dokumen' => 'Dokumen Revisi Baru',
+            'nomor_dokumen' => 'FMIK-SMR-PARENT',
+            'revised_from' => $parent->id,
+            'submitted_at' => now(),
+        ]);
+        $document->departments()->sync($parent->departments()->pluck('departments.id')->all());
+
+        $this->createApproval($document, $submitter, ApprovalStatus::APPROVED, [
+            'stages' => 'TTD Penyusun Resmi',
+            'responded_at' => now(),
+        ]);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Dokumen Revisi Baru')
+            ->assertSee('Pengajuan Revisi')
+            ->assertSee(StatusDocument::PROPOSED)
+            ->assertDontSee('TTD Penyusun Resmi');
+    }
+
     public function test_responded_approver_can_open_document_detail_from_processed_history(): void
     {
         $approver = User::factory()->create(['name' => 'Approver Detail Riwayat']);
