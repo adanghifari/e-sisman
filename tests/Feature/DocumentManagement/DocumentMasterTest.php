@@ -75,6 +75,42 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Obsolete');
     }
 
+    public function test_master_page_shows_latest_approved_revision_as_primary_row(): void
+    {
+        $user = User::factory()->create();
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+
+        $oldDocument = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Instruksi Kerja Lama',
+            'nomor_dokumen' => 'IK-SMR-010',
+            'nomor_revisi' => 0,
+            'approved_at' => now()->subDays(2),
+        ]);
+
+        $latestRevision = $this->createDocument($user, $approvedStatus, [
+            'nama_dokumen' => 'Instruksi Kerja Revisi Aktif',
+            'nomor_dokumen' => 'FMIK-SMR-010',
+            'nomor_revisi' => 1,
+            'revised_from' => $oldDocument->id,
+            'approved_at' => now(),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertSee('Instruksi Kerja Revisi Aktif')
+            ->assertSee('IK-SMR-010')
+            ->assertSee('Dokumen Obsolete')
+            ->assertSee('Instruksi Kerja Lama');
+
+        $this->assertLessThan(
+            strpos($response->getContent(), 'Dokumen Obsolete'),
+            strpos($response->getContent(), 'Instruksi Kerja Revisi Aktif'),
+        );
+        $response->assertSee(route('documents.master.show', $latestRevision), false);
+    }
+
     public function test_master_detail_shows_approval_history_sorted_by_stage_with_response_timestamp(): void
     {
         $viewer = User::factory()->create();
@@ -141,6 +177,47 @@ class DocumentMasterTest extends TestCase
         $this->assertLessThan(
             strpos($response->getContent(), 'Disetujui oleh Direktur Utama'),
             strpos($response->getContent(), 'Dibuat oleh Staff'),
+        );
+    }
+
+    public function test_master_detail_for_revision_shows_parent_and_revision_numbers_without_reference_rows(): void
+    {
+        $viewer = User::factory()->create();
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $referenceDocument = $this->createDocument($viewer, $approvedStatus, [
+            'nama_dokumen' => 'Dokumen Acuan Lama',
+            'nomor_dokumen' => 'PS-SMR-REF',
+        ]);
+        $source = $this->createDocument($viewer, $approvedStatus, [
+            'nama_dokumen' => 'Instruksi Induk',
+            'nomor_dokumen' => 'IK-SMR-010',
+            'nomor_revisi' => 0,
+            'reference' => $referenceDocument->id,
+        ]);
+        $revision = $this->createDocument($viewer, $approvedStatus, [
+            'nama_dokumen' => 'Instruksi Revisi Aktif',
+            'nomor_dokumen' => 'FMIK-SMR-010',
+            'nomor_revisi' => 1,
+            'revised_from' => $source->id,
+            'reference' => $referenceDocument->id,
+        ]);
+
+        $response = $this->actingAs($viewer)
+            ->get(route('documents.master.show', $revision))
+            ->assertOk()
+            ->assertSee('Nomor Dokumen')
+            ->assertSee('IK-SMR-010')
+            ->assertSee('Nomor Dokumen Revisi')
+            ->assertSee('FMIK-SMR-010')
+            ->assertSee('00.01')
+            ->assertDontSee('Dokumen Acuan')
+            ->assertDontSee('Revisi Dari')
+            ->assertDontSee('PS-SMR-REF - Dokumen Acuan Lama')
+            ->assertDontSee('IK-SMR-010 - Revisi 00.00');
+
+        $this->assertLessThan(
+            strpos($response->getContent(), 'Nomor Dokumen Revisi'),
+            strpos($response->getContent(), 'Nomor Dokumen'),
         );
     }
 

@@ -85,19 +85,38 @@ class DocumentMasterController extends Controller
             default => $query->orderByDesc('approved_at')->orderByDesc('tanggal_terbit')->orderByDesc('id'),
         };
 
-        $documents = $query->get();
+        $documents = $query->get()
+            ->groupBy(fn (Document $document): int => $document->revisionRootId())
+            ->map(fn ($family): Document => $family
+                ->sortByDesc(fn (Document $document): string => sprintf(
+                    '%010d-%010d-%010d',
+                    $document->nomor_revisi,
+                    $document->approved_at?->timestamp ?? 0,
+                    $document->id,
+                ))
+                ->first())
+            ->values();
 
         $documents->each(function (Document $document) use ($request): void {
-            $obsoleteDocuments = $document->obsoleteRevisions;
-
-            if ($document->revisedFrom?->status?->nama_status === StatusDocument::OBSOLETE) {
-                $obsoleteDocuments = $obsoleteDocuments->push($document->revisedFrom);
-            }
+            $rootDocument = Document::query()
+                ->whereKey($document->revisionRootId())
+                ->first();
+            $obsoleteDocuments = $document->revisionFamily()
+                ->where('id', '!=', $document->id)
+                ->load([
+                    'status',
+                    'documentLevel',
+                    'businessProcess',
+                    'businessFunction',
+                    'departments',
+                ])
+                ->filter(fn (Document $revision): bool => $revision->status?->nama_status === StatusDocument::OBSOLETE);
 
             $document->setRelation(
                 'masterObsoleteDocuments',
                 $obsoleteDocuments->unique('id')->sortByDesc('approved_at')->values(),
             );
+            $document->setAttribute('master_display_number', $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen);
             $document->setAttribute('can_request_revision', $this->canRequestRevision($request, $document));
         });
 
@@ -113,7 +132,7 @@ class DocumentMasterController extends Controller
 
         return view('document-management.master', [
             'documents' => $documents,
-            'totalDocuments' => Document::query()->where('m_status_document_id', $approvedStatusId)->count(),
+            'totalDocuments' => $documents->count(),
             'filters' => $filters,
             'typeOptions' => $typeOptions,
             'processOptions' => $processOptions,
@@ -147,7 +166,6 @@ class DocumentMasterController extends Controller
             'approvals.approver',
             'approvals.role',
             'documentLevel.approvalFlows.stages',
-            'referenceDocument',
             'revisedFrom.status',
         ]);
 
@@ -158,6 +176,7 @@ class DocumentMasterController extends Controller
 
         return view('document-management.master-detail', [
             'document' => $document,
+            'masterDisplayNumber' => $this->masterDisplayNumber($document),
             'canRequestRevision' => $this->canRequestRevision($request, $document),
             'approvalFlowStages' => $document->documentLevel
                 ?->approvalFlows
@@ -227,5 +246,14 @@ class DocumentMasterController extends Controller
         return $document->departments()
             ->whereKey($user->m_department_id)
             ->exists();
+    }
+
+    private function masterDisplayNumber(Document $document): string
+    {
+        $rootDocument = Document::query()
+            ->whereKey($document->revisionRootId())
+            ->first();
+
+        return $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen ?: '-';
     }
 }

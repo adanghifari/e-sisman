@@ -46,7 +46,7 @@ class DatabaseSeeder extends Seeder
             ['nik' => '000001'],
             [
                 'm_department_id' => $itDepartmentId,
-                'name' => 'Super Admin',
+                'name' => 'Akun SuperAdmin',
                 'email' => 'superadmin@example.com',
                 'password' => 'Password123!',
                 'jabatan' => 'Super Administrator',
@@ -57,7 +57,7 @@ class DatabaseSeeder extends Seeder
             ['nik' => '000002'],
             [
                 'm_department_id' => $itDepartmentId,
-                'name' => 'Admin Kontrol Dokumen',
+                'name' => 'Akun Admin Kontrol Dokumen',
                 'email' => 'admin.kontrol@example.com',
                 'password' => 'Password123!',
                 'jabatan' => 'Document Control Administrator',

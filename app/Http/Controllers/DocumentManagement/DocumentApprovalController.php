@@ -467,11 +467,33 @@ class DocumentApprovalController extends Controller
             return;
         }
 
+        $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
+
         $document->update([
-            'm_status_document_id' => StatusDocument::findByName(StatusDocument::APPROVED)->id,
+            'm_status_document_id' => $approvedStatus->id,
             'approved_at' => now(),
             'rejected_at' => null,
         ]);
+
+        $this->obsoletePreviousApprovedRevisions($document->refresh(), $approvedStatus);
+    }
+
+    private function obsoletePreviousApprovedRevisions(Document $document, StatusDocument $approvedStatus): void
+    {
+        if ($document->revised_from === null) {
+            return;
+        }
+
+        $obsoleteStatus = StatusDocument::findByName(StatusDocument::OBSOLETE);
+
+        $document->revisionFamily()
+            ->where('id', '!=', $document->id)
+            ->where('m_status_document_id', $approvedStatus->id)
+            ->each(function (Document $revision) use ($obsoleteStatus): void {
+                $revision->update([
+                    'm_status_document_id' => $obsoleteStatus->id,
+                ]);
+            });
     }
 
     private function isApprovalComplete(Document $document): bool
