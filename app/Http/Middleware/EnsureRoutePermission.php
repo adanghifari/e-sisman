@@ -20,6 +20,13 @@ class EnsureRoutePermission
             return $next($request);
         }
 
+        if (
+            in_array($routeName, ['documents.create.level', 'documents.store'], true)
+            && $request->filled('revised_from')
+        ) {
+            return $next($request);
+        }
+
         if ($routeName === null || ! Permission::query()->where('route', $routeName)->exists()) {
             return $next($request);
         }

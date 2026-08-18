@@ -9,6 +9,8 @@ use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
 use App\Models\ApprovalStatus;
+use App\Models\Permission;
+use App\Models\Role;
 use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -272,10 +274,30 @@ class CreateDocumentTest extends TestCase
         $submitter = User::factory()->create(['m_department_id' => $sourceDepartment->id]);
         $officialPreparer = User::factory()->create();
         $otherUser = User::factory()->create(['m_department_id' => $otherDepartment->id]);
+        $userRole = Role::query()->firstOrCreate(['nama_role' => 'User']);
+        $submitter->roles()->syncWithoutDetaching([$userRole->id]);
         $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
         $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
         StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
         StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        Permission::query()->firstOrCreate(
+            ['code' => 'documents.create.level'],
+            [
+                'name' => 'Lihat Form Tambah Dokumen',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.create.level',
+                'action' => 'view',
+            ],
+        );
+        Permission::query()->firstOrCreate(
+            ['code' => 'documents.create.create'],
+            [
+                'name' => 'Submit Tambah Dokumen',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.store',
+                'action' => 'create',
+            ],
+        );
         ApprovalStatus::create([
             'kode_status' => ApprovalStatus::APPROVED,
             'nama_status' => 'Disetujui',
