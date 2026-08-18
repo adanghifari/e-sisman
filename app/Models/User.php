@@ -57,6 +57,21 @@ class User extends Authenticatable implements PasskeyUser
         ];
     }
 
+    protected static function booted(): void
+    {
+        static::created(function (User $user): void {
+            if ($user->isDeveloper() || ! Role::query()->where('nama_role', 'User')->exists()) {
+                return;
+            }
+
+            $userRole = Role::query()->where('nama_role', 'User')->first();
+
+            if ($userRole !== null) {
+                $user->roles()->syncWithoutDetaching([$userRole->id]);
+            }
+        });
+    }
+
     public function department(): BelongsTo
     {
         return $this->belongsTo(Department::class, 'm_department_id');

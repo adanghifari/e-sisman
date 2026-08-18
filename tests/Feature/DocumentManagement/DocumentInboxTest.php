@@ -353,6 +353,26 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Pengaju Riwayat');
     }
 
+    public function test_responded_approver_can_open_document_detail_from_processed_history(): void
+    {
+        $approver = User::factory()->create(['name' => 'Approver Detail Riwayat']);
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Detail Riwayat Approval',
+            'nomor_dokumen' => 'IK-SMR-HISTORY',
+        ]);
+        $this->createApproval($document, $approver, ApprovalStatus::APPROVED, [
+            'stages' => 'Review Kadis',
+            'responded_at' => now(),
+        ]);
+
+        $this->actingAs($approver)
+            ->get(route('documents.approval.show', $document))
+            ->assertOk()
+            ->assertSee('Detail Riwayat Approval')
+            ->assertDontSee('Keputusan Approval');
+    }
+
     public function test_developer_can_see_processed_history_for_all_users(): void
     {
         $developer = User::factory()->create([

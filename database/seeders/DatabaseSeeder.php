@@ -70,5 +70,29 @@ class DatabaseSeeder extends Seeder
                 ],
             );
         }
+
+        $userRoleId = DB::table('roles')->where('nama_role', 'User')->value('id');
+
+        if ($userRoleId !== null) {
+            $nonDeveloperUserIds = User::query()
+                ->where(function ($query): void {
+                    $query
+                        ->where('nik', '!=', '000000')
+                        ->orWhereNull('nik');
+                })
+                ->where(function ($query): void {
+                    $query
+                        ->where('email', '!=', 'developer@example.com')
+                        ->orWhereNull('email');
+                })
+                ->pluck('id');
+
+            foreach ($nonDeveloperUserIds as $userId) {
+                DB::table('user_roles')->updateOrInsert([
+                    'role_id' => $userRoleId,
+                    'user_id' => $userId,
+                ]);
+            }
+        }
     }
 }

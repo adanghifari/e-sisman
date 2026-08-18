@@ -249,17 +249,24 @@ class DocumentApprovalController extends Controller
         }
 
         abort_unless(
-            $user->canAssignDocument($document) || $this->hasActiveApproval($request, $document),
+            $user->canAssignDocument($document) || $this->hasAccessibleApproval($request, $document),
             403,
         );
     }
 
-    private function hasActiveApproval(Request $request, Document $document): bool
+    private function hasAccessibleApproval(Request $request, Document $document): bool
     {
         return $document->approvals()
             ->where('user_id', $request->user()->id)
-            ->whereNull('responded_at')
-            ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::PENDING))
+            ->where(function ($query): void {
+                $query
+                    ->whereNotNull('responded_at')
+                    ->orWhere(function ($query): void {
+                        $query
+                            ->whereNull('responded_at')
+                            ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::PENDING));
+                    });
+            })
             ->exists();
     }
 
