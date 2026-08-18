@@ -358,6 +358,44 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Pengaju Riwayat');
     }
 
+    public function test_submitter_history_uses_document_status_when_only_official_signature_exists(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create(['name' => 'Pengaju Revisi']);
+        $parent = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Parent',
+            'nomor_dokumen' => 'IK-SMR-PARENT',
+        ]);
+        $document = Document::create([
+            'm_document_level_id' => $parent->m_document_level_id,
+            'm_status_document_id' => $parent->m_status_document_id,
+            'm_document_types_id' => $parent->m_document_types_id,
+            'm_proses_bisnis_id' => $parent->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $parent->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'nama_dokumen' => 'Dokumen Revisi Baru',
+            'nomor_dokumen' => 'FMIK-SMR-PARENT',
+            'revised_from' => $parent->id,
+            'submitted_at' => now(),
+        ]);
+        $document->departments()->sync($parent->departments()->pluck('departments.id')->all());
+
+        $this->createApproval($document, $submitter, ApprovalStatus::APPROVED, [
+            'stages' => 'TTD Penyusun Resmi',
+            'responded_at' => now(),
+        ]);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Dokumen Revisi Baru')
+            ->assertSee('Pengajuan Revisi')
+            ->assertSee(StatusDocument::PROPOSED)
+            ->assertDontSee('TTD Penyusun Resmi');
+    }
+
     public function test_responded_approver_can_open_document_detail_from_processed_history(): void
     {
         $approver = User::factory()->create(['name' => 'Approver Detail Riwayat']);
@@ -1097,6 +1135,68 @@ class DocumentInboxTest extends TestCase
             ->assertOk()
             ->assertSee('Dokumen Jadi Master')
             ->assertSee('PS-SMR-MASTER');
+    }
+
+    public function test_approved_revision_obsoletes_previous_master_document(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create();
+        $approver = User::factory()->create();
+        $source = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Instruksi Lama',
+            'nomor_dokumen' => 'IK-SMR-OLD',
+        ]);
+        $approvedDocumentStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::OBSOLETE]);
+        $source->update([
+            'm_status_document_id' => $approvedDocumentStatus->id,
+            'approved_at' => now()->subDay(),
+        ]);
+
+        $revision = Document::create([
+            'm_document_level_id' => $source->m_document_level_id,
+            'm_status_document_id' => StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail()->id,
+            'm_document_types_id' => $source->m_document_types_id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'revised_from' => $source->id,
+            'nama_dokumen' => 'Instruksi Revisi',
+            'nomor_dokumen' => 'FMIK-SMR-OLD',
+            'nomor_revisi' => 1,
+            'submitted_at' => now(),
+        ]);
+        $revision->departments()->sync($source->departments()->pluck('departments.id')->all());
+
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $revision->m_document_level_id,
+            'nama_flow' => 'Flow Revisi',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+        $role = Role::query()->firstOrCreate(['nama_role' => $stage->nama_tahap]);
+
+        Approval::create([
+            't_document_id' => $revision->id,
+            'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::PENDING)->id,
+            'user_id' => $approver->id,
+            'role_id' => $role->id,
+            'assigned_by' => $submitter->id,
+            'assigned_at' => now(),
+            'stages' => $stage->display_label,
+        ]);
+
+        $this->actingAs($approver)
+            ->post(route('documents.approval.approve', $revision))
+            ->assertRedirect(route('documents.approval.show', $revision));
+
+        $this->assertSame(StatusDocument::APPROVED, $revision->refresh()->status->nama_status);
+        $this->assertSame(StatusDocument::OBSOLETE, $source->refresh()->status->nama_status);
     }
 
     public function test_first_flow_stage_requires_manual_approver_selection(): void

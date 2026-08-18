@@ -179,11 +179,27 @@ class DocumentInboxController extends Controller
             ->get()
             ->map(fn (Document $document): array => $this->processedHistoryRow(
                 $document,
-                $document->approvals->first(fn (Approval $approval): bool => $approval->stages !== 'TTD Penyusun Resmi')
-                    ?? $document->approvals->first(),
+                $this->processedHistoryApproval($document, $user),
                 $user,
             ))
             ->all();
+    }
+
+    private function processedHistoryApproval(Document $document, User $user): ?Approval
+    {
+        $flowApproval = $document->approvals->first(
+            fn (Approval $approval): bool => $approval->stages !== 'TTD Penyusun Resmi',
+        );
+
+        if ($flowApproval !== null) {
+            return $flowApproval;
+        }
+
+        if ($document->user_id === $user->id) {
+            return null;
+        }
+
+        return $document->approvals->first();
     }
 
     private function approvalScope(Request $request, bool $processed): callable
@@ -268,9 +284,12 @@ class DocumentInboxController extends Controller
         $row = $this->approvalRow($document, null);
         $submittedAt = $document->submitted_at ?? $document->created_at;
 
-        $row['stage'] = $document->official_preparer_id === $user->id
-            ? 'TTD Penyusun Resmi'
-            : 'Pengajuan Dokumen';
+        $row['stage'] = match (true) {
+            $document->user_id === $user->id && $document->revised_from !== null => 'Pengajuan Revisi',
+            $document->user_id === $user->id => 'Pengajuan Dokumen',
+            $document->official_preparer_id === $user->id => 'TTD Penyusun Resmi',
+            default => 'Pengajuan Dokumen',
+        };
         $row['waiting_for'] = '-';
         $row['updated_at'] = $submittedAt?->translatedFormat('d M Y H:i') ?? '-';
         $row['updated_at_sort'] = $submittedAt?->timestamp ?? 0;
