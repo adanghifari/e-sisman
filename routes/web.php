@@ -34,7 +34,7 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::get('documents/inbox/{document}/files/{file}', [DocumentApprovalController::class, 'file'])->name('documents.approval.files.show');
     Route::get('documents/inbox/{document}/files/{file}/preview', [DocumentApprovalController::class, 'preview'])->name('documents.approval.files.preview');
     Route::view('documents/create', 'document-management.create.index')->name('documents.create');
-    Route::view('documents/create/{level}', 'document-management.create.level')
+    Route::get('documents/create/{level}', [DocumentController::class, 'create'])
         ->whereIn('level', array_keys(config('document-levels')))
         ->name('documents.create.level');
     Route::post('documents/create/{level}', [DocumentController::class, 'store'])

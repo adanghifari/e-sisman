@@ -197,6 +197,21 @@
                             </div>
                         </div>
                     </div>
+
+                    @if ($canRequestRevision)
+                        <div class="border-t border-dashed border-slate-200 px-6 py-5">
+                            <div class="grid gap-3">
+                                <a
+                                    href="{{ route('documents.create.level', [$levelKey, 'revised_from' => $document->id]) }}"
+                                    class="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+                                    wire:navigate
+                                >
+                                    <flux:icon name="arrow-path" class="size-4" />
+                                    Ajukan Revisi
+                                </a>
+                            </div>
+                        </div>
+                    @endif
                 </section>
 
                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">

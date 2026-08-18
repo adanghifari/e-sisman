@@ -87,7 +87,7 @@ class DocumentMasterController extends Controller
 
         $documents = $query->get();
 
-        $documents->each(function (Document $document): void {
+        $documents->each(function (Document $document) use ($request): void {
             $obsoleteDocuments = $document->obsoleteRevisions;
 
             if ($document->revisedFrom?->status?->nama_status === StatusDocument::OBSOLETE) {
@@ -98,6 +98,7 @@ class DocumentMasterController extends Controller
                 'masterObsoleteDocuments',
                 $obsoleteDocuments->unique('id')->sortByDesc('approved_at')->values(),
             );
+            $document->setAttribute('can_request_revision', $this->canRequestRevision($request, $document));
         });
 
         $typeOptions = ['' => 'Semua Level'] + DocumentLevel::query()
@@ -130,7 +131,7 @@ class DocumentMasterController extends Controller
         ]);
     }
 
-    public function show(Document $document): View
+    public function show(Request $request, Document $document): View
     {
         $document->load([
             'status',
@@ -157,6 +158,7 @@ class DocumentMasterController extends Controller
 
         return view('document-management.master-detail', [
             'document' => $document,
+            'canRequestRevision' => $this->canRequestRevision($request, $document),
             'approvalFlowStages' => $document->documentLevel
                 ?->approvalFlows
                 ->flatMap(fn ($flow) => $flow->stages)
@@ -204,5 +206,26 @@ class DocumentMasterController extends Controller
             in_array($document->status?->nama_status, [StatusDocument::APPROVED, StatusDocument::OBSOLETE], true),
             404,
         );
+    }
+
+    private function canRequestRevision(Request $request, Document $document): bool
+    {
+        $user = $request->user();
+
+        if ($user?->isDeveloper() || $user?->isAdmin()) {
+            return true;
+        }
+
+        if ($user?->m_department_id === null) {
+            return false;
+        }
+
+        if ($document->relationLoaded('departments')) {
+            return $document->departments->contains('id', $user->m_department_id);
+        }
+
+        return $document->departments()
+            ->whereKey($user->m_department_id)
+            ->exists();
     }
 }

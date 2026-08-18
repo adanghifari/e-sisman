@@ -144,6 +144,34 @@ class DocumentMasterTest extends TestCase
         );
     }
 
+    public function test_revision_button_only_shows_for_user_from_document_department(): void
+    {
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $owner = User::factory()->create();
+        $document = $this->createDocument($owner, $approvedStatus, [
+            'nama_dokumen' => 'Master Bisa Direvisi',
+            'nomor_dokumen' => 'PS-SMR-REV',
+        ]);
+        $documentDepartment = $document->departments()->firstOrFail();
+        $sameDepartmentUser = User::factory()->create(['m_department_id' => $documentDepartment->id]);
+        $otherDepartment = Department::create([
+            'kode_department' => 'HR',
+            'nama_department' => 'Human Resources',
+        ]);
+        $otherDepartmentUser = User::factory()->create(['m_department_id' => $otherDepartment->id]);
+
+        $this->actingAs($sameDepartmentUser)
+            ->get(route('documents.master.show', $document))
+            ->assertOk()
+            ->assertSee('Ajukan Revisi')
+            ->assertSee(route('documents.create.level', ['level-2', 'revised_from' => $document->id]), false);
+
+        $this->actingAs($otherDepartmentUser)
+            ->get(route('documents.master.show', $document))
+            ->assertOk()
+            ->assertDontSee('Ajukan Revisi');
+    }
+
     private function createDocument(User $user, StatusDocument $status, array $attributes = []): Document
     {
         $documentType = DocumentType::create(['nama_types' => fake()->unique()->word()]);

@@ -1,5 +1,6 @@
 <x-layouts::app :title="__('Tambah Dokumen')">
     @php
+        $revisionSource ??= null;
         $levelKey = request()->route('level');
         $level = config("document-levels.{$levelKey}");
         $levelNumbers = [
@@ -11,6 +12,11 @@
             'level-1' => 'SM',
             'level-2' => 'PS',
             'level-3' => 'IK',
+        ];
+        $revisionPrefixes = [
+            'level-1' => 'FMSM',
+            'level-2' => 'FMPS',
+            'level-3' => 'FMIK',
         ];
 
         $ownerLabel = $levelKey === 'level-1' ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
@@ -68,7 +74,28 @@
                 'label' => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department,
             ])
             ->values();
-        $selectedBusinessProcess = $businessProcesses->firstWhere('id', (int) old('m_proses_bisnis_id'));
+        $revisionDocumentSuffix = $revisionSource?->nomor_dokumen
+            ? \Illuminate\Support\Str::afterLast($revisionSource->nomor_dokumen, '-')
+            : null;
+        $documentNumberPrefix = $revisionSource
+            ? ($revisionPrefixes[$levelKey] ?? 'FM'.$documentPrefixes[$levelKey])
+            : $documentPrefixes[$levelKey];
+        $revisionRootDocumentId = $revisionSource?->revised_from ?: $revisionSource?->id;
+        $latestRevisionNumber = $revisionRootDocumentId
+            ? (int) \App\Models\Document::query()
+                ->where(fn ($query) => $query
+                    ->whereKey($revisionRootDocumentId)
+                    ->orWhere('revised_from', $revisionRootDocumentId))
+                ->max('nomor_revisi')
+            : null;
+        $selectedBusinessProcessId = old('m_proses_bisnis_id', $revisionSource?->m_proses_bisnis_id);
+        $selectedBusinessFunctionId = old('m_proses_fungsi_id', $revisionSource?->m_proses_fungsi_id);
+        $selectedReferenceId = old('reference', $revisionSource?->reference);
+        $selectedDepartmentIds = old('department_ids', $revisionSource?->departments?->pluck('id')->all() ?? []);
+        $nextRevisionValue = $revisionSource
+            ? '00.'.str_pad((string) (($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1), 2, '0', STR_PAD_LEFT)
+            : '00.00';
+        $selectedBusinessProcess = $businessProcesses->firstWhere('id', (int) $selectedBusinessProcessId);
         $documentNumberProcessCode = $selectedBusinessProcess?->kode ?: 'SMR';
         $documentNumberSegments = match ($levelKey) {
             'level-2' => [['value' => $documentNumberProcessCode, 'target' => 'business-process']],
@@ -92,12 +119,21 @@
         </nav>
 
         <h1 class="text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
-            {{ $levelKey === 'level-1' ? 'Import' : 'Tambah' }} Dokumen Level {{ $levelNumbers[$levelKey] }} : {{ $documentTitle }}
+            {{ $revisionSource ? 'Ajukan Revisi' : ($levelKey === 'level-1' ? 'Import' : 'Tambah') }} Dokumen Level {{ $levelNumbers[$levelKey] }} : {{ $documentTitle }}
         </h1>
+
+        @if ($revisionSource)
+            <div class="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800">
+                Revisi dari {{ $revisionSource->nomor_dokumen ?: '-' }} - {{ $revisionSource->nama_dokumen }}.
+            </div>
+        @endif
 
         @if ($levelKey === 'level-1')
             <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
                 @csrf
+                @if ($revisionSource)
+                    <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
+                @endif
 
                 <div class="space-y-6">
                     <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -111,7 +147,7 @@
                                 <input
                                     type="text"
                                     name="nama_dokumen"
-                                    value="{{ old('nama_dokumen') }}"
+                                    value="{{ old('nama_dokumen', $revisionSource?->nama_dokumen) }}"
                                     placeholder="Masukan nama dokumen"
                                     required
                                     @class([
@@ -171,9 +207,9 @@
                         <div>
                             <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen</span>
                             <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4">
-                                <input type="text" value="{{ $documentPrefixes[$levelKey] }}" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
+                                <input type="text" value="{{ $documentNumberPrefix }}" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
                                 <span class="text-lg font-semibold text-slate-500">-</span>
-                                <input type="text" name="nomor_dokumen_suffix" value="{{ old('nomor_dokumen_suffix') }}" required class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                <input type="text" name="nomor_dokumen_suffix" value="{{ old('nomor_dokumen_suffix', $revisionDocumentSuffix) }}" required class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                             </div>
                             @error('nomor_dokumen_suffix')
                                 <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -185,8 +221,9 @@
                             <input
                                 type="text"
                                 name="nomor_revisi"
-                                value="{{ old('nomor_revisi') }}"
-                                class="h-14 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                                value="{{ old('nomor_revisi', $revisionSource ? $nextRevisionValue : null) }}"
+                                @readonly($revisionSource)
+                                class="h-14 w-full rounded-lg border {{ $revisionSource ? 'border-slate-200 bg-slate-50 text-slate-600' : 'border-slate-300 bg-white text-slate-700 focus:border-sky-400 focus:ring-2 focus:ring-sky-100' }} px-4 text-base font-semibold outline-none transition"
                             >
                             @error('nomor_revisi')
                                 <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -210,96 +247,147 @@
         @else
             <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
                 @csrf
+                @if ($revisionSource)
+                    <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
+                @endif
 
                 <div class="space-y-6">
                     <x-documents.form-section title="Informasi Dokumen">
-                        <div class="grid gap-5 px-6 py-6 md:grid-cols-2">
-                            <label class="block md:col-span-2">
-                                <span class="mb-2 block text-base font-medium text-slate-500">Nama Dokumen</span>
-                                <input
-                                    type="text"
-                                    name="nama_dokumen"
-                                    value="{{ old('nama_dokumen') }}"
-                                    placeholder="Masukan nama dokumen"
-                                    required
-                                    @class([
-                                        'h-14 w-full rounded-lg bg-white px-4 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:ring-2',
-                                        'border border-red-300 focus:border-red-400 focus:ring-red-100' => $errors->has('nama_dokumen'),
-                                        'border border-slate-300 focus:border-sky-400 focus:ring-sky-100' => ! $errors->has('nama_dokumen'),
-                                    ])
-                                >
-                                @error('nama_dokumen')
-                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                @enderror
-                            </label>
-
+                        @if ($revisionSource)
+                            <input type="hidden" name="nama_dokumen" value="{{ $revisionSource->nama_dokumen }}">
                             <input type="hidden" name="m_document_level_id" value="{{ $documentLevelRecord?->id }}">
-
-                            <label @class(['block', 'md:col-span-2' => $levelKey !== 'level-3'])>
-                                <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
-                                <select name="m_proses_bisnis_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                    <option value="">-Pilih-</option>
-                                    @foreach ($businessProcesses as $businessProcess)
-                                        <option
-                                            value="{{ $businessProcess->id }}"
-                                            data-process-code="{{ $businessProcess->kode }}"
-                                            @selected((string) old('m_proses_bisnis_id') === (string) $businessProcess->id)
-                                        >
-                                            {{ $businessProcess->nama_proses_bisnis }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('m_proses_bisnis_id')
-                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                @enderror
-                            </label>
-
-                            <label class="block">
-                                <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
-                                <select name="m_proses_fungsi_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                    <option value="">-Pilih-</option>
-                                    @foreach ($businessFunctions as $businessFunction)
-                                        <option value="{{ $businessFunction->id }}" @selected((string) old('m_proses_fungsi_id') === (string) $businessFunction->id)>
-                                            {{ $businessFunction->nama_proses_fungsi }}
-                                        </option>
-                                    @endforeach
-                                </select>
-                                @error('m_proses_fungsi_id')
-                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                @enderror
-                            </label>
-
-                            <x-ui.multi-select
-                                label="Department Terkait"
-                                name="department_ids"
-                                :options="$departmentOptions"
-                                selected-placeholder="Tambah Department"
-                                required
-                                class="md:col-span-1"
-                            />
-
+                            <input type="hidden" name="m_proses_bisnis_id" value="{{ $revisionSource->m_proses_bisnis_id }}">
+                            <input type="hidden" name="m_proses_fungsi_id" value="{{ $revisionSource->m_proses_fungsi_id }}">
+                            @foreach ($selectedDepartmentIds as $departmentId)
+                                <input type="hidden" name="department_ids[]" value="{{ $departmentId }}">
+                            @endforeach
                             @if ($levelKey === 'level-3')
-                                <label class="block">
-                                    <span class="mb-2 block text-base font-medium text-slate-500">Pilih Dokumen Level II: Prosedur</span>
-                                    <select name="reference" class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                        <option value="">-Pilih-</option>
-                                        @foreach ($procedureReferences as $procedureReference)
-                                            <option
-                                                value="{{ $procedureReference->id }}"
-                                                data-business-process-id="{{ $procedureReference->m_proses_bisnis_id }}"
-                                                data-business-function-id="{{ $procedureReference->m_proses_fungsi_id }}"
-                                                @selected((string) old('reference') === (string) $procedureReference->id)
-                                            >
-                                                {{ $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }}
-                                            </option>
-                                        @endforeach
-                                    </select>
-                                    @error('reference')
+                                <input type="hidden" name="reference" value="{{ $revisionSource->reference }}">
+                            @endif
+
+                            <dl class="divide-y divide-slate-100 px-6 py-4">
+                                <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                    <dt class="text-sm font-semibold text-slate-500">Nama Dokumen</dt>
+                                    <dd class="text-sm font-bold uppercase leading-6 text-slate-900">{{ $revisionSource->nama_dokumen }}</dd>
+                                </div>
+                                <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                    <dt class="text-sm font-semibold text-slate-500">Level Dokumen</dt>
+                                    <dd class="text-sm font-bold text-slate-900">{{ $levelDisplayValue ?: '-' }}</dd>
+                                </div>
+                                <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                    <dt class="text-sm font-semibold text-slate-500">Nomor Dokumen</dt>
+                                    <dd class="text-sm font-bold text-slate-900">{{ $revisionSource->nomor_dokumen ?: '-' }}</dd>
+                                </div>
+                                <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                    <dt class="text-sm font-semibold text-slate-500">Proses / Fungsi</dt>
+                                    <dd class="text-sm font-bold text-slate-900">
+                                        {{ collect([$revisionSource->businessProcess?->nama_proses_bisnis, $revisionSource->businessFunction?->nama_proses_fungsi])->filter()->implode(' / ') ?: '-' }}
+                                    </dd>
+                                </div>
+                                <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                    <dt class="text-sm font-semibold text-slate-500">Department Terkait</dt>
+                                    <dd class="text-sm font-bold text-slate-900">
+                                        {{ $revisionSource->departments->map(fn ($department) => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department)->implode(', ') ?: '-' }}
+                                    </dd>
+                                </div>
+                                @if ($revisionSource->referenceDocument)
+                                    <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                        <dt class="text-sm font-semibold text-slate-500">Dokumen Acuan</dt>
+                                        <dd class="text-sm font-bold text-slate-900">
+                                            {{ $revisionSource->referenceDocument->nomor_dokumen ?: '-' }} - {{ $revisionSource->referenceDocument->nama_dokumen }}
+                                        </dd>
+                                    </div>
+                                @endif
+                            </dl>
+                        @else
+                            <div class="grid gap-5 px-6 py-6 md:grid-cols-2">
+                                <label class="block md:col-span-2">
+                                    <span class="mb-2 block text-base font-medium text-slate-500">Nama Dokumen</span>
+                                    <input
+                                        type="text"
+                                        name="nama_dokumen"
+                                        value="{{ old('nama_dokumen') }}"
+                                        placeholder="Masukan nama dokumen"
+                                        required
+                                        @class([
+                                            'h-14 w-full rounded-lg bg-white px-4 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:ring-2',
+                                            'border border-red-300 focus:border-red-400 focus:ring-red-100' => $errors->has('nama_dokumen'),
+                                            'border border-slate-300 focus:border-sky-400 focus:ring-sky-100' => ! $errors->has('nama_dokumen'),
+                                        ])
+                                    >
+                                    @error('nama_dokumen')
                                         <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                     @enderror
                                 </label>
-                            @endif
-                        </div>
+
+                                <input type="hidden" name="m_document_level_id" value="{{ $documentLevelRecord?->id }}">
+
+                                <label @class(['block', 'md:col-span-2' => $levelKey !== 'level-3'])>
+                                    <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
+                                    <select name="m_proses_bisnis_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                        <option value="">-Pilih-</option>
+                                        @foreach ($businessProcesses as $businessProcess)
+                                            <option
+                                                value="{{ $businessProcess->id }}"
+                                                data-process-code="{{ $businessProcess->kode }}"
+                                                @selected((string) old('m_proses_bisnis_id') === (string) $businessProcess->id)
+                                            >
+                                                {{ $businessProcess->nama_proses_bisnis }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    @error('m_proses_bisnis_id')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </label>
+
+                                <label class="block">
+                                    <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
+                                    <select name="m_proses_fungsi_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                        <option value="">-Pilih-</option>
+                                        @foreach ($businessFunctions as $businessFunction)
+                                            <option value="{{ $businessFunction->id }}" @selected((string) old('m_proses_fungsi_id') === (string) $businessFunction->id)>
+                                                {{ $businessFunction->nama_proses_fungsi }}
+                                            </option>
+                                        @endforeach
+                                    </select>
+                                    @error('m_proses_fungsi_id')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </label>
+
+                                <x-ui.multi-select
+                                    label="Department Terkait"
+                                    name="department_ids"
+                                    :options="$departmentOptions"
+                                    selected-placeholder="Tambah Department"
+                                    required
+                                    class="md:col-span-1"
+                                />
+
+                                @if ($levelKey === 'level-3')
+                                    <label class="block">
+                                        <span class="mb-2 block text-base font-medium text-slate-500">Pilih Dokumen Level II: Prosedur</span>
+                                        <select name="reference" class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                            <option value="">-Pilih-</option>
+                                            @foreach ($procedureReferences as $procedureReference)
+                                                <option
+                                                    value="{{ $procedureReference->id }}"
+                                                    data-business-process-id="{{ $procedureReference->m_proses_bisnis_id }}"
+                                                    data-business-function-id="{{ $procedureReference->m_proses_fungsi_id }}"
+                                                    @selected((string) old('reference') === (string) $procedureReference->id)
+                                                >
+                                                    {{ $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }}
+                                                </option>
+                                            @endforeach
+                                        </select>
+                                        @error('reference')
+                                            <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                        @enderror
+                                    </label>
+                                @endif
+                            </div>
+                        @endif
                     </x-documents.form-section>
 
                     <x-documents.official-preparer :label="$ownerLabel" :users="$assignableUsers" />
@@ -360,15 +448,16 @@
 
                         <div class="space-y-5 px-6 py-6">
                             <x-documents.document-number-input
-                                :prefix="$documentPrefixes[$levelKey]"
+                                :prefix="$documentNumberPrefix"
                                 :segments="$documentNumberSegments"
+                                :default-value="$revisionDocumentSuffix"
                             />
 
                             <label class="block">
                                 <span class="mb-2 block text-base font-medium text-slate-500">Revisi</span>
                                 <input
                                     type="text"
-                                    value="00.00"
+                                    value="{{ $nextRevisionValue }}"
                                     readonly
                                     class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600"
                                 >
