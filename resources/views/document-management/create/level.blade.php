@@ -20,7 +20,10 @@
             'level-2' => 'FMPS',
             'level-3' => 'FMIK',
         ];
-        $revisionSourceLevelKey = $revisionSource?->documentLevel?->kode;
+        $revisionSourceMaster = $revisionSource?->documentLevel?->kode === 'level-4' && $revisionSource?->revisedFrom
+            ? $revisionSource->revisedFrom
+            : $revisionSource;
+        $revisionSourceLevelKey = $revisionSourceMaster?->documentLevel?->kode;
         $levelFourPrefix = match ($revisionSourceLevelKey) {
             'level-1' => 'FMSM',
             'level-2' => 'FMPS',
@@ -90,13 +93,19 @@
             ])
             ->values();
         $revisionDocumentSuffix = null;
-        if ($revisionSource?->nomor_dokumen) {
-            $sourceNumberSegments = collect(explode('-', $revisionSource->nomor_dokumen))
+        $revisionDocumentNumberSegments = [];
+        if ($revisionSourceMaster?->nomor_dokumen) {
+            $sourceNumberSegments = collect(explode('-', $revisionSourceMaster->nomor_dokumen))
                 ->filter()
                 ->values();
-            $revisionDocumentSuffix = $levelKey === 'level-4'
-                ? $sourceNumberSegments->skip(1)->implode('-')
-                : \Illuminate\Support\Str::afterLast($revisionSource->nomor_dokumen, '-');
+
+            if ($levelKey === 'level-4') {
+                $sourceNumberBodySegments = $sourceNumberSegments->skip(1)->values();
+                $revisionDocumentNumberSegments = $sourceNumberBodySegments->slice(0, -1)->values()->all();
+                $revisionDocumentSuffix = $sourceNumberBodySegments->last();
+            } else {
+                $revisionDocumentSuffix = \Illuminate\Support\Str::afterLast($revisionSourceMaster->nomor_dokumen, '-');
+            }
         }
         $documentNumberPrefix = $revisionSource
             ? ($levelKey === 'level-4' ? $levelFourPrefix : ($revisionPrefixes[$levelKey] ?? 'FM'.$documentPrefixes[$levelKey]))
@@ -121,6 +130,7 @@
         $documentNumberSegments = match ($levelKey) {
             'level-2' => [['value' => $documentNumberProcessCode, 'target' => 'business-process']],
             'level-3' => ['XXX', 'YY'],
+            'level-4' => $revisionDocumentNumberSegments,
             default => [],
         };
         $assignableUsers = \App\Models\User::query()

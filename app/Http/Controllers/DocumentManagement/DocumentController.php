@@ -222,7 +222,7 @@ class DocumentController extends Controller
         }
 
         $source = Document::query()
-            ->with(['status', 'documentLevel', 'businessProcess', 'businessFunction', 'departments', 'referenceDocument'])
+            ->with(['status', 'documentLevel', 'businessProcess', 'businessFunction', 'departments', 'referenceDocument', 'revisedFrom.documentLevel'])
             ->whereKey($sourceId)
             ->firstOrFail();
 
@@ -363,10 +363,11 @@ class DocumentController extends Controller
 
     protected function buildRevisionDocumentNumber(Document $source, DocumentLevel $documentLevel): string
     {
+        $sourceLevelKey = $this->effectiveRevisionSourceLevelKey($source);
         $revisionPrefix = match ($documentLevel->kode) {
             'level-2' => 'FMPS',
             'level-3' => 'FMIK',
-            'level-4' => match ($source->documentLevel?->kode) {
+            'level-4' => match ($sourceLevelKey) {
                 'level-2' => 'FMPS',
                 'level-3' => 'FMIK',
                 'level-1' => 'FMSM',
@@ -374,7 +375,7 @@ class DocumentController extends Controller
             },
             default => 'FM'.$documentLevel->prefix,
         };
-        $sourceSegments = collect(explode('-', (string) $source->nomor_dokumen))
+        $sourceSegments = collect(explode('-', (string) $this->revisionSourceMasterNumber($source)))
             ->filter()
             ->values();
 
@@ -386,6 +387,28 @@ class DocumentController extends Controller
             ->merge($sourceSegments)
             ->filter()
             ->implode('-');
+    }
+
+    protected function effectiveRevisionSourceLevelKey(Document $source): ?string
+    {
+        $source->loadMissing(['documentLevel', 'revisedFrom.documentLevel']);
+
+        if ($source->documentLevel?->kode === 'level-4' && $source->revisedFrom !== null) {
+            return $source->revisedFrom->documentLevel?->kode;
+        }
+
+        return $source->documentLevel?->kode;
+    }
+
+    protected function revisionSourceMasterNumber(Document $source): ?string
+    {
+        $source->loadMissing(['documentLevel', 'revisedFrom']);
+
+        if ($source->documentLevel?->kode === 'level-4' && $source->revisedFrom !== null) {
+            return $source->revisedFrom->nomor_dokumen ?: $source->nomor_dokumen;
+        }
+
+        return $source->nomor_dokumen;
     }
 
     protected function nextRevisionNumber(Document $source): int

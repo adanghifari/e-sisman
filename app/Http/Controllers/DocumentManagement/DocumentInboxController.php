@@ -393,7 +393,7 @@ class DocumentInboxController extends Controller
             'detail_url' => route('documents.approval.show', $document),
             'number' => $document->nomor_dokumen ?? '-',
             'name' => $document->nama_dokumen ?? '-',
-            'type' => $document->documentType?->nama_types ?? '-',
+            'type' => $this->documentTypeLabel($document),
             'stage' => match (true) {
                 $isRejectedCorrection => 'Perbaikan Pengajuan',
                 $isPendingRevisionOwnerTask => 'Pengajuan Revisi',
@@ -528,6 +528,14 @@ class DocumentInboxController extends Controller
         $row['action'] = 'Lihat';
 
         return $row;
+    }
+
+    private function documentTypeLabel(Document $document): string
+    {
+        return match ($document->documentType?->nama_types) {
+            'IK' => 'Instruksi Kerja',
+            default => $document->documentType?->nama_types ?? '-',
+        };
     }
 
     private function approvalTone(string $statusCode): string

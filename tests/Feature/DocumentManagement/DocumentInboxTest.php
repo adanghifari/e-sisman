@@ -50,6 +50,25 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Pengaju Dokumen');
     }
 
+    public function test_work_instruction_type_is_displayed_with_full_label(): void
+    {
+        $approver = User::factory()->create();
+        $submitter = User::factory()->create();
+        $documentType = DocumentType::create(['nama_types' => 'IK']);
+        $document = $this->createDocument($submitter, [
+            'm_document_types_id' => $documentType->id,
+            'nama_dokumen' => 'Instruksi Kerja Incoming',
+            'nomor_dokumen' => 'IK-SMR-123',
+        ]);
+        $this->createApproval($document, $approver, ApprovalStatus::PENDING);
+
+        $this->actingAs($approver)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee('Instruksi Kerja')
+            ->assertDontSee('>IK</td>', false);
+    }
+
     public function test_pending_approval_for_other_user_is_not_shown_in_needs_process_tab(): void
     {
         $loginUser = User::factory()->create();
