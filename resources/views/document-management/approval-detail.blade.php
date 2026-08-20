@@ -22,6 +22,17 @@
             'revision_before' => 'Semula',
             'revision_after' => 'Menjadi',
         ];
+        $revisionMainFiles = $levelKey === 'level-4'
+            ? collect(['revision_content', 'revision_form'])
+                ->map(fn ($type) => $contentFiles->firstWhere('type_file', $type))
+                ->filter()
+                ->values()
+            : collect();
+        $otherContentFiles = $levelKey === 'level-4'
+            ? $contentFiles
+                ->reject(fn ($file) => in_array($file->type_file, ['revision_content', 'revision_form'], true))
+                ->values()
+            : $contentFiles;
         $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
         $readonlySelect = 'h-12 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
     @endphp
@@ -110,6 +121,55 @@
 
                 <x-documents.form-section :title="$contentSectionTitle" icon="document-text">
                     <div class="space-y-4 px-6 py-6">
+                        @if ($levelKey === 'level-4')
+                            @if ($revisionMainFiles->isNotEmpty())
+                                <div class="grid gap-4 2xl:grid-cols-2">
+                                    @foreach ($revisionMainFiles as $file)
+                                        <section class="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                            <div class="flex min-h-20 items-start justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                                <div class="min-w-0">
+                                                    <p class="text-sm font-bold text-slate-900">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                                    <p class="mt-1 truncate text-xs font-semibold text-slate-500">{{ $file->original_file_name }}</p>
+                                                </div>
+                                                <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                                    Buka
+                                                </a>
+                                            </div>
+
+                                            <iframe
+                                                src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                                class="h-[620px] w-full bg-white 2xl:h-[72vh]"
+                                            ></iframe>
+                                        </section>
+                                    @endforeach
+                                </div>
+                            @endif
+
+                            @foreach ($otherContentFiles as $file)
+                                <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                    <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                        <div class="min-w-0">
+                                            <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
+                                            <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                        </div>
+                                        <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                            Buka
+                                        </a>
+                                    </div>
+
+                                    <iframe
+                                        src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                        class="min-h-[760px] w-full bg-white xl:h-[82vh]"
+                                    ></iframe>
+                                </section>
+                            @endforeach
+
+                            @if ($revisionMainFiles->isEmpty() && $otherContentFiles->isEmpty())
+                                <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                    Belum ada file isi dokumen.
+                                </p>
+                            @endif
+                        @else
                         @forelse ($contentFiles as $file)
                             <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                                 <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
@@ -132,6 +192,7 @@
                                 Belum ada file isi dokumen.
                             </p>
                         @endforelse
+                        @endif
                     </div>
                 </x-documents.form-section>
 

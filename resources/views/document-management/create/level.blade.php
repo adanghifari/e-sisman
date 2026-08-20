@@ -272,13 +272,24 @@
                 </aside>
             </form>
         @else
-            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
+            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]" data-document-create-form data-max-total-file-size-kb="25600">
                 @csrf
                 @if ($revisionSource)
                     <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
                 @endif
 
                 <div class="space-y-6">
+                    @if ($errors->any())
+                        <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                            <p>Submit dokumen belum berhasil. Cek isian berikut:</p>
+                            <ul class="mt-2 list-disc space-y-1 pl-5">
+                                @foreach ($errors->all() as $error)
+                                    <li>{{ $error }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+
                     <x-documents.form-section title="Informasi Dokumen">
                         @if ($revisionSource)
                             <input type="hidden" name="nama_dokumen" value="{{ $revisionSource->nama_dokumen }}">
@@ -429,6 +440,12 @@
 
                     <x-documents.form-section :title="$levelKey === 'level-4' ? 'Dokumen Revisi' : 'Isi Dokumen'" icon="cloud-arrow-up">
                         <div class="space-y-6 px-6 py-6">
+                            <div class="hidden rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700" data-total-file-size-error></div>
+
+                            @error('files')
+                                <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{{ $message }}</div>
+                            @enderror
+
                             @if ($levelKey === 'level-4')
                                 <x-documents.upload-toggle-card
                                     title="1. Isi Dokumen Versi Revisi"
@@ -439,7 +456,7 @@
                                         label="Upload Isi Dokumen Versi Revisi"
                                         name="revision_content"
                                         accept=".pdf,application/pdf"
-                                        hint="Upload dokumen utama yang sudah direvisi. Format PDF."
+                                        hint="Upload dokumen utama yang sudah direvisi. Format PDF, maksimal 10 MB."
                                         :max-files="1"
                                         :max-file-size-kb="10240"
                                         :required="old('submit_action') === 'submit'"
@@ -459,7 +476,7 @@
                                         label="Upload Lembar Revisi"
                                         name="revision_form"
                                         accept=".pdf,application/pdf"
-                                        hint="Upload form/lembar revisi yang menjelaskan perubahan. Format PDF."
+                                        hint="Upload form/lembar revisi yang menjelaskan perubahan. Format PDF, maksimal 10 MB."
                                         :max-files="1"
                                         :max-file-size-kb="10240"
                                         :required="old('submit_action') === 'submit'"
@@ -604,6 +621,32 @@
 
                     if (!form) {
                         return;
+                    }
+
+                    const maxTotalFileSizeKb = Number(form.dataset.maxTotalFileSizeKb || 0);
+                    const totalFileSizeError = form.querySelector('[data-total-file-size-error]');
+
+                    if (totalFileSizeError) {
+                        totalFileSizeError.textContent = '';
+                        totalFileSizeError.classList.add('hidden');
+                    }
+
+                    if (maxTotalFileSizeKb > 0) {
+                        const selectedFiles = Array.from(form.querySelectorAll('input[type="file"]'))
+                            .flatMap((input) => Array.from(input.files || []));
+                        const totalFileSize = selectedFiles.reduce((total, file) => total + file.size, 0);
+
+                        if (totalFileSize > maxTotalFileSizeKb * 1024) {
+                            event.preventDefault();
+
+                            if (totalFileSizeError) {
+                                totalFileSizeError.textContent = `Total ukuran file maksimal ${Math.floor(maxTotalFileSizeKb / 1024)} MB. Kurangi ukuran file atau hapus lampiran tambahan.`;
+                                totalFileSizeError.classList.remove('hidden');
+                                totalFileSizeError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+
+                            return;
+                        }
                     }
 
                     const emptyPicker = Array.from(form.querySelectorAll('[data-user-search-select]'))

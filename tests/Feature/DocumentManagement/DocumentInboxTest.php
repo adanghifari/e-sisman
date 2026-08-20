@@ -45,6 +45,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Prosedur Kalibrasi Alat')
             ->assertSee('PS-SMR-123')
             ->assertSee('Approval Manager')
+            ->assertSee('Menunggu Manager')
             ->assertSee('Dalam Review')
             ->assertSee('Pengaju Dokumen');
     }
@@ -153,7 +154,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Dokumen Belum Assign Approver')
             ->assertSee('PS-SMR-CLEAN')
             ->assertSee('Belum assign approver')
-            ->assertSee('Assign')
+            ->assertSee('Perlu Verifikasi Admin KD')
             ->assertSee(route('documents.approval.show', $document));
 
         $this->actingAs($submitter)
@@ -224,7 +225,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Dokumen Assign Department Terkait')
             ->assertSee('PS-SMR-ASSIGN')
             ->assertSee('Belum assign approver')
-            ->assertSee('Assign')
+            ->assertSee('Perlu Verifikasi Admin KD')
             ->assertSee(route('documents.approval.show', $document));
     }
 
@@ -247,7 +248,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Dokumen Assign Department Lain')
             ->assertSee('PS-SMR-OTHER-DEPT')
             ->assertSee('Belum assign approver')
-            ->assertSee('Assign')
+            ->assertSee('Perlu Verifikasi Admin KD')
             ->assertSee(route('documents.approval.show', $document));
     }
 
@@ -288,7 +289,7 @@ class DocumentInboxTest extends TestCase
             ->assertOk()
             ->assertSee('Dokumen Multi Department Assign')
             ->assertSee('PS-SMR-MULTI')
-            ->assertSee('Assign');
+            ->assertSee('Perlu Verifikasi Admin KD');
     }
 
     public function test_document_control_admin_from_related_department_can_open_proposed_document_detail(): void
@@ -403,7 +404,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Pengaju Riwayat');
     }
 
-    public function test_submitter_history_uses_document_status_when_only_official_signature_exists(): void
+    public function test_submitter_sees_pending_revision_in_needs_process_when_only_official_signature_exists(): void
     {
         $this->ensureApprovalStatuses();
 
@@ -433,12 +434,17 @@ class DocumentInboxTest extends TestCase
         ]);
 
         $this->actingAs($submitter)
-            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
             ->assertOk()
             ->assertSee('Dokumen Revisi Baru')
             ->assertSee('Pengajuan Revisi')
             ->assertSee(StatusDocument::PROPOSED)
             ->assertDontSee('TTD Penyusun Resmi');
+
+        $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertDontSee('Dokumen Revisi Baru');
     }
 
     public function test_responded_approver_can_open_document_detail_from_processed_history(): void
@@ -487,7 +493,7 @@ class DocumentInboxTest extends TestCase
             ->assertDontSee('IK-SMR-DEV');
     }
 
-    public function test_document_control_admin_sees_assigned_document_in_processed_history(): void
+    public function test_document_control_admin_does_not_see_in_progress_assigned_document_in_processed_history(): void
     {
         $this->ensureApprovalStatuses();
 
@@ -509,14 +515,11 @@ class DocumentInboxTest extends TestCase
         $this->actingAs($admin)
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
             ->assertOk()
-            ->assertSee('Dokumen Selesai Assign')
-            ->assertSee('PS-SMR-ASSIGN-HISTORY')
-            ->assertSee('Assign Approver')
-            ->assertSee(StatusDocument::PROPOSED)
-            ->assertDontSee('Disetujui');
+            ->assertDontSee('Dokumen Selesai Assign')
+            ->assertDontSee('PS-SMR-ASSIGN-HISTORY');
     }
 
-    public function test_assigned_document_is_not_shown_in_document_control_admin_needs_process_tab(): void
+    public function test_assigned_document_stays_in_document_control_admin_needs_process_tab_as_monitoring_task(): void
     {
         $this->ensureApprovalStatuses();
 
@@ -536,8 +539,10 @@ class DocumentInboxTest extends TestCase
         $this->actingAs($admin)
             ->get(route('documents.inbox', ['tab' => 'needs-process']))
             ->assertOk()
-            ->assertDontSee('Dokumen Sudah Assign')
-            ->assertDontSee('PS-SMR-ASSIGNED');
+            ->assertSee('Dokumen Sudah Assign')
+            ->assertSee('PS-SMR-ASSIGNED')
+            ->assertSee('Superintendent')
+            ->assertSee('Menunggu Superintendent');
     }
 
     public function test_approval_detail_page_shows_readonly_document_and_actions(): void

@@ -119,8 +119,11 @@ class DocumentInboxController extends Controller
     private function myTasks(Request $request): array
     {
         $approvalScope = $this->approvalScope($request, processed: false);
+        $assignedMonitorApprovalScope = $this->assignedMonitorApprovalScope($request);
+        $assignedMonitorDocumentScope = $this->assignedMonitorDocumentScope($request);
         $assignableDocumentScope = $this->assignableDocumentScope($request);
         $rejectedCorrectionScope = $this->rejectedCorrectionScope($request);
+        $pendingRevisionOwnerScope = $this->pendingRevisionOwnerScope($request);
 
         $query = Document::query()
             ->withExists([
@@ -133,14 +136,19 @@ class DocumentInboxController extends Controller
                 'creator',
                 'status',
                 'departments',
-                'approvals' => function ($query) use ($approvalScope): void {
-                    $approvalScope($query);
+                'approvals' => function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
+                    $query->where(function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
+                        $query
+                            ->where($approvalScope)
+                            ->orWhere($assignedMonitorApprovalScope);
+                    });
                     $query->with(['status', 'approver'])->orderByDesc('assigned_at');
                 },
             ]);
 
-        $query->where(function ($query) use ($approvalScope, $assignableDocumentScope, $rejectedCorrectionScope): void {
+        $query->where(function ($query) use ($approvalScope, $assignedMonitorDocumentScope, $assignableDocumentScope, $rejectedCorrectionScope, $pendingRevisionOwnerScope): void {
             $query->whereHas('approvals', $approvalScope);
+            $query->orWhere($assignedMonitorDocumentScope);
 
             if ($assignableDocumentScope !== null) {
                 $query
@@ -148,20 +156,25 @@ class DocumentInboxController extends Controller
             }
 
             $query->orWhere($rejectedCorrectionScope);
+            $query->orWhere($pendingRevisionOwnerScope);
         });
 
         return $query->get()
-            ->filter(function (Document $document): bool {
+            ->filter(function (Document $document) use ($request): bool {
                 if ($document->status?->nama_status === StatusDocument::REJECTED) {
                     return true;
                 }
 
-                return $document->approvals->first() !== null || ! $document->has_flow_approvals;
+                return $this->isPendingRevisionOwnerTask($document, $request->user())
+                    || $this->isAssignedMonitorTask($document, $request->user())
+                    || $document->approvals->first() !== null
+                    || ! $document->has_flow_approvals;
             })
             ->map(fn (Document $document): array => $this->approvalRow(
                 $document,
-                $document->approvals->first(),
+                $this->taskApproval($document, $request->user()),
                 $request->user()->isAdmin() || $request->user()->canAssignDocument($document),
+                $request->user(),
             ))
             ->all();
     }
@@ -195,6 +208,11 @@ class DocumentInboxController extends Controller
                         ->orWhere(function ($query) use ($user): void {
                             $query
                                 ->whereDoesntHave('status', fn ($query) => $query->where('nama_status', StatusDocument::REJECTED))
+                                ->where(function ($query): void {
+                                    $query
+                                        ->whereNull('revised_from')
+                                        ->orWhereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::APPROVED));
+                                })
                                 ->where(function ($query) use ($user): void {
                                     $query
                                         ->where('user_id', $user->id)
@@ -204,6 +222,8 @@ class DocumentInboxController extends Controller
                 }
             })
             ->get()
+            ->reject(fn (Document $document): bool => $this->isPendingRevisionOwnerTask($document, $user)
+                || $this->isAssignedMonitorTask($document, $user))
             ->map(fn (Document $document): array => $this->processedHistoryRow(
                 $document,
                 $this->processedHistoryApproval($document, $user),
@@ -258,6 +278,36 @@ class DocumentInboxController extends Controller
         };
     }
 
+    private function assignedMonitorApprovalScope(Request $request): callable
+    {
+        return function ($query) use ($request): void {
+            $query
+                ->where('assigned_by', $request->user()->id)
+                ->where('stages', '!=', 'TTD Penyusun Resmi')
+                ->whereNull('responded_at')
+                ->whereHas('status', fn ($query) => $query->whereIn('kode_status', [
+                    ApprovalStatus::PENDING,
+                    ApprovalStatus::WAITING,
+                ]));
+        };
+    }
+
+    private function assignedMonitorDocumentScope(Request $request): callable
+    {
+        $assignedMonitorApprovalScope = $this->assignedMonitorApprovalScope($request);
+
+        return function ($query) use ($assignedMonitorApprovalScope): void {
+            $query
+                ->whereDoesntHave('status', fn ($query) => $query->whereIn('nama_status', [
+                    StatusDocument::APPROVED,
+                    StatusDocument::OBSOLETE,
+                    StatusDocument::REJECTED,
+                    StatusDocument::CANCELLED,
+                ]))
+                ->whereHas('approvals', $assignedMonitorApprovalScope);
+        };
+    }
+
     private function assignedApprovalScope(Request $request): callable
     {
         return function ($query) use ($request): void {
@@ -272,6 +322,25 @@ class DocumentInboxController extends Controller
         return function ($query) use ($request): void {
             $query
                 ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::REJECTED))
+                ->where(function ($query) use ($request): void {
+                    $query
+                        ->where('user_id', $request->user()->id)
+                        ->orWhere('official_preparer_id', $request->user()->id);
+                });
+        };
+    }
+
+    private function pendingRevisionOwnerScope(Request $request): callable
+    {
+        return function ($query) use ($request): void {
+            $query
+                ->whereNotNull('revised_from')
+                ->whereHas('status', fn ($query) => $query->whereNotIn('nama_status', [
+                    StatusDocument::APPROVED,
+                    StatusDocument::OBSOLETE,
+                    StatusDocument::REJECTED,
+                    StatusDocument::CANCELLED,
+                ]))
                 ->where(function ($query) use ($request): void {
                     $query
                         ->where('user_id', $request->user()->id)
@@ -306,12 +375,14 @@ class DocumentInboxController extends Controller
         };
     }
 
-    private function approvalRow(Document $document, ?Approval $approval, bool $canAssign = false): array
+    private function approvalRow(Document $document, ?Approval $approval, bool $canAssign = false, ?User $user = null): array
     {
         $assignedAt = $approval?->assigned_at;
         $respondedAt = $approval?->responded_at;
         $submittedAt = $document->submitted_at ?? $document->created_at;
         $isRejectedCorrection = $document->status?->nama_status === StatusDocument::REJECTED && $approval === null;
+        $isPendingRevisionOwnerTask = $user !== null && $this->isPendingRevisionOwnerTask($document, $user) && $approval === null && ! $canAssign;
+        $isAssignedMonitorTask = $user !== null && $approval !== null && $this->isAssignedMonitorApproval($approval, $user);
         $statusCode = $approval?->status?->kode_status
             ?? $approval?->status?->nama_status
             ?? $document->status?->nama_status
@@ -323,8 +394,12 @@ class DocumentInboxController extends Controller
             'number' => $document->nomor_dokumen ?? '-',
             'name' => $document->nama_dokumen ?? '-',
             'type' => $document->documentType?->nama_types ?? '-',
-            'stage' => $isRejectedCorrection ? 'Perbaikan Pengajuan' : ($approval?->stages ?: ($canAssign ? 'Belum assign approver' : 'Approval')),
-            'waiting_for' => $approval?->approver?->name ?? ($canAssign ? 'Admin Kontrol Dokumen' : '-'),
+            'stage' => match (true) {
+                $isRejectedCorrection => 'Perbaikan Pengajuan',
+                $isPendingRevisionOwnerTask => 'Pengajuan Revisi',
+                default => $approval?->stages ?: ($canAssign ? 'Belum assign approver' : 'Approval'),
+            },
+            'waiting_for' => $approval?->approver?->name ?? ($canAssign || $isPendingRevisionOwnerTask ? 'Admin Kontrol Dokumen' : '-'),
             'owner' => $document->creator?->name ?? '-',
             'department' => $document->departments
                 ->map(fn ($department) => $department->kode_department ?: $department->nama_department)
@@ -338,8 +413,81 @@ class DocumentInboxController extends Controller
             'updated_at_sort' => $respondedAt?->timestamp ?? 0,
             'status' => $approval?->status?->nama_status ?? $document->status?->nama_status ?? $statusCode,
             'tone' => $this->approvalTone($statusCode),
-            'action' => $isRejectedCorrection ? 'Perlu Perbaikan' : ($approval ? 'Proses' : 'Assign'),
+            'action' => match (true) {
+                $isRejectedCorrection => 'Perlu Perbaikan',
+                $isAssignedMonitorTask => $this->waitingActionLabel($approval),
+                $approval !== null => $this->waitingActionLabel($approval),
+                $isPendingRevisionOwnerTask => 'Lihat',
+                default => 'Perlu Verifikasi Admin KD',
+            },
         ];
+    }
+
+    private function isPendingRevisionOwnerTask(Document $document, User $user): bool
+    {
+        return $document->revised_from !== null
+            && in_array($document->status?->nama_status, [
+                StatusDocument::DRAFT,
+                StatusDocument::PROPOSED,
+            ], true)
+            && in_array($user->id, [$document->user_id, $document->official_preparer_id], true);
+    }
+
+    private function taskApproval(Document $document, User $user): ?Approval
+    {
+        $monitorApproval = $document->approvals
+            ->filter(fn (Approval $approval): bool => $this->isAssignedMonitorApproval($approval, $user))
+            ->sortBy(fn (Approval $approval): int => $approval->status?->kode_status === ApprovalStatus::PENDING ? 0 : 1)
+            ->first();
+
+        if ($monitorApproval !== null) {
+            return $monitorApproval;
+        }
+
+        return $document->approvals->first();
+    }
+
+    private function isAssignedMonitorTask(Document $document, User $user): bool
+    {
+        if (in_array($document->status?->nama_status, [
+            StatusDocument::APPROVED,
+            StatusDocument::OBSOLETE,
+            StatusDocument::REJECTED,
+            StatusDocument::CANCELLED,
+        ], true)) {
+            return false;
+        }
+
+        return $document->approvals->contains(
+            fn (Approval $approval): bool => $this->isAssignedMonitorApproval($approval, $user),
+        );
+    }
+
+    private function isAssignedMonitorApproval(Approval $approval, User $user): bool
+    {
+        return $approval->assigned_by === $user->id
+            && $approval->user_id !== $user->id
+            && $approval->stages !== 'TTD Penyusun Resmi'
+            && $approval->responded_at === null
+            && in_array($approval->status?->kode_status, [
+                ApprovalStatus::PENDING,
+                ApprovalStatus::WAITING,
+            ], true);
+    }
+
+    private function waitingActionLabel(Approval $approval): string
+    {
+        $stage = trim($approval->stages ?: 'approver');
+
+        if (preg_match('/\boleh\s+(.+)$/i', $stage, $matches) === 1) {
+            $stage = trim($matches[1]);
+        }
+
+        if (preg_match('/^approval\s+(.+)$/i', $stage, $matches) === 1) {
+            $stage = trim($matches[1]);
+        }
+
+        return 'Menunggu '.$stage;
     }
 
     private function processedHistoryRow(Document $document, ?Approval $approval, User $user): array

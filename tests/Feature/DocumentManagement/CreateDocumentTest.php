@@ -8,6 +8,7 @@ use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
+use App\Models\ApprovalFlow;
 use App\Models\ApprovalStatus;
 use App\Models\Permission;
 use App\Models\Role;
@@ -195,6 +196,22 @@ class CreateDocumentTest extends TestCase
             'kode_status' => ApprovalStatus::APPROVED,
             'nama_status' => 'Disetujui',
         ]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::PENDING,
+            'nama_status' => 'Menunggu',
+        ]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::WAITING,
+            'nama_status' => 'Menunggu Giliran',
+        ]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::REJECTED,
+            'nama_status' => 'Ditolak',
+        ]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::TERMINATED,
+            'nama_status' => 'Dihentikan',
+        ]);
         DocumentType::create(['nama_types' => 'Prosedur']);
         DocumentType::create(['nama_types' => 'Form']);
 
@@ -303,6 +320,22 @@ class CreateDocumentTest extends TestCase
             'kode_status' => ApprovalStatus::APPROVED,
             'nama_status' => 'Disetujui',
         ]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::PENDING,
+            'nama_status' => 'Menunggu',
+        ]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::WAITING,
+            'nama_status' => 'Menunggu Giliran',
+        ]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::REJECTED,
+            'nama_status' => 'Ditolak',
+        ]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::TERMINATED,
+            'nama_status' => 'Dihentikan',
+        ]);
         DocumentType::create(['nama_types' => 'Prosedur']);
         DocumentType::create(['nama_types' => 'Form']);
         $source = Document::create([
@@ -407,12 +440,34 @@ class CreateDocumentTest extends TestCase
             ->assertSee('lembar-revisi.pdf')
             ->assertDontSee('Assign Approver');
 
+        $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee('Prosedur Revisi Master Updated')
+            ->assertSee('Pengajuan Revisi')
+            ->assertSee(StatusDocument::PROPOSED);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertDontSee('Prosedur Revisi Master Updated');
+
         $documentControlRole = Role::query()->firstOrCreate(['nama_role' => 'Admin Kontrol Dokumen']);
         $documentControlAdmin = User::factory()->create([
             'm_department_id' => $sourceDepartment->id,
             'name' => 'Admin Kontrol Dokumen',
         ]);
         $documentControlAdmin->roles()->attach($documentControlRole);
+        $approver = User::factory()->create(['name' => 'Approver Revisi']);
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $revision->m_document_level_id,
+            'nama_flow' => 'Flow Revisi Level IV',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Superintendent',
+        ]);
 
         $this->actingAs($documentControlAdmin)
             ->get(route('documents.inbox', ['tab' => 'needs-process']))
@@ -420,10 +475,21 @@ class CreateDocumentTest extends TestCase
             ->assertSee('Prosedur Revisi Master Updated')
             ->assertSee('Form')
             ->assertSee('Belum assign approver')
-            ->assertSee('Assign');
+            ->assertSee('Perlu Verifikasi Admin KD');
+
+        $this->actingAs($documentControlAdmin)
+            ->post(route('documents.approval.assign', $revision), [
+                'stage_approvers' => [
+                    $stage->id => [$approver->id],
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $revision));
+
+        $revision->refresh();
+        $this->assertSame('Revisi', $revision->documentType->nama_types);
 
         $this->actingAs($submitter)
-            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
             ->assertOk()
             ->assertSee('Prosedur Revisi Master Updated')
             ->assertSee('Pengajuan Revisi')

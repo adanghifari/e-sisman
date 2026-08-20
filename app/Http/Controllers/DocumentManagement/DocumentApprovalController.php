@@ -9,7 +9,7 @@ use App\Models\ApprovalFlowStage;
 use App\Models\ApprovalStatus;
 use App\Models\Document;
 use App\Models\DocumentFile;
-use App\Models\Role;
+use App\Models\DocumentType;
 use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
@@ -177,13 +177,11 @@ class DocumentApprovalController extends Controller
 
         foreach ($stages as $stage) {
             $stageLabel = $stage->display_label ?: 'Approval';
-            $role = Role::query()->firstOrCreate(['nama_role' => $stage->nama_tahap]);
             $stageStatus = $stage->stage_order === $activeStageOrder ? $pendingStatus : $waitingStatus;
             $userIds = $this->stageApproverIds($request, $document, $stage);
 
             Approval::query()
                 ->where('t_document_id', $document->id)
-                ->where('role_id', $role->id)
                 ->where('stages', $stageLabel)
                 ->whereNull('responded_at')
                 ->whereNotIn('user_id', $userIds)
@@ -193,7 +191,7 @@ class DocumentApprovalController extends Controller
                 $approval = Approval::query()->firstOrNew([
                     't_document_id' => $document->id,
                     'user_id' => $userId,
-                    'role_id' => $role->id,
+                    'stages' => $stageLabel,
                 ]);
 
                 if ($approval->exists && $approval->responded_at !== null) {
@@ -205,18 +203,19 @@ class DocumentApprovalController extends Controller
 
                 $approval->fill([
                     'm_approval_status_id' => $alreadySignedAsOfficialPreparer ? $approvedStatus->id : $stageStatus->id,
+                    'role_id' => null,
                     'assigned_by' => $request->user()->id,
                     'assigned_at' => now(),
                     'responded_at' => $alreadySignedAsOfficialPreparer
                         ? ($officialPreparerSignature->responded_at ?? $officialPreparerSignature->assigned_at ?? now())
                         : null,
                     'created_at' => $approval->created_at ?? now(),
-                    'stages' => $stageLabel,
                     'catatan' => null,
                 ])->save();
             }
         }
 
+        $this->markRevisionRequestAsAssigned($document);
         $this->advanceApprovalFlow($document);
 
         return redirect()
@@ -233,6 +232,29 @@ class DocumentApprovalController extends Controller
             ->route('documents.approval.show', $document)
             ->withErrors($errors)
             ->withInput();
+    }
+
+    private function markRevisionRequestAsAssigned(Document $document): void
+    {
+        if ($document->request_type !== 'revision') {
+            return;
+        }
+
+        if ($document->documentLevel?->kode !== 'level-4') {
+            return;
+        }
+
+        $revisionTypeId = DocumentType::query()
+            ->where('nama_types', 'Revisi')
+            ->value('id');
+
+        if ($revisionTypeId === null) {
+            return;
+        }
+
+        $document->forceFill([
+            'm_document_types_id' => $revisionTypeId,
+        ])->save();
     }
 
     public function file(Request $request, Document $document, DocumentFile $file, RecordDocumentDownload $recordDocumentDownload): BinaryFileResponse
@@ -490,7 +512,37 @@ class DocumentApprovalController extends Controller
             return;
         }
 
+        $this->promoteRevisionRequestToMaster($document);
+        $document->refresh();
         $this->obsoletePreviousApprovedRevisions($document, $approvedStatus);
+    }
+
+    private function promoteRevisionRequestToMaster(Document $document): void
+    {
+        if ($document->request_type !== 'revision' || $document->revised_from === null) {
+            return;
+        }
+
+        $source = Document::query()
+            ->select([
+                'id',
+                'm_document_level_id',
+                'm_document_types_id',
+                'reference',
+                'nomor_dokumen',
+            ])
+            ->find($document->revised_from);
+
+        if ($source === null) {
+            return;
+        }
+
+        $document->update([
+            'm_document_level_id' => $source->m_document_level_id,
+            'm_document_types_id' => $source->m_document_types_id,
+            'reference' => $source->reference,
+            'nomor_dokumen' => $source->nomor_dokumen,
+        ]);
     }
 
     private function obsoleteSourceMasterDocument(Document $document): void

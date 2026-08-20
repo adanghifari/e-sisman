@@ -103,8 +103,7 @@ class DocumentMasterController extends Controller
             $rootDocument = Document::query()
                 ->whereKey($document->revisionRootId())
                 ->first();
-            $obsoleteDocuments = $document->revisionFamily()
-                ->where('id', '!=', $document->id)
+            $family = $document->revisionFamily()
                 ->load([
                     'status',
                     'documentLevel',
@@ -112,7 +111,24 @@ class DocumentMasterController extends Controller
                     'businessFunction',
                     'departments',
                 ])
-                ->filter(fn (Document $revision): bool => $revision->status?->nama_status === StatusDocument::OBSOLETE);
+                ->sortBy('nomor_revisi')
+                ->values();
+            $obsoleteDocuments = $family
+                ->where('id', '!=', $document->id)
+                ->filter(fn (Document $revision): bool => $revision->status?->nama_status === StatusDocument::OBSOLETE)
+                ->map(function (Document $revision) use ($family): Document {
+                    $nextRevision = $family
+                        ->where('nomor_revisi', '>', $revision->nomor_revisi)
+                        ->sortBy('nomor_revisi')
+                        ->first();
+
+                    $revision->setAttribute(
+                        'master_obsolete_date',
+                        $nextRevision?->tanggal_terbit ?? $nextRevision?->approved_at,
+                    );
+
+                    return $revision;
+                });
 
             $document->setRelation(
                 'masterObsoleteDocuments',

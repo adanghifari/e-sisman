@@ -70,8 +70,8 @@ class DocumentMasterTest extends TestCase
             ->get(route('documents.master'))
             ->assertOk()
             ->assertSee('Prosedur Pengendalian Dokumen Revisi')
-            ->assertSee('Dokumen Obsolete')
-            ->assertSee('Prosedur Pengendalian Dokumen')
+            ->assertSee('Tgl Obsolete')
+            ->assertSee('PS-SMR-001')
             ->assertSee('Obsolete');
     }
 
@@ -101,14 +101,98 @@ class DocumentMasterTest extends TestCase
             ->assertOk()
             ->assertSee('Instruksi Kerja Revisi Aktif')
             ->assertSee('IK-SMR-010')
-            ->assertSee('Dokumen Obsolete')
-            ->assertSee('Instruksi Kerja Lama');
+            ->assertSee('Tgl Obsolete')
+            ->assertSee('00.00');
 
         $this->assertLessThan(
-            strpos($response->getContent(), 'Dokumen Obsolete'),
+            strpos($response->getContent(), 'Tgl Obsolete'),
             strpos($response->getContent(), 'Instruksi Kerja Revisi Aktif'),
         );
         $response->assertSee(route('documents.master.show', $latestRevision), false);
+    }
+
+    public function test_approved_level_four_revision_becomes_master_and_groups_old_master_as_obsolete(): void
+    {
+        $submitter = User::factory()->create();
+        $approver = User::factory()->create();
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        ApprovalStatus::create(['kode_status' => ApprovalStatus::PENDING, 'nama_status' => 'Dalam Review']);
+        ApprovalStatus::create(['kode_status' => ApprovalStatus::WAITING, 'nama_status' => 'Menunggu']);
+        ApprovalStatus::create(['kode_status' => ApprovalStatus::APPROVED, 'nama_status' => 'Disetujui']);
+        ApprovalStatus::create(['kode_status' => ApprovalStatus::REJECTED, 'nama_status' => 'Ditolak']);
+        ApprovalStatus::create(['kode_status' => ApprovalStatus::TERMINATED, 'nama_status' => 'Dibatalkan']);
+
+        $source = $this->createDocument($submitter, $approvedStatus, [
+            'nama_dokumen' => 'Prosedur Ikatan Dinas SSO',
+            'nomor_dokumen' => 'PS-KSA-02',
+            'nomor_revisi' => 0,
+            'approved_at' => now()->subDay(),
+        ]);
+        $levelFour = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $revisionType = DocumentType::query()->firstOrCreate(['nama_types' => 'Revisi']);
+
+        $revision = Document::create([
+            'm_document_level_id' => $levelFour->id,
+            'm_status_document_id' => StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail()->id,
+            'm_document_types_id' => $revisionType->id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Prosedur Ikatan Dinas SSO',
+            'nomor_dokumen' => 'FMPS-KSA-02',
+            'nomor_revisi' => 1,
+            'submitted_at' => now(),
+        ]);
+        $revision->departments()->sync($source->departments()->pluck('departments.id')->all());
+
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $levelFour->id,
+            'nama_flow' => 'Flow Revisi Level IV',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Disahkan Oleh',
+            'nama_tahap' => 'Superintendent',
+        ]);
+
+        Approval::create([
+            't_document_id' => $revision->id,
+            'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::PENDING)->id,
+            'user_id' => $approver->id,
+            'role_id' => null,
+            'assigned_by' => $submitter->id,
+            'assigned_at' => now(),
+            'stages' => $stage->display_label,
+        ]);
+
+        $this->actingAs($approver)
+            ->post(route('documents.approval.approve', $revision))
+            ->assertRedirect(route('documents.approval.show', $revision));
+
+        $revision->refresh();
+        $source->refresh();
+
+        $this->assertSame(StatusDocument::APPROVED, $revision->status->nama_status);
+        $this->assertSame(StatusDocument::OBSOLETE, $source->status->nama_status);
+        $this->assertSame($source->m_document_level_id, $revision->m_document_level_id);
+        $this->assertSame($source->m_document_types_id, $revision->m_document_types_id);
+        $this->assertSame('PS-KSA-02', $revision->nomor_dokumen);
+        $this->assertSame(1, $revision->nomor_revisi);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertSee('Prosedur Ikatan Dinas SSO')
+            ->assertSee('PS-KSA-02')
+            ->assertSee('00.01')
+            ->assertSee('Tgl Obsolete')
+            ->assertSee('00.00')
+            ->assertSee('Obsolete');
     }
 
     public function test_master_detail_shows_approval_history_sorted_by_stage_with_response_timestamp(): void

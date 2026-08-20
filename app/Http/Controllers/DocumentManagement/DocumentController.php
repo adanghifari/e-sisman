@@ -9,7 +9,6 @@ use App\Models\BusinessProcess;
 use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
-use App\Models\Role;
 use App\Models\StatusDocument;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -392,13 +391,12 @@ class DocumentController extends Controller
             return;
         }
 
-        $role = Role::query()->firstOrCreate(['nama_role' => 'Penyusun Resmi']);
         $approvedStatus = ApprovalStatus::findByCode(ApprovalStatus::APPROVED);
 
         $document->approvals()->create([
             'm_approval_status_id' => $approvedStatus->id,
             'user_id' => $document->official_preparer_id,
-            'role_id' => $role->id,
+            'role_id' => null,
             'assigned_by' => $assignedBy,
             'assigned_at' => $respondedAt,
             'responded_at' => $respondedAt,

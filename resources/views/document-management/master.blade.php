@@ -33,13 +33,12 @@
             <x-ui.scrollable-table max-height="620px" min-width="1120px" class="table-fixed text-base">
                 <colgroup>
                     <col class="w-[3%]">
-                    <col class="w-[27%]">
-                    <col class="w-[13%]">
-                    <col class="w-[7%]">
-                    <col class="w-[12%]">
-                    <col class="w-[17%]">
-                    <col class="w-[10%]">
-                    <col class="w-[7%]">
+                    <col class="w-[30%]">
+                    <col class="w-[14%]">
+                    <col class="w-[8%]">
+                    <col class="w-[20%]">
+                    <col class="w-[11%]">
+                    <col class="w-[9%]">
                     <col class="w-[4%]">
                 </colgroup>
 
@@ -49,7 +48,6 @@
                         <th class="sticky top-0 z-10 bg-slate-50 px-3 py-3 font-semibold">Nama Dokumen</th>
                         <th class="sticky top-0 z-10 bg-slate-50 px-3 py-3 font-semibold">Nomor Dokumen</th>
                         <th class="sticky top-0 z-10 bg-slate-50 px-3 py-3 font-semibold">Revisi</th>
-                        <th class="sticky top-0 z-10 bg-slate-50 px-3 py-3 font-semibold">Dok Level</th>
                         <th class="sticky top-0 z-10 bg-slate-50 px-3 py-3 font-semibold">Proses / Fungsi</th>
                         <th class="sticky top-0 z-10 bg-slate-50 px-3 py-3 font-semibold">Tgl Terbit</th>
                         <th class="sticky top-0 z-10 bg-slate-50 px-3 py-3 font-semibold">Stamp</th>
@@ -91,7 +89,6 @@
                             </td>
                             <td class="px-3 py-4 font-semibold text-slate-700">{{ $document->master_display_number ?: $document->nomor_dokumen ?: '-' }}</td>
                             <td class="px-3 py-4 text-slate-600">{{ $document->formatted_revision }}</td>
-                            <td class="px-3 py-4 text-slate-600">{{ $document->documentLevel?->nama_dokumen ?: '-' }}</td>
                             <td class="px-3 py-4 text-slate-600">{{ $processLabel ?: '-' }}</td>
                             <td class="px-3 py-4 text-slate-600">{{ $publishedAt?->format('d/m/Y') ?: '-' }}</td>
                             <td class="px-3 py-4">
@@ -112,39 +109,62 @@
                             </td>
                         </tr>
 
-                        @foreach ($obsoleteDocuments as $obsolete)
-                            @php
-                                $obsoletePublishedAt = $obsolete->tanggal_terbit ?? $obsolete->approved_at;
-                                $obsoleteProcessLabel = collect([
-                                    $obsolete->businessProcess?->nama_proses_bisnis,
-                                    $obsolete->businessFunction?->nama_proses_fungsi,
-                                ])->filter()->implode(' / ');
-                            @endphp
+                        @if ($hasObsoleteDocuments)
+                            <tr class="is-child-row hidden bg-slate-50/40" data-table-row-target="{{ $rowKey }}">
+                                <td colspan="8" class="px-0 py-4">
+                                    <div class="ml-[9%] mr-8 overflow-hidden rounded-xl border border-slate-200 bg-white">
+                                        <table class="w-full table-fixed text-sm">
+                                            <colgroup>
+                                                <col class="w-[23%]">
+                                                <col class="w-[11%]">
+                                                <col class="w-[17%]">
+                                                <col class="w-[19%]">
+                                                <col class="w-[16%]">
+                                                <col class="w-[14%]">
+                                            </colgroup>
+                                            <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+                                                <tr>
+                                                    <th class="px-5 py-3 text-left font-semibold">Nama Dokumen</th>
+                                                    <th class="px-5 py-3 text-left font-semibold">Revisi</th>
+                                                    <th class="px-5 py-3 text-left font-semibold">Tgl Terbit</th>
+                                                    <th class="px-5 py-3 text-left font-semibold">Tgl Obsolete</th>
+                                                    <th class="px-5 py-3 text-left font-semibold">Stamp</th>
+                                                    <th class="px-5 py-3 text-left font-semibold">Aksi</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody class="divide-y divide-slate-100">
+                                                @foreach ($obsoleteDocuments as $obsolete)
+                                                    @php
+                                                        $obsoletePublishedAt = $obsolete->tanggal_terbit ?? $obsolete->approved_at;
+                                                        $obsoleteDate = $obsolete->master_obsolete_date;
+                                                    @endphp
 
-                            <tr class="is-child-row hidden" data-table-row-target="{{ $rowKey }}">
-                                <td class="px-1 py-3"></td>
-                                <td class="px-3 py-3 pl-8">
-                                    <p class="text-xs font-semibold uppercase tracking-wide text-slate-400">Dokumen Obsolete</p>
-                                    <p class="mt-1 font-semibold uppercase tracking-wide text-slate-700">{{ $obsolete->nama_dokumen }}</p>
-                                </td>
-                                <td class="px-3 py-3 font-semibold text-slate-600">{{ $obsolete->nomor_dokumen ?: '-' }}</td>
-                                <td class="px-3 py-3 text-slate-600">{{ $obsolete->formatted_revision }}</td>
-                                <td class="px-3 py-3 text-slate-500">{{ $obsolete->documentLevel?->nama_dokumen ?: '-' }}</td>
-                                <td class="px-3 py-3 text-slate-500">{{ $obsoleteProcessLabel ?: '-' }}</td>
-                                <td class="px-3 py-3 text-slate-500">{{ $obsoletePublishedAt?->format('d/m/Y') ?: '-' }}</td>
-                                <td class="px-3 py-3">
-                                    <x-ui.status-badge label="Obsolete" tone="red" />
-                                </td>
-                                <td class="px-2 py-3">
-                                    <x-ui.icon-button :href="route('documents.master.show', $obsolete)" icon="eye" label="Lihat detail obsolete" size="sm" />
+                                                    <tr>
+                                                        <td class="px-5 py-4 font-semibold uppercase tracking-wide text-slate-700">
+                                                            {{ $obsolete->nomor_dokumen ?: $obsolete->nama_dokumen }}
+                                                        </td>
+                                                        <td class="px-5 py-4 text-slate-600">{{ $obsolete->formatted_revision }}</td>
+                                                        <td class="px-5 py-4 text-slate-600">{{ $obsoletePublishedAt?->format('d/m/Y') ?: '-' }}</td>
+                                                        <td class="px-5 py-4 text-slate-600">{{ $obsoleteDate?->format('d/m/Y') ?: '-' }}</td>
+                                                        <td class="px-5 py-4">
+                                                            <x-ui.status-badge label="Obsolete" tone="red" />
+                                                        </td>
+                                                        <td class="px-5 py-4">
+                                                            <x-ui.icon-button :href="route('documents.master.show', $obsolete)" icon="eye" label="Lihat detail obsolete" size="sm" />
+                                                        </td>
+                                                    </tr>
+                                                @endforeach
+                                            </tbody>
+                                        </table>
+                                    </div>
                                 </td>
                             </tr>
-                        @endforeach
+                        @endif
                     </tbody>
                 @empty
                     <tbody>
                         <tr>
-                            <td colspan="9" class="px-5 py-10 text-center text-sm text-slate-500">
+                            <td colspan="8" class="px-5 py-10 text-center text-sm text-slate-500">
                                 Tidak ada dokumen master yang cocok dengan filter.
                             </td>
                         </tr>
