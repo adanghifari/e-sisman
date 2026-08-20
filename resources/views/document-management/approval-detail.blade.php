@@ -622,12 +622,17 @@
 
     <script>
         (() => {
-            const template = document.querySelector('[data-approver-slot-template]');
+            if (window.approverSlotManagerReady) {
+                return;
+            }
+
+            window.approverSlotManagerReady = true;
 
             document.addEventListener('click', (event) => {
                 const addButton = event.target.closest('[data-add-approver-slot]');
 
                 if (addButton) {
+                    const template = document.querySelector('[data-approver-slot-template]');
                     const stage = addButton.closest('[data-approver-stage]');
                     const list = stage?.querySelector('[data-approver-slots]');
 

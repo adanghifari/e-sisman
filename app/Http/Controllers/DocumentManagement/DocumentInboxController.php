@@ -122,6 +122,11 @@ class DocumentInboxController extends Controller
         $assignableDocumentScope = $this->assignableDocumentScope($request);
 
         $query = Document::query()
+            ->withExists([
+                'approvals as has_flow_approvals' => function ($query): void {
+                    $query->where('stages', '!=', 'TTD Penyusun Resmi');
+                },
+            ])
             ->with([
                 'documentType',
                 'creator',
@@ -143,6 +148,9 @@ class DocumentInboxController extends Controller
         });
 
         return $query->get()
+            ->filter(function (Document $document): bool {
+                return $document->approvals->first() !== null || ! $document->has_flow_approvals;
+            })
             ->map(fn (Document $document): array => $this->approvalRow(
                 $document,
                 $document->approvals->first(),
@@ -153,7 +161,8 @@ class DocumentInboxController extends Controller
 
     private function myProcessedHistory(Request $request): array
     {
-        $approvalScope = $this->approvalScope($request, processed: true);
+        $approvalScope = $this->approvalScope($request, processed: true, includeAllForDeveloper: false);
+        $assignedApprovalScope = $this->assignedApprovalScope($request);
         $user = $request->user();
 
         return Document::query()
@@ -162,13 +171,17 @@ class DocumentInboxController extends Controller
                 'creator',
                 'status',
                 'departments',
-                'approvals' => function ($query) use ($approvalScope): void {
-                    $approvalScope($query);
+                'approvals' => function ($query) use ($approvalScope, $assignedApprovalScope): void {
+                    $query->where(function ($query) use ($approvalScope, $assignedApprovalScope): void {
+                        $query->where($approvalScope)
+                            ->orWhere($assignedApprovalScope);
+                    });
                     $query->with(['status', 'approver'])->orderByDesc('responded_at');
                 },
             ])
-            ->where(function ($query) use ($approvalScope, $user): void {
+            ->where(function ($query) use ($approvalScope, $assignedApprovalScope, $user): void {
                 $query->whereHas('approvals', $approvalScope);
+                $query->orWhereHas('approvals', $assignedApprovalScope);
 
                 if (! $user->isDeveloper()) {
                     $query
@@ -187,12 +200,23 @@ class DocumentInboxController extends Controller
 
     private function processedHistoryApproval(Document $document, User $user): ?Approval
     {
-        $flowApproval = $document->approvals->first(
-            fn (Approval $approval): bool => $approval->stages !== 'TTD Penyusun Resmi',
+        $respondedApproval = $document->approvals->first(
+            fn (Approval $approval): bool => $approval->user_id === $user->id
+                && $approval->responded_at !== null
+                && $approval->stages !== 'TTD Penyusun Resmi',
         );
 
-        if ($flowApproval !== null) {
-            return $flowApproval;
+        if ($respondedApproval !== null) {
+            return $respondedApproval;
+        }
+
+        $assignedApproval = $document->approvals->first(
+            fn (Approval $approval): bool => $approval->assigned_by === $user->id
+                && $approval->stages !== 'TTD Penyusun Resmi',
+        );
+
+        if ($assignedApproval !== null) {
+            return $assignedApproval;
         }
 
         if ($document->user_id === $user->id) {
@@ -202,11 +226,14 @@ class DocumentInboxController extends Controller
         return $document->approvals->first();
     }
 
-    private function approvalScope(Request $request, bool $processed): callable
+    private function approvalScope(Request $request, bool $processed, bool $includeAllForDeveloper = true): callable
     {
-        return function ($query) use ($request, $processed) {
+        return function ($query) use ($request, $processed, $includeAllForDeveloper) {
             $query
-                ->when(! $request->user()->isDeveloper(), fn ($query) => $query->where('user_id', $request->user()->id))
+                ->when(
+                    ! $includeAllForDeveloper || ! $request->user()->isDeveloper(),
+                    fn ($query) => $query->where('user_id', $request->user()->id),
+                )
                 ->when(
                     $processed,
                     fn ($query) => $query->whereNotNull('responded_at'),
@@ -214,6 +241,15 @@ class DocumentInboxController extends Controller
                         ->whereNull('responded_at')
                         ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::PENDING)),
                 );
+        };
+    }
+
+    private function assignedApprovalScope(Request $request): callable
+    {
+        return function ($query) use ($request): void {
+            $query
+                ->where('assigned_by', $request->user()->id)
+                ->where('stages', '!=', 'TTD Penyusun Resmi');
         };
     }
 
@@ -233,6 +269,9 @@ class DocumentInboxController extends Controller
 
         return function ($query) use ($user): void {
             $query->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED));
+            $query->whereDoesntHave('approvals', function ($query): void {
+                $query->where('stages', '!=', 'TTD Penyusun Resmi');
+            });
 
             if (! $user->isAdmin()) {
                 $query->whereHas('departments', fn ($query) => $query->whereKey($user->m_department_id));
@@ -277,7 +316,11 @@ class DocumentInboxController extends Controller
 
     private function processedHistoryRow(Document $document, ?Approval $approval, User $user): array
     {
-        if ($approval !== null || $user->isDeveloper()) {
+        if ($approval !== null) {
+            if ($approval->assigned_by === $user->id && $approval->user_id !== $user->id) {
+                return $this->assignedHistoryRow($document, $approval);
+            }
+
             return $this->approvalRow($document, $approval, $user->isDeveloper());
         }
 
@@ -293,6 +336,19 @@ class DocumentInboxController extends Controller
         $row['waiting_for'] = '-';
         $row['updated_at'] = $submittedAt?->translatedFormat('d M Y H:i') ?? '-';
         $row['updated_at_sort'] = $submittedAt?->timestamp ?? 0;
+        $row['action'] = 'Lihat';
+
+        return $row;
+    }
+
+    private function assignedHistoryRow(Document $document, Approval $approval): array
+    {
+        $row = $this->approvalRow($document, null);
+
+        $row['stage'] = 'Assign Approver';
+        $row['waiting_for'] = $approval->approver?->name ?? '-';
+        $row['updated_at'] = $approval->assigned_at?->translatedFormat('d M Y H:i') ?? '-';
+        $row['updated_at_sort'] = $approval->assigned_at?->timestamp ?? 0;
         $row['action'] = 'Lihat';
 
         return $row;

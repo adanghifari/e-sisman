@@ -418,7 +418,7 @@ class DocumentInboxTest extends TestCase
             ->assertDontSee('Keputusan Approval');
     }
 
-    public function test_developer_can_see_processed_history_for_all_users(): void
+    public function test_developer_does_not_see_processed_history_for_other_users_without_processing_it(): void
     {
         $developer = User::factory()->create([
             'nik' => '000000',
@@ -438,8 +438,61 @@ class DocumentInboxTest extends TestCase
         $this->actingAs($developer)
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
             ->assertOk()
-            ->assertSee('Riwayat Terlihat Developer')
-            ->assertSee('IK-SMR-DEV');
+            ->assertDontSee('Riwayat Terlihat Developer')
+            ->assertDontSee('IK-SMR-DEV');
+    }
+
+    public function test_document_control_admin_sees_assigned_document_in_processed_history(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create(['name' => 'Pengaju Assign']);
+        $approver = User::factory()->create(['name' => 'Approver Assign']);
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Selesai Assign',
+            'nomor_dokumen' => 'PS-SMR-ASSIGN-HISTORY',
+        ]);
+        $admin = $this->documentControlAdmin($document->departments()->firstOrFail());
+        $assignedAt = now()->setDate(2026, 8, 20)->setTime(10, 15);
+
+        $this->createApproval($document, $approver, ApprovalStatus::PENDING, [
+            'assigned_by' => $admin->id,
+            'assigned_at' => $assignedAt,
+            'stages' => 'Superintendent',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Dokumen Selesai Assign')
+            ->assertSee('PS-SMR-ASSIGN-HISTORY')
+            ->assertSee('Assign Approver')
+            ->assertSee(StatusDocument::PROPOSED)
+            ->assertDontSee('Disetujui');
+    }
+
+    public function test_assigned_document_is_not_shown_in_document_control_admin_needs_process_tab(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create(['name' => 'Pengaju Assigned']);
+        $approver = User::factory()->create(['name' => 'Approver Assigned']);
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Sudah Assign',
+            'nomor_dokumen' => 'PS-SMR-ASSIGNED',
+        ]);
+        $admin = $this->documentControlAdmin($document->departments()->firstOrFail());
+
+        $this->createApproval($document, $approver, ApprovalStatus::PENDING, [
+            'assigned_by' => $admin->id,
+            'stages' => 'Superintendent',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertDontSee('Dokumen Sudah Assign')
+            ->assertDontSee('PS-SMR-ASSIGNED');
     }
 
     public function test_approval_detail_page_shows_readonly_document_and_actions(): void
