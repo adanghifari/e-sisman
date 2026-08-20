@@ -562,8 +562,8 @@ class CreateDocumentTest extends TestCase
         $documentControlAdmin->roles()->attach($documentControlRole);
         $approver = User::factory()->create(['name' => 'Approver Revisi']);
         $flow = ApprovalFlow::create([
-            'm_document_level_id' => $revision->m_document_level_id,
-            'nama_flow' => 'Flow Revisi Level IV',
+            'm_document_level_id' => $source->m_document_level_id,
+            'nama_flow' => 'Flow Revisi Prosedur',
         ]);
         $stage = $flow->stages()->create([
             'stage_order' => 1,
@@ -619,6 +619,45 @@ class CreateDocumentTest extends TestCase
         $this->assertSame($source->id, $secondRevision->revised_from);
         $this->assertSame('FMPS-SMR-010', $secondRevision->nomor_dokumen);
         $this->assertSame(2, $secondRevision->nomor_revisi);
+    }
+
+    public function test_obsolete_document_cannot_be_used_as_revision_source(): void
+    {
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'QA',
+            'nama_proses_fungsi' => 'Quality Assurance',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+        $type = DocumentType::create(['nama_types' => 'Prosedur']);
+
+        $source = Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $obsoleteStatus->id,
+            'm_document_types_id' => $type->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Prosedur Obsolete',
+            'nomor_dokumen' => 'PS-SMR-OLD',
+            'nomor_revisi' => 0,
+            'approved_at' => now(),
+        ]);
+        $source->departments()->sync([$department->id]);
+
+        $this->actingAs($user)
+            ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
+            ->assertNotFound();
     }
 
     public function test_level_four_revision_from_work_instruction_uses_fmik_document_number(): void

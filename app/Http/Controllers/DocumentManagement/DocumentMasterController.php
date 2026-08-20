@@ -286,6 +286,10 @@ class DocumentMasterController extends Controller
 
     private function canRequestRevision(Request $request, Document $document): bool
     {
+        if ($document->status?->nama_status !== StatusDocument::APPROVED) {
+            return false;
+        }
+
         $user = $request->user();
 
         if ($user?->isDeveloper() || $user?->isAdmin()) {

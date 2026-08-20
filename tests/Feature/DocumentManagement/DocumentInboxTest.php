@@ -466,6 +466,68 @@ class DocumentInboxTest extends TestCase
             ->assertDontSee('Dokumen Revisi Baru');
     }
 
+    public function test_submitter_history_shows_revision_form_number_after_work_instruction_revision_is_approved(): void
+    {
+        $submitter = User::factory()->create(['name' => 'Pengaju Revisi IK']);
+        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        $workInstructionLevel = DocumentLevel::query()->where('kode', 'level-3')->firstOrFail();
+        $formLevel = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $workInstructionType = DocumentType::query()->firstOrCreate(['nama_types' => 'IK']);
+        $revisionType = DocumentType::query()->firstOrCreate(['nama_types' => 'Revisi']);
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'MRI',
+            'nama_proses_bisnis' => 'Manajemen Risiko Industri',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+
+        $source = Document::create([
+            'm_document_level_id' => $workInstructionLevel->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $workInstructionType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'nama_dokumen' => 'Instruksi Kerja Lama',
+            'nomor_dokumen' => 'IK-MRI-01-04',
+            'nomor_revisi' => 0,
+            'submitted_at' => now()->subDays(2),
+            'approved_at' => now()->subDay(),
+        ]);
+        $source->departments()->sync([$department->id]);
+
+        $revision = Document::create([
+            'm_document_level_id' => $formLevel->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $revisionType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Instruksi Kerja Revisi',
+            'nomor_dokumen' => 'IK-MRI-01-04',
+            'nomor_revisi' => 1,
+            'submitted_at' => now()->subHour(),
+            'approved_at' => now(),
+        ]);
+        $revision->departments()->sync([$department->id]);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Instruksi Kerja Revisi')
+            ->assertSee('FMIK-MRI-01-04');
+    }
+
     public function test_responded_approver_can_open_document_detail_from_processed_history(): void
     {
         $approver = User::factory()->create(['name' => 'Approver Detail Riwayat']);

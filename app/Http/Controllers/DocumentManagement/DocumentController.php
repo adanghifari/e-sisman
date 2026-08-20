@@ -228,7 +228,7 @@ class DocumentController extends Controller
 
         abort_unless($level === 'level-4' || $source->documentLevel?->kode === $level, 404);
         abort_unless(
-            in_array($source->status?->nama_status, [StatusDocument::APPROVED, StatusDocument::OBSOLETE], true),
+            $source->status?->nama_status === StatusDocument::APPROVED,
             404,
         );
         abort_unless($this->userCanRequestRevision($request, $source), 403);

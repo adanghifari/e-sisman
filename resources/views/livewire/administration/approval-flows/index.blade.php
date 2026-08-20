@@ -54,7 +54,11 @@
                             <p class="text-xs font-semibold uppercase tracking-wide text-sky-700">Flow Aktif</p>
                             <h2 class="mt-1 text-xl font-bold text-slate-950">{{ $selectedDocumentLevel->nama_level }}</h2>
                             <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                                {{ $selectedDocumentLevel->nama_dokumen }}. Pihak dibawah ini akan tampil sebagai penanda tangan pada lembar pengesahan.
+                                @if ($selectedLevelInheritsApprovalFlow)
+                                    {{ $selectedDocumentLevel->nama_dokumen }} mengikuti approval flow dokumen induk yang sedang direvisi.
+                                @else
+                                    {{ $selectedDocumentLevel->nama_dokumen }}. Pihak dibawah ini akan tampil sebagai penanda tangan pada lembar pengesahan.
+                                @endif
                             </p>
                         </div>
 
@@ -67,7 +71,13 @@
                     </div>
 
                     <div class="space-y-4 p-5">
-                        @forelse ($approvalStages as $stage)
+                        @if ($selectedLevelInheritsApprovalFlow)
+                            <x-ui.empty-state
+                                title="Mengikuti Flow Dokumen Induk"
+                                description="Revisi Manual, Prosedur, dan Instruksi Kerja memakai tahap approval dari level dokumen asalnya."
+                            />
+                        @else
+                            @forelse ($approvalStages as $stage)
                             <section class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
                                 <div class="grid gap-3 lg:grid-cols-[56px_120px_minmax(180px,260px)_minmax(0,1fr)_88px] lg:items-center">
                                     <div class="flex size-10 items-center justify-center self-center rounded-lg bg-sky-100 text-sm font-bold text-sky-700">
@@ -121,7 +131,8 @@
                                     </x-ui.action-button>
                                 @endif
                             </x-ui.empty-state>
-                        @endforelse
+                            @endforelse
+                        @endif
                     </div>
                 </x-ui.panel>
             @endif

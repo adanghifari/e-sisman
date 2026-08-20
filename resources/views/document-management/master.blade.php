@@ -30,16 +30,16 @@
             description="Menampilkan {{ $documents->count() }} dokumen dari total {{ $totalDocuments }} dokumen master."
             :padded="false"
         >
-            <x-ui.scrollable-table max-height="620px" min-width="1120px" class="table-fixed text-base">
+            <x-ui.scrollable-table max-height="620px" min-width="100%" :horizontal="false" class="table-fixed text-base">
                 <colgroup>
-                    <col class="w-[3%]">
+                    <col class="w-[4%]">
                     <col class="w-[30%]">
                     <col class="w-[14%]">
                     <col class="w-[8%]">
-                    <col class="w-[20%]">
+                    <col class="w-[18%]">
                     <col class="w-[11%]">
-                    <col class="w-[9%]">
-                    <col class="w-[4%]">
+                    <col class="w-[8%]">
+                    <col class="w-[7%]">
                 </colgroup>
 
                 <thead class="bg-slate-50 text-xs uppercase text-slate-500">
@@ -97,65 +97,62 @@
                             <td class="px-2 py-4">
                                 <div class="flex items-center gap-2">
                                     <x-ui.icon-button :href="route('documents.master.show', $document)" icon="eye" label="Lihat detail" size="sm" />
-                                    @if ($document->can_request_revision)
-                                        <x-ui.icon-button
-                                            :href="route('documents.create.level', ['level-4', 'revised_from' => $document->id])"
-                                            icon="arrow-path"
-                                            label="Ajukan revisi"
-                                            size="sm"
-                                        />
-                                    @endif
                                 </div>
                             </td>
                         </tr>
 
                         @if ($hasObsoleteDocuments)
                             <tr class="is-child-row hidden bg-slate-50/40" data-table-row-target="{{ $rowKey }}">
-                                <td colspan="8" class="px-0 py-4">
-                                    <div class="ml-[9%] mr-8 overflow-hidden rounded-xl border border-slate-200 bg-white">
-                                        <table class="w-full table-fixed text-sm">
-                                            <colgroup>
-                                                <col class="w-[23%]">
-                                                <col class="w-[11%]">
-                                                <col class="w-[17%]">
-                                                <col class="w-[19%]">
-                                                <col class="w-[16%]">
-                                                <col class="w-[14%]">
-                                            </colgroup>
-                                            <thead class="bg-slate-50 text-xs uppercase text-slate-500">
-                                                <tr>
-                                                    <th class="px-5 py-3 text-left font-semibold">Nama Dokumen</th>
-                                                    <th class="px-5 py-3 text-left font-semibold">Revisi</th>
-                                                    <th class="px-5 py-3 text-left font-semibold">Tgl Terbit</th>
-                                                    <th class="px-5 py-3 text-left font-semibold">Tgl Obsolete</th>
-                                                    <th class="px-5 py-3 text-left font-semibold">Stamp</th>
-                                                    <th class="px-5 py-3 text-left font-semibold">Aksi</th>
-                                                </tr>
-                                            </thead>
-                                            <tbody class="divide-y divide-slate-100">
-                                                @foreach ($obsoleteDocuments as $obsolete)
-                                                    @php
-                                                        $obsoletePublishedAt = $obsolete->tanggal_terbit ?? $obsolete->approved_at;
-                                                        $obsoleteDate = $obsolete->master_obsolete_date;
-                                                    @endphp
+                                <td colspan="8" class="px-0 py-0">
+                                    <div class="relative py-3 pl-14 pr-5">
+                                        <span class="absolute left-6 top-0 h-1/2 border-l border-slate-300"></span>
+                                        <span class="absolute left-6 top-1/2 w-8 border-t border-slate-300"></span>
 
+                                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-100/70">
+                                            <table class="w-full table-fixed text-sm">
+                                                <colgroup>
+                                                    <col class="w-[26%]">
+                                                    <col class="w-[11%]">
+                                                    <col class="w-[17%]">
+                                                    <col class="w-[18%]">
+                                                    <col class="w-[16%]">
+                                                    <col class="w-[12%]">
+                                                </colgroup>
+                                                <thead class="bg-slate-50 text-xs uppercase text-slate-500">
                                                     <tr>
-                                                        <td class="px-5 py-4 font-semibold uppercase tracking-wide text-slate-700">
-                                                            {{ $obsolete->nomor_dokumen ?: $obsolete->nama_dokumen }}
-                                                        </td>
-                                                        <td class="px-5 py-4 text-slate-600">{{ $obsolete->formatted_revision }}</td>
-                                                        <td class="px-5 py-4 text-slate-600">{{ $obsoletePublishedAt?->format('d/m/Y') ?: '-' }}</td>
-                                                        <td class="px-5 py-4 text-slate-600">{{ $obsoleteDate?->format('d/m/Y') ?: '-' }}</td>
-                                                        <td class="px-5 py-4">
-                                                            <x-ui.status-badge label="Obsolete" tone="red" />
-                                                        </td>
-                                                        <td class="px-5 py-4">
-                                                            <x-ui.icon-button :href="route('documents.master.show', $obsolete)" icon="eye" label="Lihat detail obsolete" size="sm" />
-                                                        </td>
+                                                        <th class="px-5 py-3 text-left font-semibold">Nama Dokumen</th>
+                                                        <th class="px-5 py-3 text-left font-semibold">Revisi</th>
+                                                        <th class="px-5 py-3 text-left font-semibold">Tgl Terbit</th>
+                                                        <th class="px-5 py-3 text-left font-semibold">Tgl Obsolete</th>
+                                                        <th class="px-5 py-3 text-left font-semibold">Stamp</th>
+                                                        <th class="px-5 py-3 text-left font-semibold">Aksi</th>
                                                     </tr>
-                                                @endforeach
-                                            </tbody>
-                                        </table>
+                                                </thead>
+                                                <tbody class="divide-y divide-slate-100">
+                                                    @foreach ($obsoleteDocuments as $obsolete)
+                                                        @php
+                                                            $obsoletePublishedAt = $obsolete->tanggal_terbit ?? $obsolete->approved_at;
+                                                            $obsoleteDate = $obsolete->master_obsolete_date;
+                                                        @endphp
+
+                                                        <tr>
+                                                            <td class="px-5 py-4 font-semibold uppercase tracking-wide text-slate-700">
+                                                                {{ $obsolete->nomor_dokumen ?: $obsolete->nama_dokumen }}
+                                                            </td>
+                                                            <td class="px-5 py-4 text-slate-600">{{ $obsolete->formatted_revision }}</td>
+                                                            <td class="px-5 py-4 text-slate-600">{{ $obsoletePublishedAt?->format('d/m/Y') ?: '-' }}</td>
+                                                            <td class="px-5 py-4 text-slate-600">{{ $obsoleteDate?->format('d/m/Y') ?: '-' }}</td>
+                                                            <td class="px-5 py-4">
+                                                                <x-ui.status-badge label="Obsolete" tone="red" />
+                                                            </td>
+                                                            <td class="px-5 py-4">
+                                                                <x-ui.icon-button :href="route('documents.master.show', $obsolete)" icon="eye" label="Lihat detail obsolete" size="sm" />
+                                                            </td>
+                                                        </tr>
+                                                    @endforeach
+                                                </tbody>
+                                            </table>
+                                        </div>
                                     </div>
                                 </td>
                             </tr>

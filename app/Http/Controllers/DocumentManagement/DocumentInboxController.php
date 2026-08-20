@@ -132,10 +132,12 @@ class DocumentInboxController extends Controller
                 },
             ])
             ->with([
+                'documentLevel',
                 'documentType',
                 'creator',
                 'status',
                 'departments',
+                'revisedFrom.documentLevel',
                 'approvals' => function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
                     $query->where(function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
                         $query
@@ -187,10 +189,12 @@ class DocumentInboxController extends Controller
 
         return Document::query()
             ->with([
+                'documentLevel',
                 'documentType',
                 'creator',
                 'status',
                 'departments',
+                'revisedFrom.documentLevel',
                 'approvals' => function ($query) use ($approvalScope, $assignedApprovalScope): void {
                     $query->where(function ($query) use ($approvalScope, $assignedApprovalScope): void {
                         $query->where($approvalScope)
@@ -391,7 +395,7 @@ class DocumentInboxController extends Controller
         return [
             'id' => $document->id,
             'detail_url' => route('documents.approval.show', $document),
-            'number' => $document->nomor_dokumen ?? '-',
+            'number' => $this->documentDisplayNumber($document),
             'name' => $document->nama_dokumen ?? '-',
             'type' => $this->documentTypeLabel($document),
             'stage' => match (true) {
@@ -536,6 +540,49 @@ class DocumentInboxController extends Controller
             'IK' => 'Instruksi Kerja',
             default => $document->documentType?->nama_types ?? '-',
         };
+    }
+
+    private function documentDisplayNumber(Document $document): string
+    {
+        return $this->revisionRequestNumber($document)
+            ?? $document->nomor_dokumen
+            ?? '-';
+    }
+
+    private function revisionRequestNumber(Document $document): ?string
+    {
+        if (! in_array($document->request_type, ['revision', 'obsolete'], true) || $document->revised_from === null) {
+            return null;
+        }
+
+        if ($document->documentLevel?->kode === 'level-4' && str_starts_with((string) $document->nomor_dokumen, 'FM')) {
+            return $document->nomor_dokumen;
+        }
+
+        $source = $document->revisedFrom;
+
+        if ($source === null) {
+            return null;
+        }
+
+        $prefix = match ($source->documentLevel?->kode) {
+            'level-1' => 'FMSM',
+            'level-2' => 'FMPS',
+            'level-3' => 'FMIK',
+            default => 'FM',
+        };
+        $segments = collect(explode('-', (string) $source->nomor_dokumen))
+            ->filter()
+            ->values();
+
+        if ($segments->isNotEmpty()) {
+            $segments->shift();
+        }
+
+        return collect([$prefix])
+            ->merge($segments)
+            ->filter()
+            ->implode('-');
     }
 
     private function approvalTone(string $statusCode): string

@@ -9,6 +9,7 @@ use App\Models\ApprovalFlowStage;
 use App\Models\ApprovalStatus;
 use App\Models\Document;
 use App\Models\DocumentFile;
+use App\Models\DocumentLevel;
 use App\Models\DocumentType;
 use App\Models\StatusDocument;
 use App\Models\User;
@@ -43,12 +44,14 @@ class DocumentApprovalController extends Controller
             'approvals.approver',
             'approvals.role',
             'documentLevel.approvalFlows.stages',
+            'revisedFrom.documentLevel.approvalFlows.stages',
         ]);
 
         return view('document-management.approval-detail', [
             'document' => $document,
             'activeApproval' => $this->activeApproval($request, $document),
             'approvalFlowStages' => $this->approvalFlowStages($document),
+            'approvalFlowDocumentLevel' => $this->approvalFlowDocumentLevel($document),
             'canManageApproverAssignment' => $this->canManageApproverAssignment($request, $document),
             'assignableUsers' => User::query()->with('department')->orderBy('name')->get(),
             'contentFiles' => $document->files->whereIn('type_file', [
@@ -348,12 +351,26 @@ class DocumentApprovalController extends Controller
 
     private function approvalFlowStages(Document $document)
     {
-        return $document->documentLevel
+        return $this->approvalFlowDocumentLevel($document)
             ?->approvalFlows
             ->flatMap(fn ($flow) => $flow->stages)
             ->sortBy('stage_order')
             ->values()
             ?? collect();
+    }
+
+    private function approvalFlowDocumentLevel(Document $document): ?DocumentLevel
+    {
+        $document->loadMissing([
+            'documentLevel.approvalFlows.stages',
+            'revisedFrom.documentLevel.approvalFlows.stages',
+        ]);
+
+        if ($document->documentLevel?->kode === 'level-4' && $document->revisedFrom?->documentLevel !== null) {
+            return $document->revisedFrom->documentLevel;
+        }
+
+        return $document->documentLevel;
     }
 
     private function isDocumentAssignmentLocked(Document $document): bool

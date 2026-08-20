@@ -14,6 +14,14 @@
         $canCorrectRejectedSubmission = $document->status?->nama_status === \App\Models\StatusDocument::REJECTED
             && in_array(auth()->id(), [$document->user_id, $document->official_preparer_id], true);
         $contentSectionTitle = $levelKey === 'level-4' ? 'Dokumen Revisi' : 'Isi Dokumen';
+        $approvalFlowLabel = $approvalFlowDocumentLevel?->nama_dokumen
+            ?? $approvalFlowDocumentLevel?->nama_level
+            ?? $document->documentLevel?->nama_dokumen
+            ?? $document->documentLevel?->nama_level
+            ?? '-';
+        $approvalFlowDescription = $levelKey === 'level-4' && $document->revisedFrom?->documentLevel
+            ? 'Mengikuti approval flow dokumen induk: '.$approvalFlowLabel
+            : 'Approval Flow '.$approvalFlowLabel;
         $contentFileLabels = [
             'filled_template' => 'Template Dokumen',
             'imported_document' => 'Dokumen Import',
@@ -365,7 +373,7 @@
                         <div class="border-b border-slate-200 px-6 py-5">
                             <h2 class="text-lg font-bold text-slate-900">Assign Approver</h2>
                             <p class="mt-2 text-sm font-medium text-slate-500">
-                                Approval Flow {{ $document->documentLevel?->nama_dokumen ?? $document->documentLevel?->nama_level ?? '-' }}
+                                {{ $approvalFlowDescription }}
                             </p>
                         </div>
 

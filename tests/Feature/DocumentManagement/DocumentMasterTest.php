@@ -151,8 +151,8 @@ class DocumentMasterTest extends TestCase
         $revision->departments()->sync($source->departments()->pluck('departments.id')->all());
 
         $flow = ApprovalFlow::create([
-            'm_document_level_id' => $levelFour->id,
-            'nama_flow' => 'Flow Revisi Level IV',
+            'm_document_level_id' => $source->m_document_level_id,
+            'nama_flow' => 'Flow Revisi Prosedur',
         ]);
         $stage = $flow->stages()->create([
             'stage_order' => 1,
@@ -332,6 +332,24 @@ class DocumentMasterTest extends TestCase
             ->get(route('documents.master.show', $document))
             ->assertOk()
             ->assertDontSee('Ajukan Revisi');
+    }
+
+    public function test_obsolete_master_document_detail_is_read_only(): void
+    {
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        $user = User::factory()->create();
+        $document = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Master Sudah Obsolete',
+            'nomor_dokumen' => 'PS-SMR-OLD',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.show', $document))
+            ->assertOk()
+            ->assertSee('Obsolete')
+            ->assertDontSee('Ajukan Revisi')
+            ->assertDontSee('Pengajuan Obsolete')
+            ->assertDontSee('data-obsolete-modal-open', false);
     }
 
     public function test_user_from_document_department_can_submit_master_obsolete_request(): void
