@@ -475,7 +475,31 @@ class DocumentApprovalController extends Controller
             'rejected_at' => null,
         ]);
 
-        $this->obsoletePreviousApprovedRevisions($document->refresh(), $approvedStatus);
+        $document->refresh();
+
+        if ($document->request_type === 'obsolete') {
+            $this->obsoleteSourceMasterDocument($document);
+
+            return;
+        }
+
+        $this->obsoletePreviousApprovedRevisions($document, $approvedStatus);
+    }
+
+    private function obsoleteSourceMasterDocument(Document $document): void
+    {
+        if ($document->revised_from === null) {
+            return;
+        }
+
+        $obsoleteStatus = StatusDocument::findByName(StatusDocument::OBSOLETE);
+
+        Document::query()
+            ->whereKey($document->revised_from)
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::APPROVED))
+            ->update([
+                'm_status_document_id' => $obsoleteStatus->id,
+            ]);
     }
 
     private function obsoletePreviousApprovedRevisions(Document $document, StatusDocument $approvedStatus): void

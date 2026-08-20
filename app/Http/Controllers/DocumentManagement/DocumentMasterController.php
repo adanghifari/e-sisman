@@ -8,8 +8,10 @@ use App\Models\BusinessProcess;
 use App\Models\Document;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
+use App\Models\DocumentType;
 use App\Models\StatusDocument;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -189,6 +191,45 @@ class DocumentMasterController extends Controller
         ]);
     }
 
+    public function obsolete(Request $request, Document $document): RedirectResponse
+    {
+        $document->loadMissing('status', 'documentLevel', 'departments');
+
+        abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
+        abort_unless($this->canRequestRevision($request, $document), 403);
+
+        $validated = $request->validate([
+            'catatan_obsolete' => ['required', 'string', 'max:1000'],
+        ]);
+
+        $level = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $type = DocumentType::query()->where('nama_types', 'Form')->firstOrFail();
+        $status = StatusDocument::findByName(StatusDocument::PROPOSED);
+
+        $requestDocument = Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $status->id,
+            'm_document_types_id' => $type->id,
+            'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
+            'user_id' => $request->user()->id,
+            'official_preparer_id' => $document->official_preparer_id ?: $request->user()->id,
+            'reference' => null,
+            'revised_from' => $document->id,
+            'request_type' => 'obsolete',
+            'nama_dokumen' => $document->nama_dokumen,
+            'nomor_dokumen' => $this->revisionFormNumber($document),
+            'nomor_revisi' => $document->nomor_revisi,
+            'catatan_revisi' => $validated['catatan_obsolete'],
+            'submitted_at' => now(),
+        ]);
+        $requestDocument->departments()->sync($document->departments()->pluck('departments.id')->all());
+
+        return redirect()
+            ->route('documents.inbox')
+            ->with('status', 'Pengajuan obsolete berhasil dikirim.');
+    }
+
     public function file(Request $request, Document $document, DocumentFile $file, RecordDocumentDownload $recordDocumentDownload): BinaryFileResponse
     {
         $this->authorizeMasterFileAccess($document, $file);
@@ -255,5 +296,27 @@ class DocumentMasterController extends Controller
             ->first();
 
         return $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen ?: '-';
+    }
+
+    private function revisionFormNumber(Document $document): string
+    {
+        $prefix = match ($document->documentLevel?->kode) {
+            'level-1' => 'FMSM',
+            'level-2' => 'FMPS',
+            'level-3' => 'FMIK',
+            default => 'FM',
+        };
+        $segments = collect(explode('-', (string) $document->nomor_dokumen))
+            ->filter()
+            ->values();
+
+        if ($segments->isNotEmpty()) {
+            $segments->shift();
+        }
+
+        return collect([$prefix])
+            ->merge($segments)
+            ->filter()
+            ->implode('-');
     }
 }

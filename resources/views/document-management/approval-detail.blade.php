@@ -5,11 +5,14 @@
             'level-1' => 'I',
             'level-2' => 'II',
             'level-3' => 'III',
+            'level-4' => 'IV',
         ];
         $isLevelOne = $levelKey === 'level-1';
         $ownerLabel = $isLevelOne ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
         $statusCode = $activeApproval?->status?->kode_status ?? $document->status?->nama_status ?? '-';
         $statusLabel = $activeApproval?->status?->nama_status ?? $document->status?->nama_status ?? '-';
+        $canCorrectRejectedSubmission = $document->status?->nama_status === \App\Models\StatusDocument::REJECTED
+            && in_array(auth()->id(), [$document->user_id, $document->official_preparer_id], true);
         $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
         $readonlySelect = 'h-12 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
     @endphp
@@ -93,6 +96,7 @@
                             </div>
                         </div>
                     </div>
+
                 </section>
 
                 <x-documents.form-section title="Isi Dokumen" icon="document-text">
@@ -179,6 +183,19 @@
                         </div>
                     </div>
                 </section>
+
+                @if ($canCorrectRejectedSubmission)
+                    <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                        <div class="grid gap-3 px-6 py-5 sm:grid-cols-2">
+                            <a href="{{ route('documents.inbox', ['tab' => 'needs-process']) }}" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
+                                Batal
+                            </a>
+                            <button type="button" class="inline-flex h-11 items-center justify-center rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">
+                                Perbaiki Pengajuan
+                            </button>
+                        </div>
+                    </section>
+                @endif
 
                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <div class="border-b border-slate-100 px-6 py-5">

@@ -241,12 +241,45 @@ class DocumentMasterTest extends TestCase
             ->get(route('documents.master.show', $document))
             ->assertOk()
             ->assertSee('Ajukan Revisi')
-            ->assertSee(route('documents.create.level', ['level-2', 'revised_from' => $document->id]), false);
+            ->assertSee(route('documents.create.level', ['level-4', 'revised_from' => $document->id]), false)
+            ->assertSee('Obsolete');
 
         $this->actingAs($otherDepartmentUser)
             ->get(route('documents.master.show', $document))
             ->assertOk()
             ->assertDontSee('Ajukan Revisi');
+    }
+
+    public function test_user_from_document_department_can_submit_master_obsolete_request(): void
+    {
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        $owner = User::factory()->create();
+        $document = $this->createDocument($owner, $approvedStatus, [
+            'nama_dokumen' => 'Master Jadi Obsolete',
+            'nomor_dokumen' => 'PS-SMR-OBS',
+        ]);
+        DocumentType::create(['nama_types' => 'Form']);
+        $documentDepartment = $document->departments()->firstOrFail();
+        $sameDepartmentUser = User::factory()->create(['m_department_id' => $documentDepartment->id]);
+
+        $this->actingAs($sameDepartmentUser)
+            ->post(route('documents.master.obsolete', $document), [
+                'catatan_obsolete' => 'Dokumen sudah tidak digunakan.',
+            ])
+            ->assertRedirect(route('documents.inbox'));
+
+        $this->assertSame(StatusDocument::APPROVED, $document->refresh()->status->nama_status);
+
+        $request = Document::query()
+            ->where('revised_from', $document->id)
+            ->where('request_type', 'obsolete')
+            ->firstOrFail();
+
+        $this->assertSame(StatusDocument::PROPOSED, $request->status->nama_status);
+        $this->assertSame('Form', $request->documentType->nama_types);
+        $this->assertSame('level-4', $request->documentLevel->kode);
+        $this->assertSame('Dokumen sudah tidak digunakan.', $request->catatan_revisi);
     }
 
     private function createDocument(User $user, StatusDocument $status, array $attributes = []): Document

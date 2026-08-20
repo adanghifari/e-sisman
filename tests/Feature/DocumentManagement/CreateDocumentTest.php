@@ -196,6 +196,7 @@ class CreateDocumentTest extends TestCase
             'nama_status' => 'Disetujui',
         ]);
         DocumentType::create(['nama_types' => 'Prosedur']);
+        DocumentType::create(['nama_types' => 'Form']);
 
         $this->actingAs($user)
             ->post(route('documents.store', 'level-2'), [
@@ -303,6 +304,7 @@ class CreateDocumentTest extends TestCase
             'nama_status' => 'Disetujui',
         ]);
         DocumentType::create(['nama_types' => 'Prosedur']);
+        DocumentType::create(['nama_types' => 'Form']);
         $source = Document::create([
             'm_document_level_id' => $level->id,
             'm_status_document_id' => $approvedStatus->id,
@@ -320,13 +322,13 @@ class CreateDocumentTest extends TestCase
         $source->departments()->sync([$sourceDepartment->id]);
 
         $this->actingAs($otherUser)
-            ->get(route('documents.create.level', ['level-2', 'revised_from' => $source->id]))
+            ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
             ->assertForbidden();
 
         $this->actingAs($submitter)
-            ->get(route('documents.create.level', ['level-2', 'revised_from' => $source->id]))
+            ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
             ->assertOk()
-            ->assertSee('Ajukan Revisi Dokumen Level II')
+            ->assertSee('Ajukan Revisi Dokumen Level IV')
             ->assertSee('FMPS')
             ->assertSee('PS-SMR-010')
             ->assertSee('00.01')
@@ -335,7 +337,7 @@ class CreateDocumentTest extends TestCase
             ->assertDontSee('-Pilih-');
 
         $this->actingAs($submitter)
-            ->post(route('documents.store', 'level-2'), [
+            ->post(route('documents.store', 'level-4'), [
                 'revised_from' => $source->id,
                 'nama_dokumen' => 'Prosedur Revisi Master Updated',
                 'm_proses_bisnis_id' => $businessProcess->id,
@@ -354,6 +356,8 @@ class CreateDocumentTest extends TestCase
 
         $this->assertSame($source->id, $revision->revised_from);
         $this->assertSame('FMPS-SMR-010', $revision->nomor_dokumen);
+        $this->assertSame('level-4', $revision->documentLevel->kode);
+        $this->assertSame('Form', $revision->documentType->nama_types);
         $this->assertSame(1, $revision->nomor_revisi);
         $this->assertSame($businessProcess->id, $revision->m_proses_bisnis_id);
         $this->assertSame($businessFunction->id, $revision->m_proses_fungsi_id);
@@ -368,7 +372,7 @@ class CreateDocumentTest extends TestCase
             ->assertSee(StatusDocument::PROPOSED);
 
         $this->actingAs($submitter)
-            ->post(route('documents.store', 'level-2'), [
+            ->post(route('documents.store', 'level-4'), [
                 'revised_from' => $source->id,
                 'nama_dokumen' => 'Prosedur Revisi Master Kedua',
                 'm_proses_bisnis_id' => $businessProcess->id,

@@ -24,6 +24,8 @@ class DocumentController extends Controller
     {
         $revisionSource = $this->revisionSourceForRequest($request, $level);
 
+        abort_if($level === 'level-4' && $revisionSource === null, 404);
+
         return view('document-management.create.level', [
             'revisionSource' => $revisionSource,
         ]);
@@ -42,6 +44,8 @@ class DocumentController extends Controller
         $validated = $request->validate($this->validationRulesForLevel($level));
         $revisionSource = $this->revisionSourceForRequest($request, $level);
 
+        abort_if($level === 'level-4' && $revisionSource === null, 404);
+
         if ($level === 'level-1') {
             $validated = array_merge($validated, $this->defaultDocumentContext());
             $validated['submit_action'] = 'draft';
@@ -52,6 +56,7 @@ class DocumentController extends Controller
             $validated['m_proses_fungsi_id'] = $revisionSource->m_proses_fungsi_id;
             $validated['department_ids'] = $revisionSource->departments->pluck('id')->all();
             $validated['reference'] = $revisionSource->reference;
+            $validated['nama_dokumen'] = $validated['nama_dokumen'] ?? $revisionSource->nama_dokumen;
         }
 
         $documentNumber = $revisionSource !== null
@@ -91,6 +96,7 @@ class DocumentController extends Controller
                 'official_preparer_id' => $validated['official_preparer_id'] ?? null,
                 'reference' => $level === 'level-3' ? $validated['reference'] : null,
                 'revised_from' => $revisionSource?->id,
+                'request_type' => $revisionSource !== null ? 'revision' : null,
                 'nama_dokumen' => $validated['nama_dokumen'],
                 'nomor_dokumen' => $documentNumber,
                 'nomor_revisi' => $documentRevision,
@@ -138,6 +144,7 @@ class DocumentController extends Controller
             'level-1' => 'Manual',
             'level-2' => 'Prosedur',
             'level-3' => 'IK',
+            'level-4' => 'Form',
         ][$level] ?? 'IK';
     }
 
@@ -185,7 +192,7 @@ class DocumentController extends Controller
             ->whereKey($sourceId)
             ->firstOrFail();
 
-        abort_unless($source->documentLevel?->kode === $level, 404);
+        abort_unless($level === 'level-4' || $source->documentLevel?->kode === $level, 404);
         abort_unless(
             in_array($source->status?->nama_status, [StatusDocument::APPROVED, StatusDocument::OBSOLETE], true),
             404,
@@ -271,6 +278,8 @@ class DocumentController extends Controller
 
             $segments[] = $businessProcessCode ?: 'SMR';
             $segments[] = Str::upper(trim($suffix));
+        } elseif ($documentLevel->kode === 'level-4') {
+            $segments[] = Str::upper(trim($suffix));
         } else {
             $segments[] = 'XXX';
             $segments[] = 'YY';
@@ -287,6 +296,12 @@ class DocumentController extends Controller
         $revisionPrefix = match ($documentLevel->kode) {
             'level-2' => 'FMPS',
             'level-3' => 'FMIK',
+            'level-4' => match ($source->documentLevel?->kode) {
+                'level-2' => 'FMPS',
+                'level-3' => 'FMIK',
+                'level-1' => 'FMSM',
+                default => 'FM',
+            },
             default => 'FM'.$documentLevel->prefix,
         };
         $sourceSegments = collect(explode('-', (string) $source->nomor_dokumen))

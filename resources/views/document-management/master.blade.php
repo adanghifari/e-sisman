@@ -102,7 +102,7 @@
                                     <x-ui.icon-button :href="route('documents.master.show', $document)" icon="eye" label="Lihat detail" size="sm" />
                                     @if ($document->can_request_revision)
                                         <x-ui.icon-button
-                                            :href="route('documents.create.level', [$document->documentLevel?->kode ?? 'level-3', 'revised_from' => $document->id])"
+                                            :href="route('documents.create.level', ['level-4', 'revised_from' => $document->id])"
                                             icon="arrow-path"
                                             label="Ajukan revisi"
                                             size="sm"

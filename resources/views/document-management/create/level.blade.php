@@ -7,17 +7,26 @@
             'level-1' => 'I',
             'level-2' => 'II',
             'level-3' => 'III',
+            'level-4' => 'IV',
         ];
         $documentPrefixes = [
             'level-1' => 'SM',
             'level-2' => 'PS',
             'level-3' => 'IK',
+            'level-4' => 'FM',
         ];
         $revisionPrefixes = [
             'level-1' => 'FMSM',
             'level-2' => 'FMPS',
             'level-3' => 'FMIK',
         ];
+        $revisionSourceLevelKey = $revisionSource?->documentLevel?->kode;
+        $levelFourPrefix = match ($revisionSourceLevelKey) {
+            'level-1' => 'FMSM',
+            'level-2' => 'FMPS',
+            'level-3' => 'FMIK',
+            default => 'FM',
+        };
 
         $ownerLabel = $levelKey === 'level-1' ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
         $documentTitle = \Illuminate\Support\Str::after($level['name'], ': ');
@@ -74,11 +83,17 @@
                 'label' => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department,
             ])
             ->values();
-        $revisionDocumentSuffix = $revisionSource?->nomor_dokumen
-            ? \Illuminate\Support\Str::afterLast($revisionSource->nomor_dokumen, '-')
-            : null;
+        $revisionDocumentSuffix = null;
+        if ($revisionSource?->nomor_dokumen) {
+            $sourceNumberSegments = collect(explode('-', $revisionSource->nomor_dokumen))
+                ->filter()
+                ->values();
+            $revisionDocumentSuffix = $levelKey === 'level-4'
+                ? $sourceNumberSegments->skip(1)->implode('-')
+                : \Illuminate\Support\Str::afterLast($revisionSource->nomor_dokumen, '-');
+        }
         $documentNumberPrefix = $revisionSource
-            ? ($revisionPrefixes[$levelKey] ?? 'FM'.$documentPrefixes[$levelKey])
+            ? ($levelKey === 'level-4' ? $levelFourPrefix : ($revisionPrefixes[$levelKey] ?? 'FM'.$documentPrefixes[$levelKey]))
             : $documentPrefixes[$levelKey];
         $revisionRootDocumentId = $revisionSource?->revised_from ?: $revisionSource?->id;
         $latestRevisionNumber = $revisionRootDocumentId
@@ -274,6 +289,14 @@
                                     <dt class="text-sm font-semibold text-slate-500">Level Dokumen</dt>
                                     <dd class="text-sm font-bold text-slate-900">{{ $levelDisplayValue ?: '-' }}</dd>
                                 </div>
+                                @if ($levelKey === 'level-4')
+                                    <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                        <dt class="text-sm font-semibold text-slate-500">Dokumen Induk</dt>
+                                        <dd class="text-sm font-bold text-slate-900">
+                                            {{ $revisionSource->documentLevel?->nama_level ?: '-' }} : {{ \Illuminate\Support\Str::after($revisionSource->documentLevel?->nama_dokumen ?? '', ': ') }}
+                                        </dd>
+                                    </div>
+                                @endif
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                     <dt class="text-sm font-semibold text-slate-500">Nomor Dokumen</dt>
                                     <dd class="text-sm font-bold text-slate-900">{{ $revisionSource->nomor_dokumen ?: '-' }}</dd>

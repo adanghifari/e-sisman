@@ -120,6 +120,7 @@ class DocumentInboxController extends Controller
     {
         $approvalScope = $this->approvalScope($request, processed: false);
         $assignableDocumentScope = $this->assignableDocumentScope($request);
+        $rejectedCorrectionScope = $this->rejectedCorrectionScope($request);
 
         $query = Document::query()
             ->withExists([
@@ -138,17 +139,23 @@ class DocumentInboxController extends Controller
                 },
             ]);
 
-        $query->where(function ($query) use ($approvalScope, $assignableDocumentScope): void {
+        $query->where(function ($query) use ($approvalScope, $assignableDocumentScope, $rejectedCorrectionScope): void {
             $query->whereHas('approvals', $approvalScope);
 
             if ($assignableDocumentScope !== null) {
                 $query
                     ->orWhere($assignableDocumentScope);
             }
+
+            $query->orWhere($rejectedCorrectionScope);
         });
 
         return $query->get()
             ->filter(function (Document $document): bool {
+                if ($document->status?->nama_status === StatusDocument::REJECTED) {
+                    return true;
+                }
+
                 return $document->approvals->first() !== null || ! $document->has_flow_approvals;
             })
             ->map(fn (Document $document): array => $this->approvalRow(
@@ -185,8 +192,15 @@ class DocumentInboxController extends Controller
 
                 if (! $user->isDeveloper()) {
                     $query
-                        ->orWhere('user_id', $user->id)
-                        ->orWhere('official_preparer_id', $user->id);
+                        ->orWhere(function ($query) use ($user): void {
+                            $query
+                                ->whereDoesntHave('status', fn ($query) => $query->where('nama_status', StatusDocument::REJECTED))
+                                ->where(function ($query) use ($user): void {
+                                    $query
+                                        ->where('user_id', $user->id)
+                                        ->orWhere('official_preparer_id', $user->id);
+                                });
+                        });
                 }
             })
             ->get()
@@ -253,6 +267,19 @@ class DocumentInboxController extends Controller
         };
     }
 
+    private function rejectedCorrectionScope(Request $request): callable
+    {
+        return function ($query) use ($request): void {
+            $query
+                ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::REJECTED))
+                ->where(function ($query) use ($request): void {
+                    $query
+                        ->where('user_id', $request->user()->id)
+                        ->orWhere('official_preparer_id', $request->user()->id);
+                });
+        };
+    }
+
     private function assignableDocumentScope(Request $request): ?callable
     {
         $user = $request->user();
@@ -284,6 +311,7 @@ class DocumentInboxController extends Controller
         $assignedAt = $approval?->assigned_at;
         $respondedAt = $approval?->responded_at;
         $submittedAt = $document->submitted_at ?? $document->created_at;
+        $isRejectedCorrection = $document->status?->nama_status === StatusDocument::REJECTED && $approval === null;
         $statusCode = $approval?->status?->kode_status
             ?? $approval?->status?->nama_status
             ?? $document->status?->nama_status
@@ -295,7 +323,7 @@ class DocumentInboxController extends Controller
             'number' => $document->nomor_dokumen ?? '-',
             'name' => $document->nama_dokumen ?? '-',
             'type' => $document->documentType?->nama_types ?? '-',
-            'stage' => $approval?->stages ?: ($canAssign ? 'Belum assign approver' : 'Approval'),
+            'stage' => $isRejectedCorrection ? 'Perbaikan Pengajuan' : ($approval?->stages ?: ($canAssign ? 'Belum assign approver' : 'Approval')),
             'waiting_for' => $approval?->approver?->name ?? ($canAssign ? 'Admin Kontrol Dokumen' : '-'),
             'owner' => $document->creator?->name ?? '-',
             'department' => $document->departments
@@ -310,7 +338,7 @@ class DocumentInboxController extends Controller
             'updated_at_sort' => $respondedAt?->timestamp ?? 0,
             'status' => $approval?->status?->nama_status ?? $document->status?->nama_status ?? $statusCode,
             'tone' => $this->approvalTone($statusCode),
-            'action' => $approval ? 'Proses' : 'Assign',
+            'action' => $isRejectedCorrection ? 'Perlu Perbaikan' : ($approval ? 'Proses' : 'Assign'),
         ];
     }
 
