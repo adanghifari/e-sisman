@@ -27,6 +27,12 @@
             'level-3' => 'FMIK',
             default => 'FM',
         };
+        $levelFourFormTitle = match ($revisionSourceLevelKey) {
+            'level-1' => 'Form Manual',
+            'level-2' => 'Form Prosedur',
+            'level-3' => 'Form Instruksi Kerja',
+            default => 'Form/Lembar Revisi',
+        };
 
         $ownerLabel = $levelKey === 'level-1' ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
         $documentTitle = \Illuminate\Support\Str::after($level['name'], ': ');
@@ -106,7 +112,7 @@
         $selectedBusinessProcessId = old('m_proses_bisnis_id', $revisionSource?->m_proses_bisnis_id);
         $selectedBusinessFunctionId = old('m_proses_fungsi_id', $revisionSource?->m_proses_fungsi_id);
         $selectedReferenceId = old('reference', $revisionSource?->reference);
-        $selectedDepartmentIds = old('department_ids', $revisionSource?->departments?->pluck('id')->all() ?? []);
+        $selectedDepartmentIds = old('department_ids', collect($revisionSource?->departments ?? [])->pluck('id')->all());
         $nextRevisionValue = $revisionSource
             ? '00.'.str_pad((string) (($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1), 2, '0', STR_PAD_LEFT)
             : '00.00';
@@ -133,9 +139,15 @@
             <span class="text-slate-700">{{ $level['badge'] }}</span>
         </nav>
 
-        <h1 class="text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
-            {{ $revisionSource ? 'Ajukan Revisi' : ($levelKey === 'level-1' ? 'Import' : 'Tambah') }} Dokumen Level {{ $levelNumbers[$levelKey] }} : {{ $documentTitle }}
-        </h1>
+        <div>
+            <h1 class="text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
+                {{ $levelKey === 'level-4' && $revisionSource ? 'Dokumen Level IV: '.$levelFourFormTitle : (($revisionSource ? 'Ajukan Revisi' : ($levelKey === 'level-1' ? 'Import' : 'Tambah')).' Dokumen Level '.$levelNumbers[$levelKey].' : '.$documentTitle) }}
+            </h1>
+
+            @if ($levelKey === 'level-4' && $revisionSource)
+                <p class="mt-2 text-sm font-medium text-slate-500">Ajukan Revisi</p>
+            @endif
+        </div>
 
         @if ($revisionSource)
             <div class="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800">
@@ -415,27 +427,69 @@
 
                     <x-documents.official-preparer :label="$ownerLabel" :users="$assignableUsers" />
 
-                    <x-documents.form-section title="Isi Dokumen" icon="cloud-arrow-up">
+                    <x-documents.form-section :title="$levelKey === 'level-4' ? 'Dokumen Revisi' : 'Isi Dokumen'" icon="cloud-arrow-up">
                         <div class="space-y-6 px-6 py-6">
-                            <x-documents.upload-toggle-card
-                                title="Template Dokumen yang Sudah Diisi"
-                                button-label="Upload Template"
-                                tone="sky"
-                            >
-                                <x-ui.file-upload
-                                    label="Upload Template Terisi"
-                                    name="filled_template"
-                                    accept=".pdf,application/pdf"
-                                    hint="Format PDF."
-                                    :max-files="1"
-                                    :max-file-size-kb="10240"
-                                    required
-                                />
+                            @if ($levelKey === 'level-4')
+                                <x-documents.upload-toggle-card
+                                    title="1. Isi Dokumen Versi Revisi"
+                                    button-label="Upload Dokumen Revisi"
+                                    tone="sky"
+                                >
+                                    <x-ui.file-upload
+                                        label="Upload Isi Dokumen Versi Revisi"
+                                        name="revision_content"
+                                        accept=".pdf,application/pdf"
+                                        hint="Upload dokumen utama yang sudah direvisi. Format PDF."
+                                        :max-files="1"
+                                        :max-file-size-kb="10240"
+                                        :required="old('submit_action') === 'submit'"
+                                    />
 
-                                @error('filled_template')
-                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                @enderror
-                            </x-documents.upload-toggle-card>
+                                    @error('revision_content')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </x-documents.upload-toggle-card>
+
+                                <x-documents.upload-toggle-card
+                                    title="2. Lembar Revisi"
+                                    button-label="Upload Lembar Revisi"
+                                    tone="sky"
+                                >
+                                    <x-ui.file-upload
+                                        label="Upload Lembar Revisi"
+                                        name="revision_form"
+                                        accept=".pdf,application/pdf"
+                                        hint="Upload form/lembar revisi yang menjelaskan perubahan. Format PDF."
+                                        :max-files="1"
+                                        :max-file-size-kb="10240"
+                                        :required="old('submit_action') === 'submit'"
+                                    />
+
+                                    @error('revision_form')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </x-documents.upload-toggle-card>
+                            @else
+                                <x-documents.upload-toggle-card
+                                    title="Template Dokumen yang Sudah Diisi"
+                                    button-label="Upload Template"
+                                    tone="sky"
+                                >
+                                    <x-ui.file-upload
+                                        label="Upload Template Terisi"
+                                        name="filled_template"
+                                        accept=".pdf,application/pdf"
+                                        hint="Format PDF."
+                                        :max-files="1"
+                                        :max-file-size-kb="10240"
+                                        required
+                                    />
+
+                                    @error('filled_template')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </x-documents.upload-toggle-card>
+                            @endif
 
                             <x-documents.upload-toggle-card
                                 title="Daftar Dokumen"

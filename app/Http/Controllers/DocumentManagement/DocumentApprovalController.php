@@ -51,7 +51,14 @@ class DocumentApprovalController extends Controller
             'approvalFlowStages' => $this->approvalFlowStages($document),
             'canManageApproverAssignment' => $this->canManageApproverAssignment($request, $document),
             'assignableUsers' => User::query()->with('department')->orderBy('name')->get(),
-            'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document'])->values(),
+            'contentFiles' => $document->files->whereIn('type_file', [
+                'filled_template',
+                'imported_document',
+                'revision_content',
+                'revision_form',
+                'revision_before',
+                'revision_after',
+            ])->values(),
             'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
         ]);
     }

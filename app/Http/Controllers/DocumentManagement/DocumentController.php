@@ -54,7 +54,7 @@ class DocumentController extends Controller
         if ($revisionSource !== null) {
             $validated['m_proses_bisnis_id'] = $revisionSource->m_proses_bisnis_id;
             $validated['m_proses_fungsi_id'] = $revisionSource->m_proses_fungsi_id;
-            $validated['department_ids'] = $revisionSource->departments->pluck('id')->all();
+            $validated['department_ids'] = collect($revisionSource->departments)->pluck('id')->all();
             $validated['reference'] = $revisionSource->reference;
             $validated['nama_dokumen'] = $validated['nama_dokumen'] ?? $revisionSource->nama_dokumen;
         }
@@ -115,6 +115,14 @@ class DocumentController extends Controller
                 $this->storeDocumentFile($document, $request->file('filled_template'), 'filled_template', $request->user()->id);
             }
 
+            if ($request->hasFile('revision_content')) {
+                $this->storeDocumentFile($document, $request->file('revision_content'), 'revision_content', $request->user()->id);
+            }
+
+            if ($request->hasFile('revision_form')) {
+                $this->storeDocumentFile($document, $request->file('revision_form'), 'revision_form', $request->user()->id);
+            }
+
             foreach ($request->file('attachments', []) as $attachment) {
                 $this->storeDocumentFile($document, $attachment, 'attachment', $request->user()->id);
             }
@@ -133,8 +141,12 @@ class DocumentController extends Controller
                 ]);
         }
 
+        $redirectParameters = $revisionSource !== null
+            ? [$level, 'revised_from' => $revisionSource->id]
+            : [$level];
+
         return redirect()
-            ->route('documents.create.level', $level)
+            ->route('documents.create.level', $redirectParameters)
             ->with('status', 'Dokumen berhasil disimpan sebagai draft.');
     }
 
@@ -159,6 +171,25 @@ class DocumentController extends Controller
                 'catatan_revisi' => ['nullable', 'string', 'max:1000'],
                 'imported_document' => ['required', 'file', 'mimes:pdf', 'max:10240'],
                 'revised_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+            ];
+        }
+
+        if ($level === 'level-4') {
+            return [
+                'nama_dokumen' => ['required', 'string', 'max:255'],
+                'm_proses_bisnis_id' => ['required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
+                'm_proses_fungsi_id' => ['required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
+                'reference' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+                'department_ids' => ['required', 'array', 'min:1'],
+                'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
+                'official_preparer_id' => ['required', 'integer', Rule::exists('users', 'id')],
+                'nomor_dokumen_suffix' => ['required', 'string', 'max:50'],
+                'revision_content' => ['required_if:submit_action,submit', 'file', 'mimes:pdf', 'max:10240'],
+                'revision_form' => ['required_if:submit_action,submit', 'file', 'mimes:pdf', 'max:10240'],
+                'attachments' => ['nullable', 'array', 'max:10'],
+                'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
+                'submit_action' => ['required', Rule::in(['draft', 'submit'])],
+                'revised_from' => ['required', 'integer', Rule::exists('t_document', 'id')],
             ];
         }
 

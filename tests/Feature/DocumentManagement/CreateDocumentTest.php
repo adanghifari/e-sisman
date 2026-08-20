@@ -328,7 +328,13 @@ class CreateDocumentTest extends TestCase
         $this->actingAs($submitter)
             ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
             ->assertOk()
-            ->assertSee('Ajukan Revisi Dokumen Level IV')
+            ->assertSee('Dokumen Level IV: Form Prosedur')
+            ->assertSee('Ajukan Revisi')
+            ->assertSee('Dokumen Revisi')
+            ->assertSee('1. Isi Dokumen Versi Revisi')
+            ->assertSee('2. Lembar Revisi')
+            ->assertSee('Penyusun Pemilik Proses')
+            ->assertSee('Pilih Penyusun Resmi')
             ->assertSee('FMPS')
             ->assertSee('PS-SMR-010')
             ->assertSee('00.01')
@@ -345,7 +351,30 @@ class CreateDocumentTest extends TestCase
                 'department_ids' => [$sourceDepartment->id],
                 'official_preparer_id' => $officialPreparer->id,
                 'nomor_dokumen_suffix' => '999',
-                'filled_template' => UploadedFile::fake()->create('template-revisi.pdf', 24, 'application/pdf'),
+                'submit_action' => 'draft',
+            ])
+            ->assertRedirect(route('documents.create.level', ['level-4', 'revised_from' => $source->id]));
+
+        $draftRevision = Document::query()
+            ->where('nama_dokumen', 'Prosedur Revisi Master Updated')
+            ->firstOrFail();
+
+        $this->assertSame(StatusDocument::DRAFT, $draftRevision->status->nama_status);
+
+        $draftRevision->departments()->detach();
+        $draftRevision->delete();
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-4'), [
+                'revised_from' => $source->id,
+                'nama_dokumen' => 'Prosedur Revisi Master Updated',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$sourceDepartment->id],
+                'official_preparer_id' => $officialPreparer->id,
+                'nomor_dokumen_suffix' => '999',
+                'revision_content' => UploadedFile::fake()->create('dokumen-revisi.pdf', 24, 'application/pdf'),
+                'revision_form' => UploadedFile::fake()->create('lembar-revisi.pdf', 24, 'application/pdf'),
                 'submit_action' => 'submit',
             ])
             ->assertRedirect(route('documents.create'));
@@ -359,10 +388,39 @@ class CreateDocumentTest extends TestCase
         $this->assertSame('level-4', $revision->documentLevel->kode);
         $this->assertSame('Form', $revision->documentType->nama_types);
         $this->assertSame(1, $revision->nomor_revisi);
+        $this->assertSame(StatusDocument::PROPOSED, $revision->status->nama_status);
+        $this->assertSame($officialPreparer->id, $revision->official_preparer_id);
         $this->assertSame($businessProcess->id, $revision->m_proses_bisnis_id);
         $this->assertSame($businessFunction->id, $revision->m_proses_fungsi_id);
         $this->assertTrue($revision->departments()->whereKey($sourceDepartment->id)->exists());
         $this->assertFalse($revision->departments()->whereKey($otherDepartment->id)->exists());
+        $this->assertTrue($revision->files()->where('type_file', 'revision_content')->exists());
+        $this->assertTrue($revision->files()->where('type_file', 'revision_form')->exists());
+
+        $this->actingAs($submitter)
+            ->get(route('documents.approval.show', $revision))
+            ->assertOk()
+            ->assertSee('Dokumen Revisi')
+            ->assertSee('Isi Dokumen Versi Revisi')
+            ->assertSee('Lembar Revisi')
+            ->assertSee('dokumen-revisi.pdf')
+            ->assertSee('lembar-revisi.pdf')
+            ->assertDontSee('Assign Approver');
+
+        $documentControlRole = Role::query()->firstOrCreate(['nama_role' => 'Admin Kontrol Dokumen']);
+        $documentControlAdmin = User::factory()->create([
+            'm_department_id' => $sourceDepartment->id,
+            'name' => 'Admin Kontrol Dokumen',
+        ]);
+        $documentControlAdmin->roles()->attach($documentControlRole);
+
+        $this->actingAs($documentControlAdmin)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee('Prosedur Revisi Master Updated')
+            ->assertSee('Form')
+            ->assertSee('Belum assign approver')
+            ->assertSee('Assign');
 
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
@@ -380,7 +438,8 @@ class CreateDocumentTest extends TestCase
                 'department_ids' => [$sourceDepartment->id],
                 'official_preparer_id' => $officialPreparer->id,
                 'nomor_dokumen_suffix' => '999',
-                'filled_template' => UploadedFile::fake()->create('template-revisi-2.pdf', 24, 'application/pdf'),
+                'revision_content' => UploadedFile::fake()->create('dokumen-revisi-2.pdf', 24, 'application/pdf'),
+                'revision_form' => UploadedFile::fake()->create('lembar-revisi-2.pdf', 24, 'application/pdf'),
                 'submit_action' => 'submit',
             ])
             ->assertRedirect(route('documents.create'));
