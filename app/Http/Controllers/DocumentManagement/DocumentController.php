@@ -15,6 +15,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 
 class DocumentController extends Controller
@@ -27,6 +28,9 @@ class DocumentController extends Controller
 
         return view('document-management.create.level', [
             'revisionSource' => $revisionSource,
+            'procedureReferences' => $level === 'level-3'
+                ? $this->activeProcedureReferences()
+                : collect(),
         ]);
     }
 
@@ -259,6 +263,16 @@ class DocumentController extends Controller
             return ['nullable', 'integer', Rule::exists('t_document', 'id')];
         }
 
+        $procedureReferenceIds = $this->activeProcedureReferences(
+            (int) request('m_proses_bisnis_id'),
+            (int) request('m_proses_fungsi_id'),
+        )->pluck('id')->all();
+
+        return ['required', 'integer', Rule::in($procedureReferenceIds)];
+    }
+
+    protected function activeProcedureReferences(?int $businessProcessId = null, ?int $businessFunctionId = null): Collection
+    {
         $procedureLevelId = DocumentLevel::query()
             ->where('kode', 'level-2')
             ->value('id');
@@ -267,15 +281,41 @@ class DocumentController extends Controller
             ->where('nama_status', StatusDocument::APPROVED)
             ->value('id');
 
-        return [
-            'required',
-            'integer',
-            Rule::exists('t_document', 'id')
-                ->where('m_document_level_id', $procedureLevelId)
-                ->where('m_status_document_id', $approvedStatusId)
-                ->where('m_proses_bisnis_id', request('m_proses_bisnis_id'))
-                ->where('m_proses_fungsi_id', request('m_proses_fungsi_id')),
-        ];
+        if ($procedureLevelId === null || $approvedStatusId === null) {
+            return collect();
+        }
+
+        return Document::query()
+            ->with(['documentLevel', 'revisedFrom.documentLevel'])
+            ->where('m_status_document_id', $approvedStatusId)
+            ->where(function ($query) use ($procedureLevelId): void {
+                $query
+                    ->where('m_document_level_id', $procedureLevelId)
+                    ->orWhereHas('revisedFrom', fn ($query) => $query->where('m_document_level_id', $procedureLevelId));
+            })
+            ->when($businessProcessId, fn ($query) => $query->where('m_proses_bisnis_id', $businessProcessId))
+            ->when($businessFunctionId, fn ($query) => $query->where('m_proses_fungsi_id', $businessFunctionId))
+            ->get()
+            ->groupBy(fn (Document $document): int => $document->revisionRootId())
+            ->map(fn (Collection $family): Document => $family
+                ->sortByDesc(fn (Document $document): string => sprintf(
+                    '%010d-%010d-%010d',
+                    $document->nomor_revisi,
+                    $document->approved_at?->timestamp ?? 0,
+                    $document->id,
+                ))
+                ->first())
+            ->map(function (Document $document): Document {
+                $displayNumber = $document->documentLevel?->kode === 'level-4'
+                    ? ($document->revisedFrom?->nomor_dokumen ?: $document->nomor_dokumen)
+                    : $document->nomor_dokumen;
+
+                $document->setAttribute('procedure_reference_number', $displayNumber);
+
+                return $document;
+            })
+            ->sortBy('procedure_reference_number')
+            ->values();
     }
 
     protected function defaultDocumentContext(): array

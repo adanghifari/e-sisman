@@ -14,30 +14,3 @@
         {{ $slot }}
     </table>
 </x-ui.scroll-area>
-
-@once
-    <script>
-        (() => {
-            document.addEventListener('click', (event) => {
-                const toggle = event.target.closest('[data-table-row-toggle]');
-
-                if (! toggle) {
-                    return;
-                }
-
-                const target = toggle.dataset.tableRowToggle;
-                const expanded = toggle.getAttribute('aria-expanded') === 'true';
-                const table = toggle.closest('table') ?? document;
-
-                toggle.setAttribute('aria-expanded', String(! expanded));
-                toggle.querySelector('svg')?.classList.toggle('rotate-90', ! expanded);
-
-                table.querySelectorAll('[data-table-row-target]').forEach((row) => {
-                    if (row.dataset.tableRowTarget === target) {
-                        row.classList.toggle('hidden', expanded);
-                    }
-                });
-            });
-        })();
-    </script>
-@endonce

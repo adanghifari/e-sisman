@@ -38,6 +38,107 @@ class CreateDocumentTest extends TestCase
             ->assertSee('Test User');
     }
 
+    public function test_level_three_create_page_lists_active_master_procedure_reference(): void
+    {
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'KSA',
+            'nama_proses_bisnis' => 'Kesisteman',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $procedureType = DocumentType::create(['nama_types' => 'Prosedur']);
+        $procedureLevel = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+
+        $oldProcedure = Document::create([
+            'm_document_level_id' => $procedureLevel->id,
+            'm_status_document_id' => $obsoleteStatus->id,
+            'm_document_types_id' => $procedureType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Prosedur Lama',
+            'nomor_dokumen' => 'PS-KSA-02',
+            'nomor_revisi' => 0,
+        ]);
+
+        Document::create([
+            'm_document_level_id' => $procedureLevel->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $procedureType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'revised_from' => $oldProcedure->id,
+            'nama_dokumen' => 'Prosedur Aktif Revisi',
+            'nomor_dokumen' => 'PS-KSA-02',
+            'nomor_revisi' => 1,
+            'approved_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.create.level', 'level-3'))
+            ->assertOk()
+            ->assertSee('PS-KSA-02 - Prosedur Aktif Revisi')
+            ->assertDontSee('PS-KSA-02 - Prosedur Lama');
+    }
+
+    public function test_level_three_create_page_lists_approved_revision_request_as_active_procedure_reference(): void
+    {
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'KSA',
+            'nama_proses_bisnis' => 'Kondisi Solusi Abadi',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'KTL',
+            'nama_proses_fungsi' => 'Koefisiensi Terima Literasi',
+        ]);
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $procedureType = DocumentType::create(['nama_types' => 'Prosedur']);
+        $revisionType = DocumentType::query()->firstOrCreate(['nama_types' => 'Revisi']);
+        $procedureLevel = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+        $formLevel = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+
+        $sourceProcedure = Document::create([
+            'm_document_level_id' => $procedureLevel->id,
+            'm_status_document_id' => $obsoleteStatus->id,
+            'm_document_types_id' => $procedureType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Prosedur Sebelum Revisi',
+            'nomor_dokumen' => 'PS-KSA-02',
+            'nomor_revisi' => 0,
+        ]);
+
+        Document::create([
+            'm_document_level_id' => $formLevel->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $revisionType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'revised_from' => $sourceProcedure->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Prosedur Sesudah Revisi',
+            'nomor_dokumen' => 'FMPS-KSA-02',
+            'nomor_revisi' => 1,
+            'approved_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.create.level', 'level-3'))
+            ->assertOk()
+            ->assertSee('PS-KSA-02 - Prosedur Sesudah Revisi')
+            ->assertDontSee('FMPS-KSA-02 - Prosedur Sesudah Revisi');
+    }
+
     public function test_level_two_create_page_uses_integrated_create_form(): void
     {
         $user = User::factory()->create([

@@ -57,7 +57,7 @@
         $approvedStatusId = \Illuminate\Support\Facades\Schema::hasTable('m_status_document')
             ? \App\Models\StatusDocument::query()->where('nama_status', \App\Models\StatusDocument::APPROVED)->value('id')
             : null;
-        $procedureReferences = ($levelKey === 'level-3' && $procedureLevelId && $approvedStatusId)
+        $procedureReferences ??= ($levelKey === 'level-3' && $procedureLevelId && $approvedStatusId)
             ? \App\Models\Document::query()
                 ->select([
                     'id',
@@ -423,7 +423,7 @@
                                                     data-business-function-id="{{ $procedureReference->m_proses_fungsi_id }}"
                                                     @selected((string) old('reference') === (string) $procedureReference->id)
                                                 >
-                                                    {{ $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }}
+                                                    {{ $procedureReference->procedure_reference_number ?: $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }}
                                                 </option>
                                             @endforeach
                                         </select>
