@@ -17,7 +17,7 @@ class ApprovalFlowTest extends TestCase
 
     public function test_approval_flow_page_uses_document_levels(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->create(['nik' => '000000']));
 
         $this->get(route('approval-flows.index'))
             ->assertOk()
@@ -29,7 +29,7 @@ class ApprovalFlowTest extends TestCase
 
     public function test_stage_can_be_created_for_selected_document_level(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->create(['nik' => '000000']));
 
         $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
 
@@ -55,7 +55,7 @@ class ApprovalFlowTest extends TestCase
 
     public function test_stage_can_be_updated(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->create(['nik' => '000000']));
 
         $level = DocumentLevel::query()->where('kode', 'level-1')->firstOrFail();
         $flow = ApprovalFlow::query()->firstOrCreate(
@@ -85,7 +85,7 @@ class ApprovalFlowTest extends TestCase
 
     public function test_stage_can_be_deleted_and_remaining_stages_are_reordered(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->create(['nik' => '000000']));
 
         $level = DocumentLevel::query()->where('kode', 'level-3')->firstOrFail();
         $flow = ApprovalFlow::query()->firstOrCreate(
@@ -123,7 +123,7 @@ class ApprovalFlowTest extends TestCase
 
     public function test_stage_requires_approval_party(): void
     {
-        $this->actingAs(User::factory()->create());
+        $this->actingAs(User::factory()->create(['nik' => '000000']));
 
         $level = DocumentLevel::query()->where('kode', 'level-1')->firstOrFail();
 
@@ -134,5 +134,23 @@ class ApprovalFlowTest extends TestCase
             ->set('nama_tahap', '')
             ->call('saveStage')
             ->assertHasErrors(['nama_tahap']);
+    }
+
+    public function test_level_four_inherits_source_document_approval_flow(): void
+    {
+        $this->actingAs(User::factory()->create(['nik' => '000000']));
+
+        $level = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+
+        Livewire::test(Index::class)
+            ->call('selectDocumentLevel', $level->id)
+            ->assertSee('Mengikuti Flow Dokumen Induk')
+            ->assertDontSee('Tambah Tahap')
+            ->call('createStage')
+            ->assertForbidden();
+
+        $this->assertDatabaseMissing('m_approval_flows', [
+            'm_document_level_id' => $level->id,
+        ]);
     }
 }

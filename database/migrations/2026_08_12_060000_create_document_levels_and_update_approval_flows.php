@@ -50,6 +50,14 @@ return new class extends Migration
                 'description' => 'Instruksi kerja teknis untuk pelaksanaan kegiatan internal departemen maupun lintas department.',
                 'sort_order' => 3,
             ],
+            [
+                'kode' => 'level-4',
+                'nama_level' => 'Level IV',
+                'nama_dokumen' => 'Dokumen Level IV : Form / Lembar Revisi',
+                'prefix' => 'FM',
+                'description' => 'Form pengajuan revisi dokumen master sebelum perubahan disahkan.',
+                'sort_order' => 4,
+            ],
         ];
 
         foreach ($levels as $level) {

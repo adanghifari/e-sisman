@@ -9,10 +9,12 @@ use App\Support\DocumentTemplates\DocumentTemplateUploadRules;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Throwable;
 
 class DocumentTemplateController extends Controller
 {
@@ -31,9 +33,15 @@ class DocumentTemplateController extends Controller
 
     public function store(Request $request): RedirectResponse
     {
-        abort_unless($request->user()->hasAnyPermission(['document-templates.edit', 'document-templates.manage']), 403);
+        $canEdit = $request->user()->hasAnyPermission(['document-templates.edit', 'document-templates.manage']);
+        $canDelete = $request->user()->hasAnyPermission(['document-templates.delete', 'document-templates.manage']);
 
-        $validated = $request->validate(DocumentTemplateUploadRules::rules(requireFiles: false));
+        abort_unless($canEdit || $canDelete, 403);
+
+        $validated = $request->validate(
+            DocumentTemplateUploadRules::rules(requireFiles: false),
+            DocumentTemplateUploadRules::messages(),
+        );
 
         $activeTemplate = DocumentTemplate::query()
             ->forLevel($validated['document_level'])
@@ -67,6 +75,16 @@ class DocumentTemplateController extends Controller
             } elseif ($uploadedFiles->isEmpty()) {
                 $retainedFiles = $activeFiles;
             }
+        }
+
+        if (! $canEdit) {
+            $activeFileCount = $activeTemplate?->files->count() ?? 0;
+            $isDeletingRetainedFiles = $retainedFileIdsWereSubmitted && $retainedFileIds->count() < $activeFileCount;
+
+            abort_unless($canDelete && $activeTemplate && $isDeletingRetainedFiles && $uploadedFiles->isEmpty(), 403);
+
+            $validated['title'] = $retainedFiles->isEmpty() ? null : $activeTemplate->title;
+            $validated['notes'] = $retainedFiles->isEmpty() ? null : $activeTemplate->notes;
         }
 
         if ($retainedFiles->count() + $uploadedFiles->count() > DocumentTemplate::MAX_FILES) {
@@ -116,7 +134,7 @@ class DocumentTemplateController extends Controller
                 $storedFileName = uniqid('template_', true).($extension ? ".{$extension}" : '');
                 $path = "document-templates/{$template->id}/{$storedFileName}";
 
-                Storage::disk($file->disk)->copy($file->path_file, $path);
+                $this->copyRetainedTemplateFile($file, $path);
 
                 $template->files()->create([
                     'file_order' => $fileOrder++,
@@ -130,7 +148,7 @@ class DocumentTemplateController extends Controller
             }
 
             foreach ($request->file('template_files', []) as $file) {
-                $path = $file->store("document-templates/{$template->id}", 'local');
+                $path = $this->storeUploadedTemplateFile($file, "document-templates/{$template->id}");
 
                 $template->files()->create([
                     'file_order' => $fileOrder++,
@@ -161,5 +179,55 @@ class DocumentTemplateController extends Controller
         return response()->file($path, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
         ]);
+    }
+
+    /**
+     * @throws ValidationException
+     */
+    private function copyRetainedTemplateFile(DocumentTemplateFile $file, string $path): void
+    {
+        $disk = Storage::disk($file->disk);
+
+        if (! $disk->exists($file->path_file)) {
+            throw ValidationException::withMessages([
+                'template_files' => 'File template lama tidak ditemukan di storage.',
+            ]);
+        }
+
+        try {
+            $copied = $disk->copy($file->path_file, $path);
+        } catch (Throwable) {
+            throw ValidationException::withMessages([
+                'template_files' => 'Gagal menyalin file template lama. Coba simpan ulang template.',
+            ]);
+        }
+
+        if (! $copied) {
+            throw ValidationException::withMessages([
+                'template_files' => 'Gagal menyalin file template lama. Coba simpan ulang template.',
+            ]);
+        }
+    }
+
+    /**
+     * @throws ValidationException
+     */
+    private function storeUploadedTemplateFile(UploadedFile $file, string $directory): string
+    {
+        try {
+            $path = $file->store($directory, 'local');
+        } catch (Throwable) {
+            throw ValidationException::withMessages([
+                'template_files' => 'Gagal menyimpan file template. Coba upload ulang file.',
+            ]);
+        }
+
+        if ($path === false) {
+            throw ValidationException::withMessages([
+                'template_files' => 'Gagal menyimpan file template. Coba upload ulang file.',
+            ]);
+        }
+
+        return $path;
     }
 }

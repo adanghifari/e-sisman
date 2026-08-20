@@ -1,6 +1,8 @@
 <x-layouts::app :title="__('Tambah Dokumen')">
     @php
-        $documentLevels = config('document-levels');
+        $documentLevels = collect(config('document-levels'))
+            ->except('level-4')
+            ->all();
     @endphp
 
     <div class="space-y-20">

@@ -57,12 +57,18 @@ class Index extends Component
 
     public function createStage(): void
     {
+        $this->authorizePermission('approval-flows.create');
+        $this->abortIfSelectedLevelInheritsApprovalFlow();
+
         $this->resetStageForm();
         $this->showStageForm = true;
     }
 
     public function editStage(int $stageId): void
     {
+        $this->authorizePermission('approval-flows.update');
+        $this->abortIfSelectedLevelInheritsApprovalFlow();
+
         $stage = ApprovalFlowStage::query()
             ->whereHas('approvalFlow', function ($query): void {
                 $query->where('id', $this->approvalFlowId);
@@ -82,6 +88,13 @@ class Index extends Component
         CreateApprovalFlowStage $createApprovalFlowStage,
         UpdateApprovalFlowStage $updateApprovalFlowStage,
     ): void {
+        $this->authorizePermission(
+            $this->editingStageId !== null
+                ? 'approval-flows.update'
+                : 'approval-flows.create',
+        );
+        $this->abortIfSelectedLevelInheritsApprovalFlow();
+
         $approvalFlow = $this->approvalFlow();
 
         $data = [
@@ -102,6 +115,9 @@ class Index extends Component
 
     public function confirmDeleteStage(int $stageId): void
     {
+        $this->authorizePermission('approval-flows.delete');
+        $this->abortIfSelectedLevelInheritsApprovalFlow();
+
         $this->deletingStageId = $stageId;
         $this->showDeleteModal = true;
     }
@@ -114,6 +130,9 @@ class Index extends Component
 
     public function deleteStage(DeleteApprovalFlowStage $deleteApprovalFlowStage): void
     {
+        $this->authorizePermission('approval-flows.delete');
+        $this->abortIfSelectedLevelInheritsApprovalFlow();
+
         if ($this->deletingStageId === null) {
             return;
         }
@@ -152,7 +171,7 @@ class Index extends Component
 
     public function getApprovalStagesProperty(): Collection
     {
-        if ($this->approvalFlowId === null) {
+        if ($this->approvalFlowId === null || $this->selectedLevelInheritsApprovalFlow()) {
             return new Collection;
         }
 
@@ -168,16 +187,28 @@ class Index extends Component
             'documentLevels' => $this->documentLevels,
             'selectedDocumentLevel' => $this->selectedDocumentLevel,
             'approvalStages' => $this->approvalStages,
+            'canCreate' => ! $this->selectedLevelInheritsApprovalFlow() && $this->canManage('approval-flows.create'),
+            'canUpdate' => ! $this->selectedLevelInheritsApprovalFlow() && $this->canManage('approval-flows.update'),
+            'canDelete' => ! $this->selectedLevelInheritsApprovalFlow() && $this->canManage('approval-flows.delete'),
+            'selectedLevelInheritsApprovalFlow' => $this->selectedLevelInheritsApprovalFlow(),
         ]);
     }
 
     protected function loadApprovalFlow(): void
     {
+        if ($this->selectedLevelInheritsApprovalFlow()) {
+            $this->approvalFlowId = null;
+
+            return;
+        }
+
         $this->approvalFlowId = $this->approvalFlow()->id;
     }
 
     protected function approvalFlow(): ApprovalFlow
     {
+        $this->abortIfSelectedLevelInheritsApprovalFlow();
+
         return app(EnsureApprovalFlow::class)->handle([
             'm_document_level_id' => $this->selectedDocumentLevelId,
         ]);
@@ -191,5 +222,31 @@ class Index extends Component
             'nama_tahap',
             'showStageForm',
         ]);
+    }
+
+    private function canManage(string $permissionCode): bool
+    {
+        $user = auth()->user();
+
+        if ($user === null) {
+            return false;
+        }
+
+        return $user->isAdmin() || $user->hasExplicitPermission($permissionCode);
+    }
+
+    private function authorizePermission(string $permissionCode): void
+    {
+        abort_unless($this->canManage($permissionCode), 403);
+    }
+
+    private function selectedLevelInheritsApprovalFlow(): bool
+    {
+        return $this->selectedDocumentLevel?->kode === 'level-4';
+    }
+
+    private function abortIfSelectedLevelInheritsApprovalFlow(): void
+    {
+        abort_if($this->selectedLevelInheritsApprovalFlow(), 403);
     }
 }

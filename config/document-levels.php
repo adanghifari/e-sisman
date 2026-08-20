@@ -22,4 +22,11 @@ return [
         'approval_description' => 'Instruksi kerja teknis untuk pelaksanaan kegiatan internal departemen maupun lintas department.',
         'default_stages' => ['Dibuat oleh', 'Diperiksa oleh', 'Disetujui oleh'],
     ],
+    'level-4' => [
+        'badge' => 'Level IV',
+        'name' => 'Dokumen Level IV : Form / Lembar Revisi',
+        'create_description' => 'Form atau lembar revisi yang dibuat dari dokumen master sebagai pengajuan perubahan dokumen.',
+        'approval_description' => 'Form pengajuan revisi dokumen master sebelum perubahan disahkan.',
+        'default_stages' => ['Dibuat oleh', 'Diperiksa oleh', 'Disetujui oleh'],
+    ],
 ];

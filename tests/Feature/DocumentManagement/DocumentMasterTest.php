@@ -70,8 +70,8 @@ class DocumentMasterTest extends TestCase
             ->get(route('documents.master'))
             ->assertOk()
             ->assertSee('Prosedur Pengendalian Dokumen Revisi')
-            ->assertSee('Dokumen Obsolete')
-            ->assertSee('Prosedur Pengendalian Dokumen')
+            ->assertSee('Tgl Obsolete')
+            ->assertSee('PS-SMR-001')
             ->assertSee('Obsolete');
     }
 
@@ -101,14 +101,98 @@ class DocumentMasterTest extends TestCase
             ->assertOk()
             ->assertSee('Instruksi Kerja Revisi Aktif')
             ->assertSee('IK-SMR-010')
-            ->assertSee('Dokumen Obsolete')
-            ->assertSee('Instruksi Kerja Lama');
+            ->assertSee('Tgl Obsolete')
+            ->assertSee('00.00');
 
         $this->assertLessThan(
-            strpos($response->getContent(), 'Dokumen Obsolete'),
+            strpos($response->getContent(), 'Tgl Obsolete'),
             strpos($response->getContent(), 'Instruksi Kerja Revisi Aktif'),
         );
         $response->assertSee(route('documents.master.show', $latestRevision), false);
+    }
+
+    public function test_approved_level_four_revision_becomes_master_and_groups_old_master_as_obsolete(): void
+    {
+        $submitter = User::factory()->create();
+        $approver = User::factory()->create();
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        ApprovalStatus::create(['kode_status' => ApprovalStatus::PENDING, 'nama_status' => 'Dalam Review']);
+        ApprovalStatus::create(['kode_status' => ApprovalStatus::WAITING, 'nama_status' => 'Menunggu']);
+        ApprovalStatus::create(['kode_status' => ApprovalStatus::APPROVED, 'nama_status' => 'Disetujui']);
+        ApprovalStatus::create(['kode_status' => ApprovalStatus::REJECTED, 'nama_status' => 'Ditolak']);
+        ApprovalStatus::create(['kode_status' => ApprovalStatus::TERMINATED, 'nama_status' => 'Dibatalkan']);
+
+        $source = $this->createDocument($submitter, $approvedStatus, [
+            'nama_dokumen' => 'Prosedur Ikatan Dinas SSO',
+            'nomor_dokumen' => 'PS-KSA-02',
+            'nomor_revisi' => 0,
+            'approved_at' => now()->subDay(),
+        ]);
+        $levelFour = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $revisionType = DocumentType::query()->firstOrCreate(['nama_types' => 'Revisi']);
+
+        $revision = Document::create([
+            'm_document_level_id' => $levelFour->id,
+            'm_status_document_id' => StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail()->id,
+            'm_document_types_id' => $revisionType->id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Prosedur Ikatan Dinas SSO',
+            'nomor_dokumen' => 'FMPS-KSA-02',
+            'nomor_revisi' => 1,
+            'submitted_at' => now(),
+        ]);
+        $revision->departments()->sync($source->departments()->pluck('departments.id')->all());
+
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $source->m_document_level_id,
+            'nama_flow' => 'Flow Revisi Prosedur',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Disahkan Oleh',
+            'nama_tahap' => 'Superintendent',
+        ]);
+
+        Approval::create([
+            't_document_id' => $revision->id,
+            'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::PENDING)->id,
+            'user_id' => $approver->id,
+            'role_id' => null,
+            'assigned_by' => $submitter->id,
+            'assigned_at' => now(),
+            'stages' => $stage->display_label,
+        ]);
+
+        $this->actingAs($approver)
+            ->post(route('documents.approval.approve', $revision))
+            ->assertRedirect(route('documents.approval.show', $revision));
+
+        $revision->refresh();
+        $source->refresh();
+
+        $this->assertSame(StatusDocument::APPROVED, $revision->status->nama_status);
+        $this->assertSame(StatusDocument::OBSOLETE, $source->status->nama_status);
+        $this->assertSame($source->m_document_level_id, $revision->m_document_level_id);
+        $this->assertSame($source->m_document_types_id, $revision->m_document_types_id);
+        $this->assertSame('PS-KSA-02', $revision->nomor_dokumen);
+        $this->assertSame(1, $revision->nomor_revisi);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertSee('Prosedur Ikatan Dinas SSO')
+            ->assertSee('PS-KSA-02')
+            ->assertSee('00.01')
+            ->assertSee('Tgl Obsolete')
+            ->assertSee('00.00')
+            ->assertSee('Obsolete');
     }
 
     public function test_master_detail_shows_approval_history_sorted_by_stage_with_response_timestamp(): void
@@ -241,12 +325,63 @@ class DocumentMasterTest extends TestCase
             ->get(route('documents.master.show', $document))
             ->assertOk()
             ->assertSee('Ajukan Revisi')
-            ->assertSee(route('documents.create.level', ['level-2', 'revised_from' => $document->id]), false);
+            ->assertSee(route('documents.create.level', ['level-4', 'revised_from' => $document->id]), false)
+            ->assertSee('Obsolete');
 
         $this->actingAs($otherDepartmentUser)
             ->get(route('documents.master.show', $document))
             ->assertOk()
             ->assertDontSee('Ajukan Revisi');
+    }
+
+    public function test_obsolete_master_document_detail_is_read_only(): void
+    {
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        $user = User::factory()->create();
+        $document = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Master Sudah Obsolete',
+            'nomor_dokumen' => 'PS-SMR-OLD',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.show', $document))
+            ->assertOk()
+            ->assertSee('Obsolete')
+            ->assertDontSee('Ajukan Revisi')
+            ->assertDontSee('Pengajuan Obsolete')
+            ->assertDontSee('data-obsolete-modal-open', false);
+    }
+
+    public function test_user_from_document_department_can_submit_master_obsolete_request(): void
+    {
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        $owner = User::factory()->create();
+        $document = $this->createDocument($owner, $approvedStatus, [
+            'nama_dokumen' => 'Master Jadi Obsolete',
+            'nomor_dokumen' => 'PS-SMR-OBS',
+        ]);
+        DocumentType::create(['nama_types' => 'Form']);
+        $documentDepartment = $document->departments()->firstOrFail();
+        $sameDepartmentUser = User::factory()->create(['m_department_id' => $documentDepartment->id]);
+
+        $this->actingAs($sameDepartmentUser)
+            ->post(route('documents.master.obsolete', $document), [
+                'catatan_obsolete' => 'Dokumen sudah tidak digunakan.',
+            ])
+            ->assertRedirect(route('documents.inbox'));
+
+        $this->assertSame(StatusDocument::APPROVED, $document->refresh()->status->nama_status);
+
+        $request = Document::query()
+            ->where('revised_from', $document->id)
+            ->where('request_type', 'obsolete')
+            ->firstOrFail();
+
+        $this->assertSame(StatusDocument::PROPOSED, $request->status->nama_status);
+        $this->assertSame('Form', $request->documentType->nama_types);
+        $this->assertSame('level-4', $request->documentLevel->kode);
+        $this->assertSame('Dokumen sudah tidak digunakan.', $request->catatan_revisi);
     }
 
     private function createDocument(User $user, StatusDocument $status, array $attributes = []): Document

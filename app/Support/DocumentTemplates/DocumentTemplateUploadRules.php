@@ -55,4 +55,33 @@ class DocumentTemplateUploadRules
             ],
         ];
     }
+
+    /**
+     * @return array<string, string>
+     */
+    public static function messages(): array
+    {
+        $upload = config('document-templates.upload');
+        $maxFileSizeMb = (int) ceil($upload['max_file_size_kb'] / 1024);
+        $allowedExtensions = strtoupper(implode(', ', $upload['allowed_extensions']));
+
+        return [
+            'document_level.required' => 'Level dokumen wajib dipilih.',
+            'document_level.in' => 'Level dokumen tidak valid.',
+            'title.max' => 'Judul template maksimal 255 karakter.',
+            'notes.max' => 'Catatan singkat maksimal 2000 karakter.',
+            'template_files.required' => 'File template wajib diunggah.',
+            'template_files.array' => 'File template tidak valid.',
+            'template_files.min' => 'Minimal unggah 1 file template.',
+            'template_files.max' => 'Maksimal '.$upload['max_files'].' file template.',
+            'template_files.*.required' => 'File template wajib diunggah.',
+            'template_files.*.uploaded' => 'File gagal diunggah. Pastikan ukuran file tidak melebihi batas server.',
+            'template_files.*.file' => 'File template tidak valid.',
+            'template_files.*.max' => 'Ukuran maksimal per file adalah '.$maxFileSizeMb.' MB.',
+            'template_files.*.mimes' => 'Format file template harus '.$allowedExtensions.'.',
+            'retained_template_file_ids.array' => 'Daftar file template lama tidak valid.',
+            'retained_template_file_ids.max' => 'Maksimal '.$upload['max_files'].' file template.',
+            'retained_template_file_ids.*.integer' => 'File template lama tidak valid.',
+        ];
+    }
 }

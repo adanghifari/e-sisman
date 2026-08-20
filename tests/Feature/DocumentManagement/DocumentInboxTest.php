@@ -45,8 +45,28 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Prosedur Kalibrasi Alat')
             ->assertSee('PS-SMR-123')
             ->assertSee('Approval Manager')
+            ->assertSee('Menunggu Manager')
             ->assertSee('Dalam Review')
             ->assertSee('Pengaju Dokumen');
+    }
+
+    public function test_work_instruction_type_is_displayed_with_full_label(): void
+    {
+        $approver = User::factory()->create();
+        $submitter = User::factory()->create();
+        $documentType = DocumentType::create(['nama_types' => 'IK']);
+        $document = $this->createDocument($submitter, [
+            'm_document_types_id' => $documentType->id,
+            'nama_dokumen' => 'Instruksi Kerja Incoming',
+            'nomor_dokumen' => 'IK-SMR-123',
+        ]);
+        $this->createApproval($document, $approver, ApprovalStatus::PENDING);
+
+        $this->actingAs($approver)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee('Instruksi Kerja')
+            ->assertDontSee('>IK</td>', false);
     }
 
     public function test_pending_approval_for_other_user_is_not_shown_in_needs_process_tab(): void
@@ -65,6 +85,51 @@ class DocumentInboxTest extends TestCase
             ->assertOk()
             ->assertDontSee('Dokumen Approver Lain')
             ->assertDontSee('PS-SMR-456');
+    }
+
+    public function test_rejected_document_is_shown_in_submitter_needs_process_tab_for_correction(): void
+    {
+        $submitter = User::factory()->create(['name' => 'Pengaju Rejected']);
+        $rejectedStatus = StatusDocument::create(['nama_status' => StatusDocument::REJECTED]);
+        $document = $this->createDocument($submitter, [
+            'm_status_document_id' => $rejectedStatus->id,
+            'nama_dokumen' => 'Dokumen Perlu Diperbaiki',
+            'nomor_dokumen' => 'PS-SMR-REJECTED',
+            'rejected_at' => now(),
+        ]);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee('Dokumen Perlu Diperbaiki')
+            ->assertSee('PS-SMR-REJECTED')
+            ->assertSee('Perbaikan Pengajuan')
+            ->assertSee('Perlu Perbaikan')
+            ->assertSee(StatusDocument::REJECTED);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertDontSee('Dokumen Perlu Diperbaiki')
+            ->assertDontSee('PS-SMR-REJECTED');
+    }
+
+    public function test_rejected_document_detail_shows_correction_button_for_related_user(): void
+    {
+        $submitter = User::factory()->create();
+        $rejectedStatus = StatusDocument::create(['nama_status' => StatusDocument::REJECTED]);
+        $document = $this->createDocument($submitter, [
+            'm_status_document_id' => $rejectedStatus->id,
+            'nama_dokumen' => 'Detail Rejected Bisa Diperbaiki',
+            'rejected_at' => now(),
+        ]);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.approval.show', $document))
+            ->assertOk()
+            ->assertSee('Detail Rejected Bisa Diperbaiki')
+            ->assertSee('Perbaiki Pengajuan')
+            ->assertSee('Batal');
     }
 
     public function test_developer_can_see_pending_approvals_for_all_users(): void
@@ -108,7 +173,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Dokumen Belum Assign Approver')
             ->assertSee('PS-SMR-CLEAN')
             ->assertSee('Belum assign approver')
-            ->assertSee('Assign')
+            ->assertSee('Perlu Verifikasi Admin KD')
             ->assertSee(route('documents.approval.show', $document));
 
         $this->actingAs($submitter)
@@ -179,7 +244,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Dokumen Assign Department Terkait')
             ->assertSee('PS-SMR-ASSIGN')
             ->assertSee('Belum assign approver')
-            ->assertSee('Assign')
+            ->assertSee('Perlu Verifikasi Admin KD')
             ->assertSee(route('documents.approval.show', $document));
     }
 
@@ -202,7 +267,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Dokumen Assign Department Lain')
             ->assertSee('PS-SMR-OTHER-DEPT')
             ->assertSee('Belum assign approver')
-            ->assertSee('Assign')
+            ->assertSee('Perlu Verifikasi Admin KD')
             ->assertSee(route('documents.approval.show', $document));
     }
 
@@ -243,7 +308,7 @@ class DocumentInboxTest extends TestCase
             ->assertOk()
             ->assertSee('Dokumen Multi Department Assign')
             ->assertSee('PS-SMR-MULTI')
-            ->assertSee('Assign');
+            ->assertSee('Perlu Verifikasi Admin KD');
     }
 
     public function test_document_control_admin_from_related_department_can_open_proposed_document_detail(): void
@@ -358,7 +423,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Pengaju Riwayat');
     }
 
-    public function test_submitter_history_uses_document_status_when_only_official_signature_exists(): void
+    public function test_submitter_sees_pending_revision_in_needs_process_when_only_official_signature_exists(): void
     {
         $this->ensureApprovalStatuses();
 
@@ -388,12 +453,79 @@ class DocumentInboxTest extends TestCase
         ]);
 
         $this->actingAs($submitter)
-            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
             ->assertOk()
             ->assertSee('Dokumen Revisi Baru')
             ->assertSee('Pengajuan Revisi')
             ->assertSee(StatusDocument::PROPOSED)
             ->assertDontSee('TTD Penyusun Resmi');
+
+        $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertDontSee('Dokumen Revisi Baru');
+    }
+
+    public function test_submitter_history_shows_revision_form_number_after_work_instruction_revision_is_approved(): void
+    {
+        $submitter = User::factory()->create(['name' => 'Pengaju Revisi IK']);
+        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        $workInstructionLevel = DocumentLevel::query()->where('kode', 'level-3')->firstOrFail();
+        $formLevel = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $workInstructionType = DocumentType::query()->firstOrCreate(['nama_types' => 'IK']);
+        $revisionType = DocumentType::query()->firstOrCreate(['nama_types' => 'Revisi']);
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'MRI',
+            'nama_proses_bisnis' => 'Manajemen Risiko Industri',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+
+        $source = Document::create([
+            'm_document_level_id' => $workInstructionLevel->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $workInstructionType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'nama_dokumen' => 'Instruksi Kerja Lama',
+            'nomor_dokumen' => 'IK-MRI-01-04',
+            'nomor_revisi' => 0,
+            'submitted_at' => now()->subDays(2),
+            'approved_at' => now()->subDay(),
+        ]);
+        $source->departments()->sync([$department->id]);
+
+        $revision = Document::create([
+            'm_document_level_id' => $formLevel->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $revisionType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Instruksi Kerja Revisi',
+            'nomor_dokumen' => 'IK-MRI-01-04',
+            'nomor_revisi' => 1,
+            'submitted_at' => now()->subHour(),
+            'approved_at' => now(),
+        ]);
+        $revision->departments()->sync([$department->id]);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Instruksi Kerja Revisi')
+            ->assertSee('FMIK-MRI-01-04');
     }
 
     public function test_responded_approver_can_open_document_detail_from_processed_history(): void
@@ -418,7 +550,7 @@ class DocumentInboxTest extends TestCase
             ->assertDontSee('Keputusan Approval');
     }
 
-    public function test_developer_can_see_processed_history_for_all_users(): void
+    public function test_developer_does_not_see_processed_history_for_other_users_without_processing_it(): void
     {
         $developer = User::factory()->create([
             'nik' => '000000',
@@ -438,8 +570,60 @@ class DocumentInboxTest extends TestCase
         $this->actingAs($developer)
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
             ->assertOk()
-            ->assertSee('Riwayat Terlihat Developer')
-            ->assertSee('IK-SMR-DEV');
+            ->assertDontSee('Riwayat Terlihat Developer')
+            ->assertDontSee('IK-SMR-DEV');
+    }
+
+    public function test_document_control_admin_does_not_see_in_progress_assigned_document_in_processed_history(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create(['name' => 'Pengaju Assign']);
+        $approver = User::factory()->create(['name' => 'Approver Assign']);
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Selesai Assign',
+            'nomor_dokumen' => 'PS-SMR-ASSIGN-HISTORY',
+        ]);
+        $admin = $this->documentControlAdmin($document->departments()->firstOrFail());
+        $assignedAt = now()->setDate(2026, 8, 20)->setTime(10, 15);
+
+        $this->createApproval($document, $approver, ApprovalStatus::PENDING, [
+            'assigned_by' => $admin->id,
+            'assigned_at' => $assignedAt,
+            'stages' => 'Superintendent',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertDontSee('Dokumen Selesai Assign')
+            ->assertDontSee('PS-SMR-ASSIGN-HISTORY');
+    }
+
+    public function test_assigned_document_stays_in_document_control_admin_needs_process_tab_as_monitoring_task(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create(['name' => 'Pengaju Assigned']);
+        $approver = User::factory()->create(['name' => 'Approver Assigned']);
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Sudah Assign',
+            'nomor_dokumen' => 'PS-SMR-ASSIGNED',
+        ]);
+        $admin = $this->documentControlAdmin($document->departments()->firstOrFail());
+
+        $this->createApproval($document, $approver, ApprovalStatus::PENDING, [
+            'assigned_by' => $admin->id,
+            'stages' => 'Superintendent',
+        ]);
+
+        $this->actingAs($admin)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee('Dokumen Sudah Assign')
+            ->assertSee('PS-SMR-ASSIGNED')
+            ->assertSee('Superintendent')
+            ->assertSee('Menunggu Superintendent');
     }
 
     public function test_approval_detail_page_shows_readonly_document_and_actions(): void
@@ -1196,6 +1380,70 @@ class DocumentInboxTest extends TestCase
             ->assertRedirect(route('documents.approval.show', $revision));
 
         $this->assertSame(StatusDocument::APPROVED, $revision->refresh()->status->nama_status);
+        $this->assertSame(StatusDocument::OBSOLETE, $source->refresh()->status->nama_status);
+    }
+
+    public function test_approved_obsolete_request_obsoletes_source_master_document(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create();
+        $approver = User::factory()->create();
+        $source = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Master Akan Obsolete',
+            'nomor_dokumen' => 'PS-SMR-OBSOLETE',
+            'nomor_revisi' => 0,
+        ]);
+        $approvedDocumentStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::OBSOLETE]);
+        $source->update([
+            'm_status_document_id' => $approvedDocumentStatus->id,
+            'approved_at' => now()->subDay(),
+        ]);
+
+        $request = Document::create([
+            'm_document_level_id' => $source->m_document_level_id,
+            'm_status_document_id' => StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail()->id,
+            'm_document_types_id' => $source->m_document_types_id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'revised_from' => $source->id,
+            'request_type' => 'obsolete',
+            'nama_dokumen' => 'Master Akan Obsolete',
+            'nomor_dokumen' => 'FMPS-SMR-OBSOLETE',
+            'nomor_revisi' => $source->nomor_revisi,
+            'submitted_at' => now(),
+        ]);
+        $request->departments()->sync($source->departments()->pluck('departments.id')->all());
+
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $request->m_document_level_id,
+            'nama_flow' => 'Flow Obsolete',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+        $role = Role::query()->firstOrCreate(['nama_role' => $stage->nama_tahap]);
+
+        Approval::create([
+            't_document_id' => $request->id,
+            'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::PENDING)->id,
+            'user_id' => $approver->id,
+            'role_id' => $role->id,
+            'assigned_by' => $submitter->id,
+            'assigned_at' => now(),
+            'stages' => $stage->display_label,
+        ]);
+
+        $this->actingAs($approver)
+            ->post(route('documents.approval.approve', $request))
+            ->assertRedirect(route('documents.approval.show', $request));
+
+        $this->assertSame(StatusDocument::APPROVED, $request->refresh()->status->nama_status);
         $this->assertSame(StatusDocument::OBSOLETE, $source->refresh()->status->nama_status);
     }
 

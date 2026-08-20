@@ -7,17 +7,35 @@
             'level-1' => 'I',
             'level-2' => 'II',
             'level-3' => 'III',
+            'level-4' => 'IV',
         ];
         $documentPrefixes = [
             'level-1' => 'SM',
             'level-2' => 'PS',
             'level-3' => 'IK',
+            'level-4' => 'FM',
         ];
         $revisionPrefixes = [
             'level-1' => 'FMSM',
             'level-2' => 'FMPS',
             'level-3' => 'FMIK',
         ];
+        $revisionSourceMaster = $revisionSource?->documentLevel?->kode === 'level-4' && $revisionSource?->revisedFrom
+            ? $revisionSource->revisedFrom
+            : $revisionSource;
+        $revisionSourceLevelKey = $revisionSourceMaster?->documentLevel?->kode;
+        $levelFourPrefix = match ($revisionSourceLevelKey) {
+            'level-1' => 'FMSM',
+            'level-2' => 'FMPS',
+            'level-3' => 'FMIK',
+            default => 'FM',
+        };
+        $levelFourFormTitle = match ($revisionSourceLevelKey) {
+            'level-1' => 'Form Manual',
+            'level-2' => 'Form Prosedur',
+            'level-3' => 'Form Instruksi Kerja',
+            default => 'Form/Lembar Revisi',
+        };
 
         $ownerLabel = $levelKey === 'level-1' ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
         $documentTitle = \Illuminate\Support\Str::after($level['name'], ': ');
@@ -42,7 +60,7 @@
         $approvedStatusId = \Illuminate\Support\Facades\Schema::hasTable('m_status_document')
             ? \App\Models\StatusDocument::query()->where('nama_status', \App\Models\StatusDocument::APPROVED)->value('id')
             : null;
-        $procedureReferences = ($levelKey === 'level-3' && $procedureLevelId && $approvedStatusId)
+        $procedureReferences ??= ($levelKey === 'level-3' && $procedureLevelId && $approvedStatusId)
             ? \App\Models\Document::query()
                 ->select([
                     'id',
@@ -74,11 +92,23 @@
                 'label' => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department,
             ])
             ->values();
-        $revisionDocumentSuffix = $revisionSource?->nomor_dokumen
-            ? \Illuminate\Support\Str::afterLast($revisionSource->nomor_dokumen, '-')
-            : null;
+        $revisionDocumentSuffix = null;
+        $revisionDocumentNumberSegments = [];
+        if ($revisionSourceMaster?->nomor_dokumen) {
+            $sourceNumberSegments = collect(explode('-', $revisionSourceMaster->nomor_dokumen))
+                ->filter()
+                ->values();
+
+            if ($levelKey === 'level-4') {
+                $sourceNumberBodySegments = $sourceNumberSegments->skip(1)->values();
+                $revisionDocumentNumberSegments = $sourceNumberBodySegments->slice(0, -1)->values()->all();
+                $revisionDocumentSuffix = $sourceNumberBodySegments->last();
+            } else {
+                $revisionDocumentSuffix = \Illuminate\Support\Str::afterLast($revisionSourceMaster->nomor_dokumen, '-');
+            }
+        }
         $documentNumberPrefix = $revisionSource
-            ? ($revisionPrefixes[$levelKey] ?? 'FM'.$documentPrefixes[$levelKey])
+            ? ($levelKey === 'level-4' ? $levelFourPrefix : ($revisionPrefixes[$levelKey] ?? 'FM'.$documentPrefixes[$levelKey]))
             : $documentPrefixes[$levelKey];
         $revisionRootDocumentId = $revisionSource?->revised_from ?: $revisionSource?->id;
         $latestRevisionNumber = $revisionRootDocumentId
@@ -91,7 +121,7 @@
         $selectedBusinessProcessId = old('m_proses_bisnis_id', $revisionSource?->m_proses_bisnis_id);
         $selectedBusinessFunctionId = old('m_proses_fungsi_id', $revisionSource?->m_proses_fungsi_id);
         $selectedReferenceId = old('reference', $revisionSource?->reference);
-        $selectedDepartmentIds = old('department_ids', $revisionSource?->departments?->pluck('id')->all() ?? []);
+        $selectedDepartmentIds = old('department_ids', collect($revisionSource?->departments ?? [])->pluck('id')->all());
         $nextRevisionValue = $revisionSource
             ? '00.'.str_pad((string) (($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1), 2, '0', STR_PAD_LEFT)
             : '00.00';
@@ -100,6 +130,7 @@
         $documentNumberSegments = match ($levelKey) {
             'level-2' => [['value' => $documentNumberProcessCode, 'target' => 'business-process']],
             'level-3' => ['XXX', 'YY'],
+            'level-4' => $revisionDocumentNumberSegments,
             default => [],
         };
         $assignableUsers = \App\Models\User::query()
@@ -118,9 +149,15 @@
             <span class="text-slate-700">{{ $level['badge'] }}</span>
         </nav>
 
-        <h1 class="text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
-            {{ $revisionSource ? 'Ajukan Revisi' : ($levelKey === 'level-1' ? 'Import' : 'Tambah') }} Dokumen Level {{ $levelNumbers[$levelKey] }} : {{ $documentTitle }}
-        </h1>
+        <div>
+            <h1 class="text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
+                {{ $levelKey === 'level-4' && $revisionSource ? 'Dokumen Level IV: '.$levelFourFormTitle : (($revisionSource ? 'Ajukan Revisi' : ($levelKey === 'level-1' ? 'Import' : 'Tambah')).' Dokumen Level '.$levelNumbers[$levelKey].' : '.$documentTitle) }}
+            </h1>
+
+            @if ($levelKey === 'level-4' && $revisionSource)
+                <p class="mt-2 text-sm font-medium text-slate-500">Ajukan Revisi</p>
+            @endif
+        </div>
 
         @if ($revisionSource)
             <div class="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800">
@@ -245,13 +282,24 @@
                 </aside>
             </form>
         @else
-            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]">
+            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]" data-document-create-form data-max-total-file-size-kb="25600">
                 @csrf
                 @if ($revisionSource)
                     <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
                 @endif
 
                 <div class="space-y-6">
+                    @if ($errors->any())
+                        <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                            <p>Submit dokumen belum berhasil. Cek isian berikut:</p>
+                            <ul class="mt-2 list-disc space-y-1 pl-5">
+                                @foreach ($errors->all() as $error)
+                                    <li>{{ $error }}</li>
+                                @endforeach
+                            </ul>
+                        </div>
+                    @endif
+
                     <x-documents.form-section title="Informasi Dokumen">
                         @if ($revisionSource)
                             <input type="hidden" name="nama_dokumen" value="{{ $revisionSource->nama_dokumen }}">
@@ -274,6 +322,14 @@
                                     <dt class="text-sm font-semibold text-slate-500">Level Dokumen</dt>
                                     <dd class="text-sm font-bold text-slate-900">{{ $levelDisplayValue ?: '-' }}</dd>
                                 </div>
+                                @if ($levelKey === 'level-4')
+                                    <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                        <dt class="text-sm font-semibold text-slate-500">Dokumen Induk</dt>
+                                        <dd class="text-sm font-bold text-slate-900">
+                                            {{ $revisionSource->documentLevel?->nama_level ?: '-' }} : {{ \Illuminate\Support\Str::after($revisionSource->documentLevel?->nama_dokumen ?? '', ': ') }}
+                                        </dd>
+                                    </div>
+                                @endif
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                     <dt class="text-sm font-semibold text-slate-500">Nomor Dokumen</dt>
                                     <dd class="text-sm font-bold text-slate-900">{{ $revisionSource->nomor_dokumen ?: '-' }}</dd>
@@ -377,7 +433,7 @@
                                                     data-business-function-id="{{ $procedureReference->m_proses_fungsi_id }}"
                                                     @selected((string) old('reference') === (string) $procedureReference->id)
                                                 >
-                                                    {{ $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }}
+                                                    {{ $procedureReference->procedure_reference_number ?: $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }}
                                                 </option>
                                             @endforeach
                                         </select>
@@ -392,27 +448,75 @@
 
                     <x-documents.official-preparer :label="$ownerLabel" :users="$assignableUsers" />
 
-                    <x-documents.form-section title="Isi Dokumen" icon="cloud-arrow-up">
+                    <x-documents.form-section :title="$levelKey === 'level-4' ? 'Dokumen Revisi' : 'Isi Dokumen'" icon="cloud-arrow-up">
                         <div class="space-y-6 px-6 py-6">
-                            <x-documents.upload-toggle-card
-                                title="Template Dokumen yang Sudah Diisi"
-                                button-label="Upload Template"
-                                tone="sky"
-                            >
-                                <x-ui.file-upload
-                                    label="Upload Template Terisi"
-                                    name="filled_template"
-                                    accept=".pdf,application/pdf"
-                                    hint="Format PDF."
-                                    :max-files="1"
-                                    :max-file-size-kb="10240"
-                                    required
-                                />
+                            <div class="hidden rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700" data-total-file-size-error></div>
 
-                                @error('filled_template')
-                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                @enderror
-                            </x-documents.upload-toggle-card>
+                            @error('files')
+                                <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{{ $message }}</div>
+                            @enderror
+
+                            @if ($levelKey === 'level-4')
+                                <x-documents.upload-toggle-card
+                                    title="1. Isi Dokumen Versi Revisi"
+                                    button-label="Upload Dokumen Revisi"
+                                    tone="sky"
+                                >
+                                    <x-ui.file-upload
+                                        label="Upload Isi Dokumen Versi Revisi"
+                                        name="revision_content"
+                                        accept=".pdf,application/pdf"
+                                        hint="Upload dokumen utama yang sudah direvisi. Format PDF, maksimal 10 MB."
+                                        :max-files="1"
+                                        :max-file-size-kb="10240"
+                                        :required="old('submit_action') === 'submit'"
+                                    />
+
+                                    @error('revision_content')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </x-documents.upload-toggle-card>
+
+                                <x-documents.upload-toggle-card
+                                    title="2. Lembar Revisi"
+                                    button-label="Upload Lembar Revisi"
+                                    tone="sky"
+                                >
+                                    <x-ui.file-upload
+                                        label="Upload Lembar Revisi"
+                                        name="revision_form"
+                                        accept=".pdf,application/pdf"
+                                        hint="Upload form/lembar revisi yang menjelaskan perubahan. Format PDF, maksimal 10 MB."
+                                        :max-files="1"
+                                        :max-file-size-kb="10240"
+                                        :required="old('submit_action') === 'submit'"
+                                    />
+
+                                    @error('revision_form')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </x-documents.upload-toggle-card>
+                            @else
+                                <x-documents.upload-toggle-card
+                                    title="Template Dokumen yang Sudah Diisi"
+                                    button-label="Upload Template"
+                                    tone="sky"
+                                >
+                                    <x-ui.file-upload
+                                        label="Upload Template Terisi"
+                                        name="filled_template"
+                                        accept=".pdf,application/pdf"
+                                        hint="Format PDF."
+                                        :max-files="1"
+                                        :max-file-size-kb="10240"
+                                        required
+                                    />
+
+                                    @error('filled_template')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </x-documents.upload-toggle-card>
+                            @endif
 
                             <x-documents.upload-toggle-card
                                 title="Daftar Dokumen"
@@ -527,6 +631,32 @@
 
                     if (!form) {
                         return;
+                    }
+
+                    const maxTotalFileSizeKb = Number(form.dataset.maxTotalFileSizeKb || 0);
+                    const totalFileSizeError = form.querySelector('[data-total-file-size-error]');
+
+                    if (totalFileSizeError) {
+                        totalFileSizeError.textContent = '';
+                        totalFileSizeError.classList.add('hidden');
+                    }
+
+                    if (maxTotalFileSizeKb > 0) {
+                        const selectedFiles = Array.from(form.querySelectorAll('input[type="file"]'))
+                            .flatMap((input) => Array.from(input.files || []));
+                        const totalFileSize = selectedFiles.reduce((total, file) => total + file.size, 0);
+
+                        if (totalFileSize > maxTotalFileSizeKb * 1024) {
+                            event.preventDefault();
+
+                            if (totalFileSizeError) {
+                                totalFileSizeError.textContent = `Total ukuran file maksimal ${Math.floor(maxTotalFileSizeKb / 1024)} MB. Kurangi ukuran file atau hapus lampiran tambahan.`;
+                                totalFileSizeError.classList.remove('hidden');
+                                totalFileSizeError.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                            }
+
+                            return;
+                        }
                     }
 
                     const emptyPicker = Array.from(form.querySelectorAll('[data-user-search-select]'))

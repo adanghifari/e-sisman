@@ -19,6 +19,7 @@ use Illuminate\Support\Collection;
     'official_preparer_id',
     'reference',
     'revised_from',
+    'request_type',
     'nama_dokumen',
     'nomor_dokumen',
     'nomor_revisi',

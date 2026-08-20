@@ -9,13 +9,13 @@ use App\Models\BusinessProcess;
 use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
-use App\Models\Role;
 use App\Models\StatusDocument;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Str;
+use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 
 class DocumentController extends Controller
@@ -24,8 +24,13 @@ class DocumentController extends Controller
     {
         $revisionSource = $this->revisionSourceForRequest($request, $level);
 
+        abort_if($level === 'level-4' && $revisionSource === null, 404);
+
         return view('document-management.create.level', [
             'revisionSource' => $revisionSource,
+            'procedureReferences' => $level === 'level-3'
+                ? $this->activeProcedureReferences()
+                : collect(),
         ]);
     }
 
@@ -42,6 +47,8 @@ class DocumentController extends Controller
         $validated = $request->validate($this->validationRulesForLevel($level));
         $revisionSource = $this->revisionSourceForRequest($request, $level);
 
+        abort_if($level === 'level-4' && $revisionSource === null, 404);
+
         if ($level === 'level-1') {
             $validated = array_merge($validated, $this->defaultDocumentContext());
             $validated['submit_action'] = 'draft';
@@ -50,8 +57,9 @@ class DocumentController extends Controller
         if ($revisionSource !== null) {
             $validated['m_proses_bisnis_id'] = $revisionSource->m_proses_bisnis_id;
             $validated['m_proses_fungsi_id'] = $revisionSource->m_proses_fungsi_id;
-            $validated['department_ids'] = $revisionSource->departments->pluck('id')->all();
+            $validated['department_ids'] = collect($revisionSource->departments)->pluck('id')->all();
             $validated['reference'] = $revisionSource->reference;
+            $validated['nama_dokumen'] = $validated['nama_dokumen'] ?? $revisionSource->nama_dokumen;
         }
 
         $documentNumber = $revisionSource !== null
@@ -91,6 +99,7 @@ class DocumentController extends Controller
                 'official_preparer_id' => $validated['official_preparer_id'] ?? null,
                 'reference' => $level === 'level-3' ? $validated['reference'] : null,
                 'revised_from' => $revisionSource?->id,
+                'request_type' => $revisionSource !== null ? 'revision' : null,
                 'nama_dokumen' => $validated['nama_dokumen'],
                 'nomor_dokumen' => $documentNumber,
                 'nomor_revisi' => $documentRevision,
@@ -107,6 +116,14 @@ class DocumentController extends Controller
 
             if ($request->hasFile('filled_template')) {
                 $this->storeDocumentFile($document, $request->file('filled_template'), 'filled_template', $request->user()->id);
+            }
+
+            if ($request->hasFile('revision_content')) {
+                $this->storeDocumentFile($document, $request->file('revision_content'), 'revision_content', $request->user()->id);
+            }
+
+            if ($request->hasFile('revision_form')) {
+                $this->storeDocumentFile($document, $request->file('revision_form'), 'revision_form', $request->user()->id);
             }
 
             foreach ($request->file('attachments', []) as $attachment) {
@@ -127,8 +144,12 @@ class DocumentController extends Controller
                 ]);
         }
 
+        $redirectParameters = $revisionSource !== null
+            ? [$level, 'revised_from' => $revisionSource->id]
+            : [$level];
+
         return redirect()
-            ->route('documents.create.level', $level)
+            ->route('documents.create.level', $redirectParameters)
             ->with('status', 'Dokumen berhasil disimpan sebagai draft.');
     }
 
@@ -138,6 +159,7 @@ class DocumentController extends Controller
             'level-1' => 'Manual',
             'level-2' => 'Prosedur',
             'level-3' => 'IK',
+            'level-4' => 'Form',
         ][$level] ?? 'IK';
     }
 
@@ -152,6 +174,25 @@ class DocumentController extends Controller
                 'catatan_revisi' => ['nullable', 'string', 'max:1000'],
                 'imported_document' => ['required', 'file', 'mimes:pdf', 'max:10240'],
                 'revised_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+            ];
+        }
+
+        if ($level === 'level-4') {
+            return [
+                'nama_dokumen' => ['required', 'string', 'max:255'],
+                'm_proses_bisnis_id' => ['required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
+                'm_proses_fungsi_id' => ['required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
+                'reference' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+                'department_ids' => ['required', 'array', 'min:1'],
+                'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
+                'official_preparer_id' => ['required', 'integer', Rule::exists('users', 'id')],
+                'nomor_dokumen_suffix' => ['required', 'string', 'max:50'],
+                'revision_content' => ['required_if:submit_action,submit', 'file', 'mimes:pdf', 'max:10240'],
+                'revision_form' => ['required_if:submit_action,submit', 'file', 'mimes:pdf', 'max:10240'],
+                'attachments' => ['nullable', 'array', 'max:10'],
+                'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
+                'submit_action' => ['required', Rule::in(['draft', 'submit'])],
+                'revised_from' => ['required', 'integer', Rule::exists('t_document', 'id')],
             ];
         }
 
@@ -181,13 +222,13 @@ class DocumentController extends Controller
         }
 
         $source = Document::query()
-            ->with(['status', 'documentLevel', 'businessProcess', 'businessFunction', 'departments', 'referenceDocument'])
+            ->with(['status', 'documentLevel', 'businessProcess', 'businessFunction', 'departments', 'referenceDocument', 'revisedFrom.documentLevel'])
             ->whereKey($sourceId)
             ->firstOrFail();
 
-        abort_unless($source->documentLevel?->kode === $level, 404);
+        abort_unless($level === 'level-4' || $source->documentLevel?->kode === $level, 404);
         abort_unless(
-            in_array($source->status?->nama_status, [StatusDocument::APPROVED, StatusDocument::OBSOLETE], true),
+            $source->status?->nama_status === StatusDocument::APPROVED,
             404,
         );
         abort_unless($this->userCanRequestRevision($request, $source), 403);
@@ -222,6 +263,16 @@ class DocumentController extends Controller
             return ['nullable', 'integer', Rule::exists('t_document', 'id')];
         }
 
+        $procedureReferenceIds = $this->activeProcedureReferences(
+            (int) request('m_proses_bisnis_id'),
+            (int) request('m_proses_fungsi_id'),
+        )->pluck('id')->all();
+
+        return ['required', 'integer', Rule::in($procedureReferenceIds)];
+    }
+
+    protected function activeProcedureReferences(?int $businessProcessId = null, ?int $businessFunctionId = null): Collection
+    {
         $procedureLevelId = DocumentLevel::query()
             ->where('kode', 'level-2')
             ->value('id');
@@ -230,15 +281,41 @@ class DocumentController extends Controller
             ->where('nama_status', StatusDocument::APPROVED)
             ->value('id');
 
-        return [
-            'required',
-            'integer',
-            Rule::exists('t_document', 'id')
-                ->where('m_document_level_id', $procedureLevelId)
-                ->where('m_status_document_id', $approvedStatusId)
-                ->where('m_proses_bisnis_id', request('m_proses_bisnis_id'))
-                ->where('m_proses_fungsi_id', request('m_proses_fungsi_id')),
-        ];
+        if ($procedureLevelId === null || $approvedStatusId === null) {
+            return collect();
+        }
+
+        return Document::query()
+            ->with(['documentLevel', 'revisedFrom.documentLevel'])
+            ->where('m_status_document_id', $approvedStatusId)
+            ->where(function ($query) use ($procedureLevelId): void {
+                $query
+                    ->where('m_document_level_id', $procedureLevelId)
+                    ->orWhereHas('revisedFrom', fn ($query) => $query->where('m_document_level_id', $procedureLevelId));
+            })
+            ->when($businessProcessId, fn ($query) => $query->where('m_proses_bisnis_id', $businessProcessId))
+            ->when($businessFunctionId, fn ($query) => $query->where('m_proses_fungsi_id', $businessFunctionId))
+            ->get()
+            ->groupBy(fn (Document $document): int => $document->revisionRootId())
+            ->map(fn (Collection $family): Document => $family
+                ->sortByDesc(fn (Document $document): string => sprintf(
+                    '%010d-%010d-%010d',
+                    $document->nomor_revisi,
+                    $document->approved_at?->timestamp ?? 0,
+                    $document->id,
+                ))
+                ->first())
+            ->map(function (Document $document): Document {
+                $displayNumber = $document->documentLevel?->kode === 'level-4'
+                    ? ($document->revisedFrom?->nomor_dokumen ?: $document->nomor_dokumen)
+                    : $document->nomor_dokumen;
+
+                $document->setAttribute('procedure_reference_number', $displayNumber);
+
+                return $document;
+            })
+            ->sortBy('procedure_reference_number')
+            ->values();
     }
 
     protected function defaultDocumentContext(): array
@@ -271,6 +348,8 @@ class DocumentController extends Controller
 
             $segments[] = $businessProcessCode ?: 'SMR';
             $segments[] = Str::upper(trim($suffix));
+        } elseif ($documentLevel->kode === 'level-4') {
+            $segments[] = Str::upper(trim($suffix));
         } else {
             $segments[] = 'XXX';
             $segments[] = 'YY';
@@ -284,12 +363,19 @@ class DocumentController extends Controller
 
     protected function buildRevisionDocumentNumber(Document $source, DocumentLevel $documentLevel): string
     {
+        $sourceLevelKey = $this->effectiveRevisionSourceLevelKey($source);
         $revisionPrefix = match ($documentLevel->kode) {
             'level-2' => 'FMPS',
             'level-3' => 'FMIK',
+            'level-4' => match ($sourceLevelKey) {
+                'level-2' => 'FMPS',
+                'level-3' => 'FMIK',
+                'level-1' => 'FMSM',
+                default => 'FM',
+            },
             default => 'FM'.$documentLevel->prefix,
         };
-        $sourceSegments = collect(explode('-', (string) $source->nomor_dokumen))
+        $sourceSegments = collect(explode('-', (string) $this->revisionSourceMasterNumber($source)))
             ->filter()
             ->values();
 
@@ -301,6 +387,28 @@ class DocumentController extends Controller
             ->merge($sourceSegments)
             ->filter()
             ->implode('-');
+    }
+
+    protected function effectiveRevisionSourceLevelKey(Document $source): ?string
+    {
+        $source->loadMissing(['documentLevel', 'revisedFrom.documentLevel']);
+
+        if ($source->documentLevel?->kode === 'level-4' && $source->revisedFrom !== null) {
+            return $source->revisedFrom->documentLevel?->kode;
+        }
+
+        return $source->documentLevel?->kode;
+    }
+
+    protected function revisionSourceMasterNumber(Document $source): ?string
+    {
+        $source->loadMissing(['documentLevel', 'revisedFrom']);
+
+        if ($source->documentLevel?->kode === 'level-4' && $source->revisedFrom !== null) {
+            return $source->revisedFrom->nomor_dokumen ?: $source->nomor_dokumen;
+        }
+
+        return $source->nomor_dokumen;
     }
 
     protected function nextRevisionNumber(Document $source): int
@@ -346,13 +454,12 @@ class DocumentController extends Controller
             return;
         }
 
-        $role = Role::query()->firstOrCreate(['nama_role' => 'Penyusun Resmi']);
         $approvedStatus = ApprovalStatus::findByCode(ApprovalStatus::APPROVED);
 
         $document->approvals()->create([
             'm_approval_status_id' => $approvedStatus->id,
             'user_id' => $document->official_preparer_id,
-            'role_id' => $role->id,
+            'role_id' => null,
             'assigned_by' => $assignedBy,
             'assigned_at' => $respondedAt,
             'responded_at' => $respondedAt,

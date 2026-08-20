@@ -5,11 +5,42 @@
             'level-1' => 'I',
             'level-2' => 'II',
             'level-3' => 'III',
+            'level-4' => 'IV',
         ];
         $isLevelOne = $levelKey === 'level-1';
         $ownerLabel = $isLevelOne ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
         $statusCode = $activeApproval?->status?->kode_status ?? $document->status?->nama_status ?? '-';
         $statusLabel = $activeApproval?->status?->nama_status ?? $document->status?->nama_status ?? '-';
+        $canCorrectRejectedSubmission = $document->status?->nama_status === \App\Models\StatusDocument::REJECTED
+            && in_array(auth()->id(), [$document->user_id, $document->official_preparer_id], true);
+        $contentSectionTitle = $levelKey === 'level-4' ? 'Dokumen Revisi' : 'Isi Dokumen';
+        $approvalFlowLabel = $approvalFlowDocumentLevel?->nama_dokumen
+            ?? $approvalFlowDocumentLevel?->nama_level
+            ?? $document->documentLevel?->nama_dokumen
+            ?? $document->documentLevel?->nama_level
+            ?? '-';
+        $approvalFlowDescription = $levelKey === 'level-4' && $document->revisedFrom?->documentLevel
+            ? 'Mengikuti approval flow dokumen induk: '.$approvalFlowLabel
+            : 'Approval Flow '.$approvalFlowLabel;
+        $contentFileLabels = [
+            'filled_template' => 'Template Dokumen',
+            'imported_document' => 'Dokumen Import',
+            'revision_content' => 'Isi Dokumen Versi Revisi',
+            'revision_form' => 'Lembar Revisi',
+            'revision_before' => 'Semula',
+            'revision_after' => 'Menjadi',
+        ];
+        $revisionMainFiles = $levelKey === 'level-4'
+            ? collect(['revision_content', 'revision_form'])
+                ->map(fn ($type) => $contentFiles->firstWhere('type_file', $type))
+                ->filter()
+                ->values()
+            : collect();
+        $otherContentFiles = $levelKey === 'level-4'
+            ? $contentFiles
+                ->reject(fn ($file) => in_array($file->type_file, ['revision_content', 'revision_form'], true))
+                ->values()
+            : $contentFiles;
         $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
         $readonlySelect = 'h-12 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
     @endphp
@@ -93,16 +124,66 @@
                             </div>
                         </div>
                     </div>
+
                 </section>
 
-                <x-documents.form-section title="Isi Dokumen" icon="document-text">
+                <x-documents.form-section :title="$contentSectionTitle" icon="document-text">
                     <div class="space-y-4 px-6 py-6">
+                        @if ($levelKey === 'level-4')
+                            @if ($revisionMainFiles->isNotEmpty())
+                                <div class="grid gap-4 2xl:grid-cols-2">
+                                    @foreach ($revisionMainFiles as $file)
+                                        <section class="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                            <div class="flex min-h-20 items-start justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                                <div class="min-w-0">
+                                                    <p class="text-sm font-bold text-slate-900">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                                    <p class="mt-1 truncate text-xs font-semibold text-slate-500">{{ $file->original_file_name }}</p>
+                                                </div>
+                                                <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                                    Buka
+                                                </a>
+                                            </div>
+
+                                            <iframe
+                                                src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                                class="h-[620px] w-full bg-white 2xl:h-[72vh]"
+                                            ></iframe>
+                                        </section>
+                                    @endforeach
+                                </div>
+                            @endif
+
+                            @foreach ($otherContentFiles as $file)
+                                <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                    <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                        <div class="min-w-0">
+                                            <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
+                                            <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                        </div>
+                                        <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                            Buka
+                                        </a>
+                                    </div>
+
+                                    <iframe
+                                        src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                        class="min-h-[760px] w-full bg-white xl:h-[82vh]"
+                                    ></iframe>
+                                </section>
+                            @endforeach
+
+                            @if ($revisionMainFiles->isEmpty() && $otherContentFiles->isEmpty())
+                                <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                    Belum ada file isi dokumen.
+                                </p>
+                            @endif
+                        @else
                         @forelse ($contentFiles as $file)
                             <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                                 <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
                                     <div class="min-w-0">
                                         <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
-                                        <p class="text-xs font-medium text-slate-500">{{ strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                        <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                     </div>
                                     <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                         Buka
@@ -119,6 +200,7 @@
                                 Belum ada file isi dokumen.
                             </p>
                         @endforelse
+                        @endif
                     </div>
                 </x-documents.form-section>
 
@@ -179,6 +261,19 @@
                         </div>
                     </div>
                 </section>
+
+                @if ($canCorrectRejectedSubmission)
+                    <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                        <div class="grid gap-3 px-6 py-5 sm:grid-cols-2">
+                            <a href="{{ route('documents.inbox', ['tab' => 'needs-process']) }}" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
+                                Batal
+                            </a>
+                            <button type="button" class="inline-flex h-11 items-center justify-center rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">
+                                Perbaiki Pengajuan
+                            </button>
+                        </div>
+                    </section>
+                @endif
 
                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <div class="border-b border-slate-100 px-6 py-5">
@@ -278,7 +373,7 @@
                         <div class="border-b border-slate-200 px-6 py-5">
                             <h2 class="text-lg font-bold text-slate-900">Assign Approver</h2>
                             <p class="mt-2 text-sm font-medium text-slate-500">
-                                Approval Flow {{ $document->documentLevel?->nama_dokumen ?? $document->documentLevel?->nama_level ?? '-' }}
+                                {{ $approvalFlowDescription }}
                             </p>
                         </div>
 
@@ -622,12 +717,17 @@
 
     <script>
         (() => {
-            const template = document.querySelector('[data-approver-slot-template]');
+            if (window.approverSlotManagerReady) {
+                return;
+            }
+
+            window.approverSlotManagerReady = true;
 
             document.addEventListener('click', (event) => {
                 const addButton = event.target.closest('[data-add-approver-slot]');
 
                 if (addButton) {
+                    const template = document.querySelector('[data-approver-slot-template]');
                     const stage = addButton.closest('[data-approver-stage]');
                     const list = stage?.querySelector('[data-approver-slots]');
 

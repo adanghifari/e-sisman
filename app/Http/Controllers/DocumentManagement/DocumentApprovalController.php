@@ -9,7 +9,8 @@ use App\Models\ApprovalFlowStage;
 use App\Models\ApprovalStatus;
 use App\Models\Document;
 use App\Models\DocumentFile;
-use App\Models\Role;
+use App\Models\DocumentLevel;
+use App\Models\DocumentType;
 use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
@@ -43,15 +44,24 @@ class DocumentApprovalController extends Controller
             'approvals.approver',
             'approvals.role',
             'documentLevel.approvalFlows.stages',
+            'revisedFrom.documentLevel.approvalFlows.stages',
         ]);
 
         return view('document-management.approval-detail', [
             'document' => $document,
             'activeApproval' => $this->activeApproval($request, $document),
             'approvalFlowStages' => $this->approvalFlowStages($document),
+            'approvalFlowDocumentLevel' => $this->approvalFlowDocumentLevel($document),
             'canManageApproverAssignment' => $this->canManageApproverAssignment($request, $document),
             'assignableUsers' => User::query()->with('department')->orderBy('name')->get(),
-            'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document'])->values(),
+            'contentFiles' => $document->files->whereIn('type_file', [
+                'filled_template',
+                'imported_document',
+                'revision_content',
+                'revision_form',
+                'revision_before',
+                'revision_after',
+            ])->values(),
             'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
         ]);
     }
@@ -170,13 +180,11 @@ class DocumentApprovalController extends Controller
 
         foreach ($stages as $stage) {
             $stageLabel = $stage->display_label ?: 'Approval';
-            $role = Role::query()->firstOrCreate(['nama_role' => $stage->nama_tahap]);
             $stageStatus = $stage->stage_order === $activeStageOrder ? $pendingStatus : $waitingStatus;
             $userIds = $this->stageApproverIds($request, $document, $stage);
 
             Approval::query()
                 ->where('t_document_id', $document->id)
-                ->where('role_id', $role->id)
                 ->where('stages', $stageLabel)
                 ->whereNull('responded_at')
                 ->whereNotIn('user_id', $userIds)
@@ -186,7 +194,7 @@ class DocumentApprovalController extends Controller
                 $approval = Approval::query()->firstOrNew([
                     't_document_id' => $document->id,
                     'user_id' => $userId,
-                    'role_id' => $role->id,
+                    'stages' => $stageLabel,
                 ]);
 
                 if ($approval->exists && $approval->responded_at !== null) {
@@ -198,18 +206,19 @@ class DocumentApprovalController extends Controller
 
                 $approval->fill([
                     'm_approval_status_id' => $alreadySignedAsOfficialPreparer ? $approvedStatus->id : $stageStatus->id,
+                    'role_id' => null,
                     'assigned_by' => $request->user()->id,
                     'assigned_at' => now(),
                     'responded_at' => $alreadySignedAsOfficialPreparer
                         ? ($officialPreparerSignature->responded_at ?? $officialPreparerSignature->assigned_at ?? now())
                         : null,
                     'created_at' => $approval->created_at ?? now(),
-                    'stages' => $stageLabel,
                     'catatan' => null,
                 ])->save();
             }
         }
 
+        $this->markRevisionRequestAsAssigned($document);
         $this->advanceApprovalFlow($document);
 
         return redirect()
@@ -226,6 +235,29 @@ class DocumentApprovalController extends Controller
             ->route('documents.approval.show', $document)
             ->withErrors($errors)
             ->withInput();
+    }
+
+    private function markRevisionRequestAsAssigned(Document $document): void
+    {
+        if ($document->request_type !== 'revision') {
+            return;
+        }
+
+        if ($document->documentLevel?->kode !== 'level-4') {
+            return;
+        }
+
+        $revisionTypeId = DocumentType::query()
+            ->where('nama_types', 'Revisi')
+            ->value('id');
+
+        if ($revisionTypeId === null) {
+            return;
+        }
+
+        $document->forceFill([
+            'm_document_types_id' => $revisionTypeId,
+        ])->save();
     }
 
     public function file(Request $request, Document $document, DocumentFile $file, RecordDocumentDownload $recordDocumentDownload): BinaryFileResponse
@@ -319,12 +351,26 @@ class DocumentApprovalController extends Controller
 
     private function approvalFlowStages(Document $document)
     {
-        return $document->documentLevel
+        return $this->approvalFlowDocumentLevel($document)
             ?->approvalFlows
             ->flatMap(fn ($flow) => $flow->stages)
             ->sortBy('stage_order')
             ->values()
             ?? collect();
+    }
+
+    private function approvalFlowDocumentLevel(Document $document): ?DocumentLevel
+    {
+        $document->loadMissing([
+            'documentLevel.approvalFlows.stages',
+            'revisedFrom.documentLevel.approvalFlows.stages',
+        ]);
+
+        if ($document->documentLevel?->kode === 'level-4' && $document->revisedFrom?->documentLevel !== null) {
+            return $document->revisedFrom->documentLevel;
+        }
+
+        return $document->documentLevel;
     }
 
     private function isDocumentAssignmentLocked(Document $document): bool
@@ -475,7 +521,61 @@ class DocumentApprovalController extends Controller
             'rejected_at' => null,
         ]);
 
-        $this->obsoletePreviousApprovedRevisions($document->refresh(), $approvedStatus);
+        $document->refresh();
+
+        if ($document->request_type === 'obsolete') {
+            $this->obsoleteSourceMasterDocument($document);
+
+            return;
+        }
+
+        $this->promoteRevisionRequestToMaster($document);
+        $document->refresh();
+        $this->obsoletePreviousApprovedRevisions($document, $approvedStatus);
+    }
+
+    private function promoteRevisionRequestToMaster(Document $document): void
+    {
+        if ($document->request_type !== 'revision' || $document->revised_from === null) {
+            return;
+        }
+
+        $source = Document::query()
+            ->select([
+                'id',
+                'm_document_level_id',
+                'm_document_types_id',
+                'reference',
+                'nomor_dokumen',
+            ])
+            ->find($document->revised_from);
+
+        if ($source === null) {
+            return;
+        }
+
+        $document->update([
+            'm_document_level_id' => $source->m_document_level_id,
+            'm_document_types_id' => $source->m_document_types_id,
+            'reference' => $source->reference,
+            'nomor_dokumen' => $source->nomor_dokumen,
+        ]);
+    }
+
+    private function obsoleteSourceMasterDocument(Document $document): void
+    {
+        if ($document->revised_from === null) {
+            return;
+        }
+
+        $obsoleteStatus = StatusDocument::findByName(StatusDocument::OBSOLETE);
+
+        Document::query()
+            ->whereKey($document->revised_from)
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::APPROVED))
+            ->update([
+                'm_status_document_id' => $obsoleteStatus->id,
+            ]);
     }
 
     private function obsoletePreviousApprovedRevisions(Document $document, StatusDocument $approvedStatus): void
