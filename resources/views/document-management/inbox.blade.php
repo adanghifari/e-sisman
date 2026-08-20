@@ -78,7 +78,13 @@
                             <tr class="hover:bg-slate-50/70">
                                 <td class="px-5 py-4 font-semibold text-slate-800">{{ $document['number'] }}</td>
                                 <td class="px-5 py-4 text-slate-700">{{ $document['name'] }}</td>
-                                <td class="px-5 py-4 text-slate-600">{{ $document['type'] }}</td>
+                                <td class="px-5 py-4">
+                                    @if (($document['type_tone'] ?? null) === 'red')
+                                        <x-ui.status-badge :label="$document['type']" tone="red" />
+                                    @else
+                                        <span class="text-slate-600">{{ $document['type'] }}</span>
+                                    @endif
+                                </td>
                                 <td class="px-5 py-4 text-slate-600">{{ $document['stage'] }}</td>
                                 <td class="px-5 py-4 text-slate-600">{{ $document['owner'] }}</td>
                                 <td class="px-5 py-4 text-slate-600">{{ $document['department'] }}</td>
@@ -134,7 +140,13 @@
                             <tr class="hover:bg-slate-50/70">
                                 <td class="px-5 py-4 font-semibold text-slate-800">{{ $document['number'] }}</td>
                                 <td class="px-5 py-4 text-slate-700">{{ $document['name'] }}</td>
-                                <td class="px-5 py-4 text-slate-600">{{ $document['type'] }}</td>
+                                <td class="px-5 py-4">
+                                    @if (($document['type_tone'] ?? null) === 'red')
+                                        <x-ui.status-badge :label="$document['type']" tone="red" />
+                                    @else
+                                        <span class="text-slate-600">{{ $document['type'] }}</span>
+                                    @endif
+                                </td>
                                 <td class="px-5 py-4 text-slate-600">{{ $document['submitted_at'] }}</td>
                                 <td class="px-5 py-4 text-slate-600">{{ $document['stage'] }}</td>
                                 <td class="px-5 py-4 text-slate-600">{{ $document['owner'] }}</td>

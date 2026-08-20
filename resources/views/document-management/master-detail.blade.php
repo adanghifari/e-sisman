@@ -10,10 +10,6 @@
         $ownerLabel = $levelKey === 'level-1' ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
         $publishedAt = $document->tanggal_terbit ?? $document->approved_at;
         $levelTitle = trim(($document->documentLevel?->nama_level ?? '').' : '.\Illuminate\Support\Str::after($document->documentLevel?->nama_dokumen ?? '', ': '), ' :');
-        $processLabel = collect([
-            $document->businessProcess?->nama_proses_bisnis,
-            $document->businessFunction?->nama_proses_fungsi,
-        ])->filter()->implode(' / ');
         $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
     @endphp
 
@@ -43,7 +39,7 @@
                     <dl class="divide-y divide-slate-100 px-6 py-4">
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Nama Dokumen</dt>
-                            <dd class="text-sm font-bold uppercase leading-6 text-slate-900">{{ $document->nama_dokumen }}</dd>
+                            <dd class="text-sm font-bold leading-6 text-slate-900">{{ $document->nama_dokumen }}</dd>
                         </div>
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Level Dokumen</dt>
@@ -53,19 +49,17 @@
                             <dt class="text-sm font-semibold text-slate-500">Nomor Dokumen</dt>
                             <dd class="text-sm font-bold text-slate-900">{{ $masterDisplayNumber }}</dd>
                         </div>
-                        @if ($document->revised_from)
-                            <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
-                                <dt class="text-sm font-semibold text-slate-500">Nomor Dokumen Revisi</dt>
-                                <dd class="text-sm font-bold text-slate-900">{{ $document->nomor_dokumen ?: '-' }}</dd>
-                            </div>
-                        @endif
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Revisi</dt>
                             <dd class="text-sm font-bold text-slate-900">{{ $document->formatted_revision }}</dd>
                         </div>
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                            <dt class="text-sm font-semibold text-slate-500">Proses Bisnis</dt>
+                            <dd class="text-sm font-bold text-slate-900">{{ $document->businessProcess?->nama_proses_bisnis ?: '-' }}</dd>
+                        </div>
+                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Proses / Fungsi</dt>
-                            <dd class="text-sm font-bold text-slate-900">{{ $processLabel ?: '-' }}</dd>
+                            <dd class="text-sm font-bold text-slate-900">{{ $document->businessFunction?->nama_proses_fungsi ?: '-' }}</dd>
                         </div>
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Department Terkait</dt>
@@ -167,13 +161,6 @@
                             <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen</span>
                             <input type="text" value="{{ $masterDisplayNumber }}" readonly class="{{ $readonlyInput }}">
                         </label>
-
-                        @if ($document->revised_from)
-                            <label class="block">
-                                <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen Revisi</span>
-                                <input type="text" value="{{ $document->nomor_dokumen ?: '-' }}" readonly class="{{ $readonlyInput }}">
-                            </label>
-                        @endif
 
                         <label class="block">
                             <span class="mb-2 block text-base font-medium text-slate-500">Revisi</span>

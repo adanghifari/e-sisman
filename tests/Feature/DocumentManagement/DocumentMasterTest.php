@@ -75,6 +75,37 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Obsolete');
     }
 
+    public function test_master_page_displays_master_number_for_obsolete_form_revision_rows(): void
+    {
+        $user = User::factory()->create();
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+
+        $source = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Ikatan Dinas SSO',
+            'nomor_dokumen' => 'PS-KSA-02',
+            'nomor_revisi' => 0,
+        ]);
+        $formRevision = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Ikatan Dinas SSO',
+            'nomor_dokumen' => 'FMPS-KSA-02',
+            'nomor_revisi' => 1,
+            'revised_from' => $source->id,
+        ]);
+        $this->createDocument($user, $approvedStatus, [
+            'nama_dokumen' => 'Prosedur Ikatan Dinas SSO',
+            'nomor_dokumen' => 'PS-KSA-02',
+            'nomor_revisi' => 2,
+            'revised_from' => $formRevision->id,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertSee('PS-KSA-02')
+            ->assertDontSee('FMPS-KSA-02');
+    }
+
     public function test_master_page_shows_latest_approved_revision_as_primary_row(): void
     {
         $user = User::factory()->create();
@@ -189,6 +220,7 @@ class DocumentMasterTest extends TestCase
             ->assertOk()
             ->assertSee('Prosedur Ikatan Dinas SSO')
             ->assertSee('PS-KSA-02')
+            ->assertDontSee('FMPS-KSA-02')
             ->assertSee('00.01')
             ->assertSee('Tgl Obsolete')
             ->assertSee('00.00')
@@ -289,20 +321,21 @@ class DocumentMasterTest extends TestCase
         $response = $this->actingAs($viewer)
             ->get(route('documents.master.show', $revision))
             ->assertOk()
+            ->assertSee('Instruksi Revisi Aktif')
+            ->assertDontSee('<dd class="text-sm font-bold uppercase leading-6 text-slate-900">Instruksi Revisi Aktif</dd>', false)
             ->assertSee('Nomor Dokumen')
             ->assertSee('IK-SMR-010')
-            ->assertSee('Nomor Dokumen Revisi')
-            ->assertSee('FMIK-SMR-010')
             ->assertSee('00.01')
+            ->assertSee('Proses Bisnis')
+            ->assertSee('Proses / Fungsi')
+            ->assertDontSee('Nomor Dokumen Revisi')
             ->assertDontSee('Dokumen Acuan')
             ->assertDontSee('Revisi Dari')
             ->assertDontSee('PS-SMR-REF - Dokumen Acuan Lama')
             ->assertDontSee('IK-SMR-010 - Revisi 00.00');
 
-        $this->assertLessThan(
-            strpos($response->getContent(), 'Nomor Dokumen Revisi'),
-            strpos($response->getContent(), 'Nomor Dokumen'),
-        );
+        $this->assertStringNotContainsString('Nomor Dokumen Revisi', $response->getContent());
+        $this->assertStringContainsString('>Revisi</dt>', $response->getContent());
     }
 
     public function test_revision_button_only_shows_for_user_from_document_department(): void
@@ -361,7 +394,6 @@ class DocumentMasterTest extends TestCase
             'nama_dokumen' => 'Master Jadi Obsolete',
             'nomor_dokumen' => 'PS-SMR-OBS',
         ]);
-        DocumentType::create(['nama_types' => 'Form']);
         $documentDepartment = $document->departments()->firstOrFail();
         $sameDepartmentUser = User::factory()->create(['m_department_id' => $documentDepartment->id]);
 
@@ -379,8 +411,9 @@ class DocumentMasterTest extends TestCase
             ->firstOrFail();
 
         $this->assertSame(StatusDocument::PROPOSED, $request->status->nama_status);
-        $this->assertSame('Form', $request->documentType->nama_types);
-        $this->assertSame('level-4', $request->documentLevel->kode);
+        $this->assertSame($document->documentType->nama_types, $request->documentType->nama_types);
+        $this->assertSame($document->documentLevel->kode, $request->documentLevel->kode);
+        $this->assertSame($document->nomor_dokumen, $request->nomor_dokumen);
         $this->assertSame('Dokumen sudah tidak digunakan.', $request->catatan_revisi);
     }
 

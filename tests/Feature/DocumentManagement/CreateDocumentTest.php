@@ -463,7 +463,12 @@ class CreateDocumentTest extends TestCase
             ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
             ->assertOk()
             ->assertSee('Dokumen Level IV: Form Prosedur')
-            ->assertSee('Ajukan Revisi')
+            ->assertSee('Import Dokumen Level II: Prosedur SKMBS')
+            ->assertDontSee('<dd class="text-sm font-bold uppercase leading-6 text-slate-900">Prosedur Revisi Master</dd>', false)
+            ->assertSee('Level II: Prosedur SKMBS')
+            ->assertDontSee('<dt class="text-sm font-semibold text-slate-500">Dokumen Induk</dt>', false)
+            ->assertSee('Nomor Dokumen Induk')
+            ->assertSee('Proses Bisnis')
             ->assertSee('Dokumen Revisi')
             ->assertSee('1. Isi Dokumen Versi Revisi')
             ->assertSee('2. Lembar Revisi')
@@ -535,6 +540,16 @@ class CreateDocumentTest extends TestCase
         $this->actingAs($submitter)
             ->get(route('documents.approval.show', $revision))
             ->assertOk()
+            ->assertSeeInOrder(['Detail Dokumen Level IV', 'Revisi', 'Informasi Dokumen'])
+            ->assertSee('Prosedur Revisi Master')
+            ->assertSee('Level II: Prosedur SKMBS')
+            ->assertSee('Nomor Dokumen Induk')
+            ->assertSee('PS-SMR-010')
+            ->assertSee('Proses Bisnis')
+            ->assertSee('Sistem Manajemen Risiko')
+            ->assertSee('Proses / Fungsi')
+            ->assertSee('Operasional')
+            ->assertDontSee('Level IV : Form / Lembar Revisi')
             ->assertSee('Dokumen Revisi')
             ->assertSee('Isi Dokumen Versi Revisi')
             ->assertSee('Lembar Revisi')
@@ -547,7 +562,8 @@ class CreateDocumentTest extends TestCase
             ->assertOk()
             ->assertSee('Prosedur Revisi Master Updated')
             ->assertSee('Pengajuan Revisi')
-            ->assertSee(StatusDocument::PROPOSED);
+            ->assertSee('Dalam Review')
+            ->assertSee('Perlu Verifikasi Admin KD');
 
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
@@ -594,8 +610,9 @@ class CreateDocumentTest extends TestCase
             ->get(route('documents.inbox', ['tab' => 'needs-process']))
             ->assertOk()
             ->assertSee('Prosedur Revisi Master Updated')
-            ->assertSee('Pengajuan Revisi')
-            ->assertSee(StatusDocument::PROPOSED);
+            ->assertSee('Diperiksa oleh Superintendent')
+            ->assertSee('Dalam Review')
+            ->assertSee('Menunggu Superintendent');
 
         $this->actingAs($submitter)
             ->post(route('documents.store', 'level-4'), [

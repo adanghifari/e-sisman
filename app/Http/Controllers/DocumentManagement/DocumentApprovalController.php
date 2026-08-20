@@ -45,16 +45,27 @@ class DocumentApprovalController extends Controller
             'approvals.role',
             'documentLevel.approvalFlows.stages',
             'revisedFrom.documentLevel.approvalFlows.stages',
+            'revisedFrom.status',
+            'revisedFrom.documentType',
+            'revisedFrom.businessProcess',
+            'revisedFrom.businessFunction',
+            'revisedFrom.departments',
+            'revisedFrom.files.uploader',
         ]);
+        $contentDocument = $document->request_type === 'obsolete' && $document->revisedFrom !== null
+            ? $document->revisedFrom
+            : $document;
 
         return view('document-management.approval-detail', [
             'document' => $document,
+            'contentDocument' => $contentDocument,
+            'displayDocumentNumber' => $this->displayDocumentNumber($document, $contentDocument),
             'activeApproval' => $this->activeApproval($request, $document),
             'approvalFlowStages' => $this->approvalFlowStages($document),
             'approvalFlowDocumentLevel' => $this->approvalFlowDocumentLevel($document),
             'canManageApproverAssignment' => $this->canManageApproverAssignment($request, $document),
             'assignableUsers' => User::query()->with('department')->orderBy('name')->get(),
-            'contentFiles' => $document->files->whereIn('type_file', [
+            'contentFiles' => $contentDocument->files->whereIn('type_file', [
                 'filled_template',
                 'imported_document',
                 'revision_content',
@@ -62,8 +73,43 @@ class DocumentApprovalController extends Controller
                 'revision_before',
                 'revision_after',
             ])->values(),
-            'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
+            'attachmentFiles' => $contentDocument->files->where('type_file', 'attachment')->values(),
         ]);
+    }
+
+    private function displayDocumentNumber(Document $document, Document $contentDocument): string
+    {
+        if ($document->request_type === 'obsolete') {
+            return $contentDocument->nomor_dokumen ?: $document->nomor_dokumen ?: '-';
+        }
+
+        if ($document->request_type !== 'revision' || $document->revisedFrom === null) {
+            return $document->nomor_dokumen ?: '-';
+        }
+
+        if (str_starts_with((string) $document->nomor_dokumen, 'FM')) {
+            return $document->nomor_dokumen;
+        }
+
+        $source = $document->revisedFrom;
+        $prefix = match ($source->documentLevel?->kode) {
+            'level-1' => 'FMSM',
+            'level-2' => 'FMPS',
+            'level-3' => 'FMIK',
+            default => 'FM',
+        };
+        $segments = collect(explode('-', (string) $source->nomor_dokumen))
+            ->filter()
+            ->values();
+
+        if ($segments->isNotEmpty()) {
+            $segments->shift();
+        }
+
+        return collect([$prefix])
+            ->merge($segments)
+            ->filter()
+            ->implode('-') ?: ($document->nomor_dokumen ?: '-');
     }
 
     public function approve(Request $request, Document $document): RedirectResponse

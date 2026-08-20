@@ -36,6 +36,12 @@
             'level-3' => 'Form Instruksi Kerja',
             default => 'Form/Lembar Revisi',
         };
+        $revisionSourceLevelDisplayValue = $revisionSourceMaster?->documentLevel
+            ? $revisionSourceMaster->documentLevel->nama_level.': '.\Illuminate\Support\Str::after($revisionSourceMaster->documentLevel->nama_dokumen ?? '', ': ')
+            : '-';
+        $revisionSourceImportTitle = $revisionSourceMaster?->documentLevel
+            ? 'Import Dokumen '.$revisionSourceLevelDisplayValue
+            : 'Import Dokumen';
 
         $ownerLabel = $levelKey === 'level-1' ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
         $documentTitle = \Illuminate\Support\Str::after($level['name'], ': ');
@@ -155,15 +161,9 @@
             </h1>
 
             @if ($levelKey === 'level-4' && $revisionSource)
-                <p class="mt-2 text-sm font-medium text-slate-500">Ajukan Revisi</p>
+                <p class="mt-2 text-sm font-medium text-slate-500">{{ $revisionSourceImportTitle }}</p>
             @endif
         </div>
-
-        @if ($revisionSource)
-            <div class="rounded-lg border border-sky-200 bg-sky-50 px-4 py-3 text-sm font-semibold text-sky-800">
-                Revisi dari {{ $revisionSource->nomor_dokumen ?: '-' }} - {{ $revisionSource->nama_dokumen }}.
-            </div>
-        @endif
 
         @if ($levelKey === 'level-1')
             <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
@@ -316,29 +316,23 @@
                             <dl class="divide-y divide-slate-100 px-6 py-4">
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                     <dt class="text-sm font-semibold text-slate-500">Nama Dokumen</dt>
-                                    <dd class="text-sm font-bold uppercase leading-6 text-slate-900">{{ $revisionSource->nama_dokumen }}</dd>
+                                    <dd class="text-sm font-bold leading-6 text-slate-900">{{ $revisionSource->nama_dokumen }}</dd>
                                 </div>
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                     <dt class="text-sm font-semibold text-slate-500">Level Dokumen</dt>
-                                    <dd class="text-sm font-bold text-slate-900">{{ $levelDisplayValue ?: '-' }}</dd>
+                                    <dd class="text-sm font-bold text-slate-900">{{ $levelKey === 'level-4' ? $revisionSourceLevelDisplayValue : ($levelDisplayValue ?: '-') }}</dd>
                                 </div>
-                                @if ($levelKey === 'level-4')
-                                    <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
-                                        <dt class="text-sm font-semibold text-slate-500">Dokumen Induk</dt>
-                                        <dd class="text-sm font-bold text-slate-900">
-                                            {{ $revisionSource->documentLevel?->nama_level ?: '-' }} : {{ \Illuminate\Support\Str::after($revisionSource->documentLevel?->nama_dokumen ?? '', ': ') }}
-                                        </dd>
-                                    </div>
-                                @endif
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
-                                    <dt class="text-sm font-semibold text-slate-500">Nomor Dokumen</dt>
+                                    <dt class="text-sm font-semibold text-slate-500">{{ $levelKey === 'level-4' ? 'Nomor Dokumen Induk' : 'Nomor Dokumen' }}</dt>
                                     <dd class="text-sm font-bold text-slate-900">{{ $revisionSource->nomor_dokumen ?: '-' }}</dd>
                                 </div>
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                    <dt class="text-sm font-semibold text-slate-500">Proses Bisnis</dt>
+                                    <dd class="text-sm font-bold text-slate-900">{{ $revisionSource->businessProcess?->nama_proses_bisnis ?: '-' }}</dd>
+                                </div>
+                                <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                     <dt class="text-sm font-semibold text-slate-500">Proses / Fungsi</dt>
-                                    <dd class="text-sm font-bold text-slate-900">
-                                        {{ collect([$revisionSource->businessProcess?->nama_proses_bisnis, $revisionSource->businessFunction?->nama_proses_fungsi])->filter()->implode(' / ') ?: '-' }}
-                                    </dd>
+                                    <dd class="text-sm font-bold text-slate-900">{{ $revisionSource->businessFunction?->nama_proses_fungsi ?: '-' }}</dd>
                                 </div>
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                     <dt class="text-sm font-semibold text-slate-500">Department Terkait</dt>

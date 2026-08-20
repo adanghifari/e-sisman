@@ -8,7 +8,6 @@ use App\Models\BusinessProcess;
 use App\Models\Document;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
-use App\Models\DocumentType;
 use App\Models\StatusDocument;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -55,7 +54,12 @@ class DocumentMasterController extends Controller
                 'obsoleteRevisions.businessFunction',
                 'obsoleteRevisions.departments',
             ])
-            ->where('m_status_document_id', $approvedStatusId);
+            ->where('m_status_document_id', $approvedStatusId)
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('request_type')
+                    ->orWhere('request_type', '!=', 'obsolete');
+            });
 
         if ($filters['search'] !== '') {
             $search = $filters['search'];
@@ -116,12 +120,16 @@ class DocumentMasterController extends Controller
             $obsoleteDocuments = $family
                 ->where('id', '!=', $document->id)
                 ->filter(fn (Document $revision): bool => $revision->status?->nama_status === StatusDocument::OBSOLETE)
-                ->map(function (Document $revision) use ($family): Document {
+                ->map(function (Document $revision) use ($family, $rootDocument): Document {
                     $nextRevision = $family
                         ->where('nomor_revisi', '>', $revision->nomor_revisi)
                         ->sortBy('nomor_revisi')
                         ->first();
 
+                    $revision->setAttribute(
+                        'master_display_number',
+                        $rootDocument?->nomor_dokumen ?: $revision->nomor_dokumen,
+                    );
                     $revision->setAttribute(
                         'master_obsolete_date',
                         $nextRevision?->tanggal_terbit ?? $nextRevision?->approved_at,
@@ -218,14 +226,12 @@ class DocumentMasterController extends Controller
             'catatan_obsolete' => ['required', 'string', 'max:1000'],
         ]);
 
-        $level = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
-        $type = DocumentType::query()->where('nama_types', 'Form')->firstOrFail();
         $status = StatusDocument::findByName(StatusDocument::PROPOSED);
 
         $requestDocument = Document::create([
-            'm_document_level_id' => $level->id,
+            'm_document_level_id' => $document->m_document_level_id,
             'm_status_document_id' => $status->id,
-            'm_document_types_id' => $type->id,
+            'm_document_types_id' => $document->m_document_types_id,
             'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
             'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
             'user_id' => $request->user()->id,
@@ -234,7 +240,7 @@ class DocumentMasterController extends Controller
             'revised_from' => $document->id,
             'request_type' => 'obsolete',
             'nama_dokumen' => $document->nama_dokumen,
-            'nomor_dokumen' => $this->revisionFormNumber($document),
+            'nomor_dokumen' => $this->masterDisplayNumber($document),
             'nomor_revisi' => $document->nomor_revisi,
             'catatan_revisi' => $validated['catatan_obsolete'],
             'submitted_at' => now(),
@@ -318,25 +324,4 @@ class DocumentMasterController extends Controller
         return $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen ?: '-';
     }
 
-    private function revisionFormNumber(Document $document): string
-    {
-        $prefix = match ($document->documentLevel?->kode) {
-            'level-1' => 'FMSM',
-            'level-2' => 'FMPS',
-            'level-3' => 'FMIK',
-            default => 'FM',
-        };
-        $segments = collect(explode('-', (string) $document->nomor_dokumen))
-            ->filter()
-            ->values();
-
-        if ($segments->isNotEmpty()) {
-            $segments->shift();
-        }
-
-        return collect([$prefix])
-            ->merge($segments)
-            ->filter()
-            ->implode('-');
-    }
 }

@@ -1,6 +1,16 @@
 <x-layouts::app :title="__('Detail Approval Dokumen')">
     @php
-        $levelKey = $document->documentLevel?->kode ?? 'level-3';
+        $contentDocument ??= $document;
+        $displayDocumentNumber ??= $document->nomor_dokumen ?: '-';
+        $isObsoleteRequest = $document->request_type === 'obsolete';
+        $isRevisionRequest = $document->request_type === 'revision' && $document->revisedFrom !== null;
+        $isLevelFourRevisionRequest = ! $isObsoleteRequest && $isRevisionRequest;
+        $informationDocument = $isLevelFourRevisionRequest
+            ? $document->revisedFrom
+            : $contentDocument;
+        $levelKey = $isObsoleteRequest
+            ? ($contentDocument->documentLevel?->kode ?? 'level-3')
+            : ($isRevisionRequest ? 'level-4' : ($document->documentLevel?->kode ?? 'level-3'));
         $levelNumbers = [
             'level-1' => 'I',
             'level-2' => 'II',
@@ -9,11 +19,17 @@
         ];
         $isLevelOne = $levelKey === 'level-1';
         $ownerLabel = $isLevelOne ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
-        $statusCode = $activeApproval?->status?->kode_status ?? $document->status?->nama_status ?? '-';
-        $statusLabel = $activeApproval?->status?->nama_status ?? $document->status?->nama_status ?? '-';
+        $headerBadgeLabel = match (true) {
+            $isObsoleteRequest => 'Obsolete',
+            $isRevisionRequest => 'Revisi',
+            default => $document->documentType?->nama_types ?? '-',
+        };
+        $headerBadgeTone = $isObsoleteRequest ? 'red' : 'sky';
         $canCorrectRejectedSubmission = $document->status?->nama_status === \App\Models\StatusDocument::REJECTED
             && in_array(auth()->id(), [$document->user_id, $document->official_preparer_id], true);
-        $contentSectionTitle = $levelKey === 'level-4' ? 'Dokumen Revisi' : 'Isi Dokumen';
+        $contentSectionTitle = $isObsoleteRequest
+            ? 'Dokumen yang Diajukan Obsolete'
+            : ($levelKey === 'level-4' ? 'Dokumen Revisi' : 'Isi Dokumen');
         $approvalFlowLabel = $approvalFlowDocumentLevel?->nama_dokumen
             ?? $approvalFlowDocumentLevel?->nama_level
             ?? $document->documentLevel?->nama_dokumen
@@ -30,17 +46,18 @@
             'revision_before' => 'Semula',
             'revision_after' => 'Menjadi',
         ];
-        $revisionMainFiles = $levelKey === 'level-4'
+        $revisionMainFiles = $levelKey === 'level-4' && ! $isObsoleteRequest
             ? collect(['revision_content', 'revision_form'])
                 ->map(fn ($type) => $contentFiles->firstWhere('type_file', $type))
                 ->filter()
                 ->values()
             : collect();
-        $otherContentFiles = $levelKey === 'level-4'
+        $otherContentFiles = $levelKey === 'level-4' && ! $isObsoleteRequest
             ? $contentFiles
                 ->reject(fn ($file) => in_array($file->type_file, ['revision_content', 'revision_form'], true))
                 ->values()
             : $contentFiles;
+        $fileRoutePrefix = $isObsoleteRequest ? 'documents.master.files' : 'documents.approval.files';
         $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
         $readonlySelect = 'h-12 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
     @endphp
@@ -51,18 +68,18 @@
             <flux:icon name="chevron-right" class="size-4 text-slate-400" />
             <a href="{{ route('documents.inbox') }}" class="transition hover:text-sky-700" wire:navigate>Inbox Approval</a>
             <flux:icon name="chevron-right" class="size-4 text-slate-400" />
-            <span class="text-slate-700">{{ $document->nomor_dokumen ?: 'Detail Dokumen' }}</span>
+            <span class="text-slate-700">{{ $displayDocumentNumber ?: 'Detail Dokumen' }}</span>
         </nav>
 
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
                 <h1 class="text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
-                    Detail Dokumen Level {{ $levelNumbers[$levelKey] ?? '-' }}
+                    {{ $isObsoleteRequest ? 'Pengajuan Obsolete Dokumen Level' : 'Detail Dokumen Level' }} {{ $levelNumbers[$levelKey] ?? '-' }}
                 </h1>
-                <p class="mt-2 text-base font-medium text-slate-500">{{ $document->nama_dokumen }}</p>
+                <p class="mt-2 text-base font-medium text-slate-500">{{ $contentDocument->nama_dokumen }}</p>
             </div>
 
-            <x-ui.status-badge :label="$statusLabel" :tone="$statusCode === 'PENDING' ? 'amber' : ($statusCode === 'APPROVED' ? 'emerald' : 'red')" class="mt-1" />
+            <x-ui.status-badge :label="$headerBadgeLabel" :tone="$headerBadgeTone" class="mt-1" />
         </div>
 
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
@@ -71,26 +88,42 @@
                     <dl class="divide-y divide-slate-100 px-6 py-4">
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Nama Dokumen</dt>
-                            <dd class="text-sm font-bold text-slate-900">{{ $document->nama_dokumen }}</dd>
+                            <dd class="text-sm font-bold text-slate-900">{{ $informationDocument->nama_dokumen }}</dd>
                         </div>
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Level Dokumen</dt>
-                            <dd class="text-sm font-bold text-slate-900">{{ $document->documentLevel?->nama_level }} : {{ \Illuminate\Support\Str::after($document->documentLevel?->nama_dokumen ?? '', ': ') }}</dd>
+                            <dd class="text-sm font-bold text-slate-900">{{ $informationDocument->documentLevel?->nama_level }}: {{ \Illuminate\Support\Str::after($informationDocument->documentLevel?->nama_dokumen ?? '', ': ') }}</dd>
                         </div>
+                        @if ($isLevelFourRevisionRequest)
+                            <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                <dt class="text-sm font-semibold text-slate-500">Nomor Dokumen Induk</dt>
+                                <dd class="text-sm font-bold text-slate-900">{{ $informationDocument->nomor_dokumen ?: '-' }}</dd>
+                            </div>
+                        @endif
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Proses Bisnis</dt>
-                            <dd class="text-sm font-bold text-slate-900">{{ $document->businessProcess?->nama_proses_bisnis ?? '-' }}</dd>
-                        </div>
-                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
-                            <dt class="text-sm font-semibold text-slate-500">Department Terkait</dt>
-                            <dd class="text-sm font-bold text-slate-900">{{ $document->departments->map(fn ($department) => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department)->implode(', ') ?: '-' }}</dd>
+                            <dd class="text-sm font-bold text-slate-900">{{ $informationDocument->businessProcess?->nama_proses_bisnis ?? '-' }}</dd>
                         </div>
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Proses / Fungsi</dt>
-                            <dd class="text-sm font-bold text-slate-900">{{ $document->businessFunction?->nama_proses_fungsi ?? '-' }}</dd>
+                            <dd class="text-sm font-bold text-slate-900">{{ $informationDocument->businessFunction?->nama_proses_fungsi ?? '-' }}</dd>
+                        </div>
+                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                            <dt class="text-sm font-semibold text-slate-500">Department Terkait</dt>
+                            <dd class="text-sm font-bold text-slate-900">{{ $informationDocument->departments->map(fn ($department) => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department)->implode(', ') ?: '-' }}</dd>
                         </div>
                     </dl>
                 </x-documents.form-section>
+
+                @if ($isObsoleteRequest)
+                    <x-documents.form-section title="Alasan Obsolete" icon="archive-box-x-mark">
+                        <div class="px-6 py-6">
+                            <div class="rounded-lg border border-red-100 bg-red-50 px-4 py-4 text-sm font-medium leading-6 text-red-800">
+                                {{ $document->catatan_revisi ?: '-' }}
+                            </div>
+                        </div>
+                    </x-documents.form-section>
+                @endif
 
                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <div class="border-b border-slate-200 px-6 py-5">
@@ -139,13 +172,13 @@
                                                     <p class="text-sm font-bold text-slate-900">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                                     <p class="mt-1 truncate text-xs font-semibold text-slate-500">{{ $file->original_file_name }}</p>
                                                 </div>
-                                                <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                                <a href="{{ route($fileRoutePrefix.'.show', [$contentDocument, $file]) }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                                     Buka
                                                 </a>
                                             </div>
 
                                             <iframe
-                                                src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                                src="{{ route($fileRoutePrefix.'.preview', [$contentDocument, $file]) }}#view=FitH&navpanes=0"
                                                 class="h-[620px] w-full bg-white 2xl:h-[72vh]"
                                             ></iframe>
                                         </section>
@@ -160,13 +193,13 @@
                                             <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                             <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                         </div>
-                                        <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                        <a href="{{ route($fileRoutePrefix.'.show', [$contentDocument, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                             Buka
                                         </a>
                                     </div>
 
                                     <iframe
-                                        src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                        src="{{ route($fileRoutePrefix.'.preview', [$contentDocument, $file]) }}#view=FitH&navpanes=0"
                                         class="min-h-[760px] w-full bg-white xl:h-[82vh]"
                                     ></iframe>
                                 </section>
@@ -185,13 +218,13 @@
                                         <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                         <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                     </div>
-                                    <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                    <a href="{{ route($fileRoutePrefix.'.show', [$contentDocument, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                         Buka
                                     </a>
                                 </div>
 
                                 <iframe
-                                    src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                    src="{{ route($fileRoutePrefix.'.preview', [$contentDocument, $file]) }}#view=FitH&navpanes=0"
                                     class="min-h-[760px] w-full bg-white xl:h-[82vh]"
                                 ></iframe>
                             </section>
@@ -212,7 +245,7 @@
                                     <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                     <p class="text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
                                 </div>
-                                <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                <a href="{{ route($fileRoutePrefix.'.show', [$contentDocument, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                     Buka
                                 </a>
                             </div>
@@ -234,12 +267,12 @@
                     <div class="space-y-5 px-6 py-6">
                         <label class="block">
                             <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen</span>
-                            <input type="text" value="{{ $document->nomor_dokumen ?: '-' }}" readonly class="{{ $readonlyInput }}">
+                            <input type="text" value="{{ $displayDocumentNumber }}" readonly class="{{ $readonlyInput }}">
                         </label>
 
                         <label class="block">
                             <span class="mb-2 block text-base font-medium text-slate-500">Revisi</span>
-                            <input type="text" value="{{ $document->formatted_revision }}" readonly class="{{ $readonlyInput }}">
+                            <input type="text" value="{{ $isObsoleteRequest ? $contentDocument->formatted_revision : $document->formatted_revision }}" readonly class="{{ $readonlyInput }}">
                         </label>
 
                         <div class="space-y-4 pt-1 text-base font-medium text-slate-500">
