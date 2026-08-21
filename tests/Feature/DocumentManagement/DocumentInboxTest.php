@@ -1513,6 +1513,7 @@ class DocumentInboxTest extends TestCase
             'm_status_document_id' => $approvedDocumentStatus->id,
             'approved_at' => now()->subDay(),
         ]);
+        $formType = DocumentType::create(['nama_types' => 'Form']);
         DocumentFile::create([
             't_document_id' => $source->id,
             'type_file' => 'filled_template',
@@ -1526,7 +1527,7 @@ class DocumentInboxTest extends TestCase
         $request = Document::create([
             'm_document_level_id' => $source->m_document_level_id,
             'm_status_document_id' => StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail()->id,
-            'm_document_types_id' => $source->m_document_types_id,
+            'm_document_types_id' => $formType->id,
             'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
             'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
             'user_id' => $obsoleteRequester->id,
@@ -1591,7 +1592,9 @@ class DocumentInboxTest extends TestCase
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
             ->assertOk()
             ->assertSee('Master Akan Obsolete')
+            ->assertSee('Pengajuan Obsolete')
             ->assertSee('PS-SMR-OBSOLETE')
+            ->assertSee('Prosedur')
             ->assertDontSee('FMPS-SMR-OBSOLETE');
     }
 

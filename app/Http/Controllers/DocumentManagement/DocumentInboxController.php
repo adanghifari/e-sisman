@@ -106,6 +106,7 @@ class DocumentInboxController extends Controller
                     $document['number'],
                     $document['name'],
                     $document['type'],
+                    $document['number_badge_label'] ?? '',
                     $document['stage'],
                     $document['waiting_for'],
                     $document['status'],
@@ -149,6 +150,7 @@ class DocumentInboxController extends Controller
                 'status',
                 'departments',
                 'revisedFrom.documentLevel',
+                'revisedFrom.documentType',
                 'approvals' => function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
                     $query->where(function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
                         $query
@@ -204,6 +206,7 @@ class DocumentInboxController extends Controller
                 'status',
                 'departments',
                 'revisedFrom.documentLevel',
+                'revisedFrom.documentType',
                 'approvals' => function ($query) use ($approvalScope, $assignedApprovalScope): void {
                     $query->where(function ($query) use ($approvalScope, $assignedApprovalScope): void {
                         $query->where($approvalScope)
@@ -386,6 +389,8 @@ class DocumentInboxController extends Controller
             'id' => $document->id,
             'detail_url' => route('documents.approval.show', $document),
             'number' => $this->documentDisplayNumber($document),
+            'number_badge_label' => $document->request_type === 'obsolete' ? 'Pengajuan Obsolete' : null,
+            'number_badge_tone' => $document->request_type === 'obsolete' ? 'red' : null,
             'name' => $document->nama_dokumen ?? '-',
             'type' => $this->documentTypeLabel($document),
             'stage' => match (true) {
@@ -544,6 +549,15 @@ class DocumentInboxController extends Controller
 
     private function documentTypeLabel(Document $document): string
     {
+        if ($document->request_type === 'obsolete') {
+            return $this->documentTypeName($this->rootDocument($document) ?: $document->revisedFrom ?: $document);
+        }
+
+        return $this->documentTypeName($document);
+    }
+
+    private function documentTypeName(Document $document): string
+    {
         return match ($document->documentType?->nama_types) {
             'IK' => 'Instruksi Kerja',
             default => $document->documentType?->nama_types ?? '-',
@@ -601,15 +615,19 @@ class DocumentInboxController extends Controller
 
     private function rootDocumentNumber(Document $document): ?string
     {
+        return $this->rootDocument($document)?->nomor_dokumen;
+    }
+
+    private function rootDocument(Document $document): ?Document
+    {
         if ($document->revised_from === null) {
             return null;
         }
 
-        $rootDocument = Document::query()
-            ->select(['id', 'nomor_dokumen', 'revised_from'])
+        return Document::query()
+            ->select(['id', 'm_document_types_id', 'nomor_dokumen', 'revised_from'])
+            ->with('documentType')
             ->find($document->revisionRootId());
-
-        return $rootDocument?->nomor_dokumen;
     }
 
     private function approvalTone(string $statusCode): string
