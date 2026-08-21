@@ -278,7 +278,12 @@ class DocumentApprovalController extends Controller
         $path = Storage::disk('local')->path($file->path_file);
         abort_unless(is_file($path), 404);
 
-        $recordDocumentDownload->handle($request, $document, $file);
+        $recordDocumentDownload->handle($request, $document, $file, [
+            'name' => $document->nama_dokumen,
+            'number' => $document->nomor_dokumen,
+            'revision' => $document->nomor_revisi,
+            'context' => 'approval',
+        ]);
 
         return response()->file($path, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
@@ -555,35 +560,121 @@ class DocumentApprovalController extends Controller
             return;
         }
 
-        $this->promoteRevisionRequestToMaster($document);
-        $document->refresh();
-        $this->obsoletePreviousApprovedRevisions($document, $approvedStatus);
+        $masterDocument = $this->createMasterDocumentFromRevisionRequest($document);
+
+        if ($masterDocument !== null) {
+            $this->obsoletePreviousApprovedMasterDocuments($masterDocument, $approvedStatus);
+        }
     }
 
-    private function promoteRevisionRequestToMaster(Document $document): void
+    private function createMasterDocumentFromRevisionRequest(Document $document): ?Document
     {
         if ($document->request_type !== 'revision' || $document->revised_from === null) {
-            return;
+            return null;
         }
 
         $source = Document::query()
-            ->select([
-                'id',
-                'm_document_level_id',
-                'm_document_types_id',
-                'reference',
+            ->with([
+                'departments',
             ])
             ->find($document->revised_from);
 
         if ($source === null) {
-            return;
+            return null;
         }
 
-        $document->update([
+        $rootDocument = Document::query()
+            ->whereKey($source->revisionRootId())
+            ->first();
+
+        $masterDocumentNumber = $rootDocument?->nomor_dokumen ?: $source->nomor_dokumen;
+        $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
+        $existingMaster = Document::query()
+            ->whereNull('request_type')
+            ->where('revised_from', $source->id)
+            ->where('nomor_dokumen', $masterDocumentNumber)
+            ->where('nomor_revisi', $document->nomor_revisi)
+            ->first();
+
+        if ($existingMaster !== null) {
+            return $existingMaster;
+        }
+
+        $masterDocument = Document::create([
             'm_document_level_id' => $source->m_document_level_id,
+            'm_status_document_id' => $approvedStatus->id,
             'm_document_types_id' => $source->m_document_types_id,
+            'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
+            'user_id' => $document->user_id,
+            'official_preparer_id' => $document->official_preparer_id,
             'reference' => $source->reference,
+            'revised_from' => $source->id,
+            'request_type' => null,
+            'nama_dokumen' => $document->nama_dokumen,
+            'nomor_dokumen' => $masterDocumentNumber,
+            'nomor_revisi' => $document->nomor_revisi,
+            'catatan_revisi' => $document->catatan_revisi,
+            'tanggal_terbit' => now()->toDateString(),
+            'submitted_at' => $document->submitted_at,
+            'approved_at' => now(),
+            'rejected_at' => null,
+            'cancelled_at' => null,
         ]);
+
+        $departmentIds = $document->departments()->pluck('departments.id')->all()
+            ?: $source->departments()->pluck('departments.id')->all();
+        $masterDocument->departments()->sync($departmentIds);
+
+        $this->copyRevisionRequestFilesToMaster($document, $masterDocument);
+        $this->copyApprovalHistoryToMaster($document, $masterDocument);
+
+        return $masterDocument;
+    }
+
+    private function copyRevisionRequestFilesToMaster(Document $revisionRequest, Document $masterDocument): void
+    {
+        $revisionRequest->files()
+            ->whereIn('type_file', [
+                'filled_template',
+                'imported_document',
+                'revision_content',
+                'revision_form',
+                'attachment',
+            ])
+            ->get()
+            ->each(function (DocumentFile $file) use ($masterDocument): void {
+                DocumentFile::create([
+                    't_document_id' => $masterDocument->id,
+                    't_document_files_id' => $file->t_document_files_id,
+                    'type_file' => $file->type_file,
+                    'path_file' => $file->path_file,
+                    'uploaded_by' => $file->uploaded_by,
+                    'original_file_name' => $file->original_file_name,
+                    'stored_file_name' => $file->stored_file_name,
+                    'source_file_id' => $file->id,
+                    'file_size' => $file->file_size,
+                ]);
+            });
+    }
+
+    private function copyApprovalHistoryToMaster(Document $revisionRequest, Document $masterDocument): void
+    {
+        $revisionRequest->approvals()
+            ->get()
+            ->each(function (Approval $approval) use ($masterDocument): void {
+                Approval::create([
+                    't_document_id' => $masterDocument->id,
+                    'm_approval_status_id' => $approval->m_approval_status_id,
+                    'user_id' => $approval->user_id,
+                    'role_id' => $approval->role_id,
+                    'assigned_by' => $approval->assigned_by,
+                    'assigned_at' => $approval->assigned_at,
+                    'responded_at' => $approval->responded_at,
+                    'stages' => $approval->stages,
+                    'catatan' => $approval->catatan,
+                ]);
+            });
     }
 
     private function obsoleteSourceMasterDocument(Document $document): void
@@ -596,13 +687,14 @@ class DocumentApprovalController extends Controller
 
         Document::query()
             ->whereKey($document->revised_from)
+            ->whereNull('request_type')
             ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::APPROVED))
             ->update([
                 'm_status_document_id' => $obsoleteStatus->id,
             ]);
     }
 
-    private function obsoletePreviousApprovedRevisions(Document $document, StatusDocument $approvedStatus): void
+    private function obsoletePreviousApprovedMasterDocuments(Document $document, StatusDocument $approvedStatus): void
     {
         if ($document->revised_from === null) {
             return;
@@ -612,6 +704,7 @@ class DocumentApprovalController extends Controller
 
         $document->revisionFamily()
             ->where('id', '!=', $document->id)
+            ->where('request_type', null)
             ->where('m_status_document_id', $approvedStatus->id)
             ->each(function (Document $revision) use ($obsoleteStatus): void {
                 $revision->update([

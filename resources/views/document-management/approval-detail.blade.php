@@ -179,19 +179,24 @@
                     <div class="space-y-4 px-6 py-6">
                         @if ($isObsoleteRequest)
                             @forelse ($obsoleteSourceContentFiles as $file)
+                                @php
+                                    $obsoleteSourceFileRoutePrefix = $document->revisedFrom?->status?->nama_status === \App\Models\StatusDocument::OBSOLETE
+                                        ? 'documents.obsolete'
+                                        : 'documents.master';
+                                @endphp
                                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                                     <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
                                         <div class="min-w-0">
                                             <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                             <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                         </div>
-                                        <a href="{{ route('documents.master.files.show', [$document->revisedFrom, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                        <a href="{{ route($obsoleteSourceFileRoutePrefix.'.files.show', [$document->revisedFrom, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                             Buka
                                         </a>
                                     </div>
 
                                     <iframe
-                                        src="{{ route('documents.master.files.preview', [$document->revisedFrom, $file]) }}#view=FitH&navpanes=0"
+                                        src="{{ route($obsoleteSourceFileRoutePrefix.'.files.preview', [$document->revisedFrom, $file]) }}#view=FitH&navpanes=0"
                                         class="min-h-[760px] w-full bg-white xl:h-[82vh]"
                                     ></iframe>
                                 </section>

@@ -151,11 +151,7 @@ class DashboardController extends Controller
 
         return Document::query()
             ->where('m_status_document_id', $approvedStatusId)
-            ->where(function ($query): void {
-                $query
-                    ->whereNull('request_type')
-                    ->orWhere('request_type', '!=', 'obsolete');
-            });
+            ->whereNull('request_type');
     }
 
     private function chartDataset(Collection $items): array

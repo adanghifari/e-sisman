@@ -18,7 +18,10 @@ class DashboardTest extends TestCase
 
     public function test_authenticated_users_can_visit_the_dashboard(): void
     {
-        $user = User::factory()->create();
+        $user = User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
         $this->actingAs($user);
 
         $response = $this->get(route('dashboard'));
@@ -27,7 +30,11 @@ class DashboardTest extends TestCase
 
     public function test_department_warning_popup_is_rendered_when_session_exists(): void
     {
-        $user = User::factory()->create(['m_department_id' => null]);
+        $user = User::factory()->create([
+            'm_department_id' => null,
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
         $this->actingAs($user);
 
         $response = $this

@@ -9,6 +9,7 @@ use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
 use App\Models\Department;
 use App\Models\Document;
+use App\Models\DocumentDownloadLog;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
@@ -1450,8 +1451,9 @@ class DocumentInboxTest extends TestCase
             'approved_at' => now()->subDay(),
         ]);
 
+        $levelFour = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
         $revision = Document::create([
-            'm_document_level_id' => $source->m_document_level_id,
+            'm_document_level_id' => $levelFour->id,
             'm_status_document_id' => StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail()->id,
             'm_document_types_id' => $source->m_document_types_id,
             'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
@@ -1459,6 +1461,7 @@ class DocumentInboxTest extends TestCase
             'user_id' => $submitter->id,
             'official_preparer_id' => $submitter->id,
             'revised_from' => $source->id,
+            'request_type' => 'revision',
             'nama_dokumen' => 'Instruksi Revisi',
             'nomor_dokumen' => 'FMIK-SMR-OLD',
             'nomor_revisi' => 1,
@@ -1467,7 +1470,7 @@ class DocumentInboxTest extends TestCase
         $revision->departments()->sync($source->departments()->pluck('departments.id')->all());
 
         $flow = ApprovalFlow::create([
-            'm_document_level_id' => $revision->m_document_level_id,
+            'm_document_level_id' => $source->m_document_level_id,
             'nama_flow' => 'Flow Revisi',
         ]);
         $stage = $flow->stages()->create([
@@ -1493,6 +1496,13 @@ class DocumentInboxTest extends TestCase
 
         $this->assertSame(StatusDocument::APPROVED, $revision->refresh()->status->nama_status);
         $this->assertSame(StatusDocument::OBSOLETE, $source->refresh()->status->nama_status);
+        $this->assertDatabaseHas('t_document', [
+            'revised_from' => $source->id,
+            'request_type' => null,
+            'nomor_dokumen' => 'IK-SMR-OLD',
+            'nomor_revisi' => 1,
+            'm_status_document_id' => $approvedDocumentStatus->id,
+        ]);
     }
 
     public function test_approved_obsolete_request_obsoletes_source_master_document(): void
@@ -1534,7 +1544,7 @@ class DocumentInboxTest extends TestCase
             'revised_from' => $source->id,
             'request_type' => 'obsolete',
             'nama_dokumen' => 'Master Akan Obsolete',
-            'nomor_dokumen' => 'FMPS-SMR-OBSOLETE',
+            'nomor_dokumen' => 'PS-SMR-OBSOLETE',
             'nomor_revisi' => $source->nomor_revisi,
             'catatan_revisi' => 'Dokumen sudah tidak digunakan lagi.',
             'submitted_at' => now(),
@@ -1586,6 +1596,12 @@ class DocumentInboxTest extends TestCase
 
         $this->assertSame(StatusDocument::APPROVED, $request->refresh()->status->nama_status);
         $this->assertSame(StatusDocument::OBSOLETE, $source->refresh()->status->nama_status);
+
+        $this->actingAs($approver)
+            ->get(route('documents.approval.show', $request))
+            ->assertOk()
+            ->assertSee(route('documents.obsolete.files.show', [$source, $source->files()->firstOrFail()]), false)
+            ->assertDontSee(route('documents.master.files.show', [$source, $source->files()->firstOrFail()]), false);
     }
 
     public function test_first_flow_stage_requires_manual_approver_selection(): void
@@ -1789,6 +1805,45 @@ class DocumentInboxTest extends TestCase
         $this->actingAs($approver)
             ->get(route('documents.approval.files.preview', [$document, $file]))
             ->assertOk();
+    }
+
+    public function test_approval_download_logs_revision_request_number_snapshot(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
+        $document = $this->createDocument($user, [
+            'nama_dokumen' => 'Dokumen Revisi Approval',
+            'nomor_dokumen' => 'FMPS-SMR-SNAP',
+            'nomor_revisi' => 1,
+            'request_type' => 'revision',
+        ]);
+
+        Storage::disk('local')->put("documents/{$document->id}/revision-approval.pdf", 'approval revision content');
+        $file = DocumentFile::create([
+            't_document_id' => $document->id,
+            'type_file' => 'revision_content',
+            'path_file' => "documents/{$document->id}/revision-approval.pdf",
+            'uploaded_by' => $user->id,
+            'updated_at' => now(),
+            'original_file_name' => 'revision-approval.pdf',
+            'stored_file_name' => 'revision-approval.pdf',
+            'file_size' => 25,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.approval.files.show', [$document, $file]))
+            ->assertOk();
+
+        $log = DocumentDownloadLog::query()->firstOrFail();
+
+        $this->assertSame('approval', $log->download_context);
+        $this->assertSame('FMPS-SMR-SNAP', $log->document_number_snapshot);
+        $this->assertSame('Dokumen Revisi Approval', $log->document_name_snapshot);
+        $this->assertSame(1, $log->document_revision_snapshot);
     }
 
     private function createDocument(User $user, array $attributes = []): Document

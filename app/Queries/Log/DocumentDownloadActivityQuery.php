@@ -54,9 +54,9 @@ class DocumentDownloadActivityQuery
             ->select([
                 't_document_download_logs.id as log_id',
                 't_document.id as document_id',
-                't_document.nama_dokumen as name',
-                't_document.nomor_dokumen as number',
-                't_document.nomor_revisi as revision',
+                DB::raw('COALESCE(t_document_download_logs.document_name_snapshot, t_document.nama_dokumen) as name'),
+                DB::raw('COALESCE(t_document_download_logs.document_number_snapshot, t_document.nomor_dokumen) as number'),
+                DB::raw('COALESCE(t_document_download_logs.document_revision_snapshot, t_document.nomor_revisi) as revision'),
                 DB::raw("COALESCE(users.name, '-') as downloaded_by"),
                 't_document_download_logs.downloaded_at',
                 DB::raw('(
@@ -73,10 +73,16 @@ class DocumentDownloadActivityQuery
                 ) as count'),
             ])
             ->when(($filters['document_name'] ?? '') !== '', function ($query) use ($filters): void {
-                $query->where('t_document.nama_dokumen', 'like', '%'.$filters['document_name'].'%');
+                $query->whereRaw(
+                    'COALESCE(t_document_download_logs.document_name_snapshot, t_document.nama_dokumen) like ?',
+                    ['%'.$filters['document_name'].'%'],
+                );
             })
             ->when(($filters['document_number'] ?? '') !== '', function ($query) use ($filters): void {
-                $query->where('t_document.nomor_dokumen', 'like', '%'.$filters['document_number'].'%');
+                $query->whereRaw(
+                    'COALESCE(t_document_download_logs.document_number_snapshot, t_document.nomor_dokumen) like ?',
+                    ['%'.$filters['document_number'].'%'],
+                );
             })
             ->when(($filters['downloaded_by'] ?? '') !== '', function ($query) use ($filters): void {
                 $query->where('users.name', 'like', '%'.$filters['downloaded_by'].'%');

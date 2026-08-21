@@ -42,11 +42,7 @@ class DocumentObsoleteController extends Controller
                 'revisedFrom',
             ])
             ->where('m_status_document_id', $obsoleteStatusId)
-            ->where(function ($query): void {
-                $query
-                    ->whereNull('request_type')
-                    ->orWhere('request_type', '!=', 'obsolete');
-            });
+            ->whereNull('request_type');
 
         if ($filters['search'] !== '') {
             $search = $filters['search'];
@@ -157,7 +153,7 @@ class DocumentObsoleteController extends Controller
         ]);
 
         abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
-        abort_if($document->request_type === 'obsolete', 404);
+        abort_unless($document->request_type === null, 404);
 
         return view('document-management.obsolete.show', [
             'document' => $document,
@@ -188,7 +184,7 @@ class DocumentObsoleteController extends Controller
         $activeMaster = $family
             ->first(fn (Document $revision): bool => $revision->id !== $document->id
                 && $revision->m_status_document_id === $approvedStatus->id
-                && $revision->request_type !== 'obsolete');
+                && $revision->request_type === null);
 
         if ($activeMaster !== null) {
             return redirect()
@@ -204,6 +200,7 @@ class DocumentObsoleteController extends Controller
                 ->whereIn('id', $familyIds)
                 ->where('id', '!=', $document->id)
                 ->where('m_status_document_id', $approvedStatus->id)
+                ->whereNull('request_type')
                 ->update([
                     'm_status_document_id' => $obsoleteStatus->id,
                 ]);
@@ -226,7 +223,12 @@ class DocumentObsoleteController extends Controller
         $path = Storage::disk('local')->path($file->path_file);
         abort_unless(is_file($path), 404);
 
-        $recordDocumentDownload->handle($request, $document, $file);
+        $recordDocumentDownload->handle($request, $document, $file, [
+            'name' => $document->nama_dokumen,
+            'number' => $document->nomor_dokumen,
+            'revision' => $document->nomor_revisi,
+            'context' => 'obsolete',
+        ]);
 
         return response()->file($path, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
@@ -252,6 +254,7 @@ class DocumentObsoleteController extends Controller
 
         abort_unless($file->t_document_id === $document->id, 404);
         abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
+        abort_unless($document->request_type === null, 404);
     }
 
     private function canRestoreMaster(Request $request, Document $document): bool

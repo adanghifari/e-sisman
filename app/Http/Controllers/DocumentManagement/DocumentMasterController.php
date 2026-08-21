@@ -57,11 +57,7 @@ class DocumentMasterController extends Controller
                 'obsoleteRevisions.departments',
             ])
             ->where('m_status_document_id', $approvedStatusId)
-            ->where(function ($query): void {
-                $query
-                    ->whereNull('request_type')
-                    ->orWhere('request_type', '!=', 'obsolete');
-            });
+            ->whereNull('request_type');
 
         if ($filters['search'] !== '') {
             $search = $filters['search'];
@@ -199,7 +195,7 @@ class DocumentMasterController extends Controller
             $document->status?->nama_status === StatusDocument::APPROVED,
             404,
         );
-        abort_if($document->request_type === 'obsolete', 404);
+        abort_unless($document->request_type === null, 404);
 
         return view('document-management.master.show', [
             'document' => $document,
@@ -223,20 +219,19 @@ class DocumentMasterController extends Controller
         $document->loadMissing('status', 'documentLevel', 'departments');
 
         abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
+        abort_unless($document->request_type === null, 404);
         abort_unless($this->canRequestObsolete($request, $document), 403);
 
         $validated = $request->validate([
             'catatan_obsolete' => ['required', 'string', 'max:1000'],
         ]);
 
-        $level = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
-        $type = DocumentType::query()->where('nama_types', 'Form')->firstOrFail();
         $status = StatusDocument::findByName(StatusDocument::PROPOSED);
 
         $requestDocument = Document::create([
-            'm_document_level_id' => $level->id,
+            'm_document_level_id' => $document->m_document_level_id,
             'm_status_document_id' => $status->id,
-            'm_document_types_id' => $type->id,
+            'm_document_types_id' => $document->m_document_types_id,
             'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
             'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
             'user_id' => $request->user()->id,
@@ -245,7 +240,7 @@ class DocumentMasterController extends Controller
             'revised_from' => $document->id,
             'request_type' => 'obsolete',
             'nama_dokumen' => $document->nama_dokumen,
-            'nomor_dokumen' => $this->revisionFormNumber($document),
+            'nomor_dokumen' => $this->masterDisplayNumber($document),
             'nomor_revisi' => $document->nomor_revisi,
             'catatan_revisi' => $validated['catatan_obsolete'],
             'submitted_at' => now(),
@@ -271,7 +266,7 @@ class DocumentMasterController extends Controller
         $activeMaster = $family
             ->first(fn (Document $revision): bool => $revision->id !== $document->id
                 && $revision->m_status_document_id === $approvedStatus->id
-                && $revision->request_type !== 'obsolete');
+                && $revision->request_type === null);
 
         if ($activeMaster !== null) {
             return redirect()
@@ -287,6 +282,7 @@ class DocumentMasterController extends Controller
                 ->whereIn('id', $familyIds)
                 ->where('id', '!=', $document->id)
                 ->where('m_status_document_id', $approvedStatus->id)
+                ->whereNull('request_type')
                 ->update([
                     'm_status_document_id' => $obsoleteStatus->id,
                 ]);
@@ -309,7 +305,12 @@ class DocumentMasterController extends Controller
         $path = Storage::disk('local')->path($file->path_file);
         abort_unless(is_file($path), 404);
 
-        $recordDocumentDownload->handle($request, $document, $file);
+        $recordDocumentDownload->handle($request, $document, $file, [
+            'name' => $document->nama_dokumen,
+            'number' => $this->masterDisplayNumber($document),
+            'revision' => $document->nomor_revisi,
+            'context' => 'master',
+        ]);
 
         return response()->file($path, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
@@ -335,6 +336,7 @@ class DocumentMasterController extends Controller
 
         abort_unless($file->t_document_id === $document->id, 404);
         abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
+        abort_unless($document->request_type === null, 404);
     }
 
     private function canRequestRevision(Request $request, Document $document): bool

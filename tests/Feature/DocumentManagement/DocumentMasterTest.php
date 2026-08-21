@@ -6,6 +6,7 @@ use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
 use App\Models\Department;
 use App\Models\Document;
+use App\Models\DocumentDownloadLog;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
@@ -18,6 +19,7 @@ use App\Models\Role;
 use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class DocumentMasterTest extends TestCase
@@ -47,6 +49,52 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Master')
             ->assertDontSee('Dokumen Masih Proposed')
             ->assertDontSee('PS-SMR-PROP');
+    }
+
+    public function test_master_download_logs_master_document_number_snapshot(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+
+        $source = $this->createDocument($user, $approvedStatus, [
+            'nama_dokumen' => 'Prosedur Sumber Revisi',
+            'nomor_dokumen' => 'PS-SMR-SNAP',
+            'nomor_revisi' => 0,
+        ]);
+        $revision = $this->createDocument($user, $approvedStatus, [
+            'nama_dokumen' => 'Prosedur Sumber Revisi',
+            'nomor_dokumen' => 'PS-SMR-SNAP',
+            'nomor_revisi' => 1,
+            'revised_from' => $source->id,
+            'request_type' => null,
+        ]);
+
+        Storage::disk('local')->put('documents/revision-master.pdf', 'master revision content');
+        $file = DocumentFile::create([
+            't_document_id' => $revision->id,
+            'type_file' => 'revision_content',
+            'path_file' => 'documents/revision-master.pdf',
+            'uploaded_by' => $user->id,
+            'original_file_name' => 'revision-master.pdf',
+            'stored_file_name' => 'revision-master.pdf',
+            'file_size' => 23,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.files.show', [$revision, $file]))
+            ->assertOk();
+
+        $log = DocumentDownloadLog::query()->firstOrFail();
+
+        $this->assertSame('master', $log->download_context);
+        $this->assertSame('PS-SMR-SNAP', $log->document_number_snapshot);
+        $this->assertSame('Prosedur Sumber Revisi', $log->document_name_snapshot);
+        $this->assertSame(1, $log->document_revision_snapshot);
     }
 
     public function test_master_page_does_not_show_approved_obsolete_request_transaction(): void
@@ -474,13 +522,23 @@ class DocumentMasterTest extends TestCase
 
         $revision->refresh();
         $source->refresh();
+        $masterRevision = Document::query()
+            ->whereNull('request_type')
+            ->where('revised_from', $source->id)
+            ->where('nomor_dokumen', 'PS-KSA-02')
+            ->where('nomor_revisi', 1)
+            ->firstOrFail();
 
         $this->assertSame(StatusDocument::APPROVED, $revision->status->nama_status);
+        $this->assertSame('revision', $revision->request_type);
         $this->assertSame(StatusDocument::OBSOLETE, $source->status->nama_status);
-        $this->assertSame($source->m_document_level_id, $revision->m_document_level_id);
-        $this->assertSame($source->m_document_types_id, $revision->m_document_types_id);
+        $this->assertNotSame($source->m_document_level_id, $revision->m_document_level_id);
         $this->assertSame('FMPS-KSA-02', $revision->nomor_dokumen);
         $this->assertSame(1, $revision->nomor_revisi);
+        $this->assertSame($source->m_document_level_id, $masterRevision->m_document_level_id);
+        $this->assertSame($source->m_document_types_id, $masterRevision->m_document_types_id);
+        $this->assertSame('PS-KSA-02', $masterRevision->nomor_dokumen);
+        $this->assertSame(1, $masterRevision->nomor_revisi);
 
         $this->actingAs($submitter)
             ->get(route('documents.master'))
@@ -488,18 +546,28 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Prosedur Ikatan Dinas SSO')
             ->assertSee('PS-KSA-02')
             ->assertSee('00.01')
+            ->assertDontSee('FMPS-KSA-02')
             ->assertSee('Tgl Obsolete')
             ->assertSee('00.00')
             ->assertSee('Obsolete');
 
         $this->actingAs($submitter)
-            ->get(route('documents.master.show', $revision))
+            ->get(route('documents.master.show', $masterRevision))
             ->assertOk()
             ->assertSee('Isi Dokumen Versi Revisi')
             ->assertSee('dokumen-revisi.pdf')
             ->assertSee('Lembar Revisi')
             ->assertSee('lembar-revisi.pdf')
             ->assertDontSee('Belum ada file isi dokumen.');
+
+        $this->actingAs($submitter)
+            ->get(route('documents.master.show', $revision))
+            ->assertNotFound();
+
+        $this->actingAs($submitter)
+            ->get(route('documents.approval.show', $revision))
+            ->assertOk()
+            ->assertSee('FMPS-KSA-02');
     }
 
     public function test_master_detail_shows_approval_history_sorted_by_stage_with_response_timestamp(): void
@@ -910,7 +978,6 @@ class DocumentMasterTest extends TestCase
             'nama_dokumen' => 'Master Jadi Obsolete',
             'nomor_dokumen' => 'PS-SMR-OBS',
         ]);
-        DocumentType::create(['nama_types' => 'Form']);
         $documentDepartment = $document->departments()->firstOrFail();
         $obsoleteUser = $this->userWithoutPermission('documents.obsolete.create', [
             'm_department_id' => $documentDepartment->id,
@@ -930,8 +997,9 @@ class DocumentMasterTest extends TestCase
             ->firstOrFail();
 
         $this->assertSame(StatusDocument::PROPOSED, $request->status->nama_status);
-        $this->assertSame('Form', $request->documentType->nama_types);
-        $this->assertSame('level-4', $request->documentLevel->kode);
+        $this->assertSame($document->documentType->nama_types, $request->documentType->nama_types);
+        $this->assertSame($document->documentLevel->kode, $request->documentLevel->kode);
+        $this->assertSame('PS-SMR-OBS', $request->nomor_dokumen);
         $this->assertSame('Dokumen sudah tidak digunakan.', $request->catatan_revisi);
     }
 
