@@ -170,6 +170,22 @@ class AccessGroupTest extends TestCase
             ->assertForbidden();
     }
 
+    public function test_user_without_role_has_no_menu_or_route_access(): void
+    {
+        $this->seed(PermissionSeeder::class);
+
+        $user = User::factory()->create();
+        $user->roles()->detach();
+
+        $this->assertFalse($user->fresh()->hasPermission('documents.obsolete.view'));
+        $this->assertFalse($user->fresh()->hasAnyPermission(['documents.obsolete.view']));
+        $this->assertFalse($user->fresh()->canAccessRoute('documents.obsolete'));
+
+        $this->actingAs($user->fresh())
+            ->get(route('documents.obsolete'))
+            ->assertForbidden();
+    }
+
     public function test_permission_seeder_creates_superadmin_role_with_all_permissions(): void
     {
         $this->seed(PermissionSeeder::class);

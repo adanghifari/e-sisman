@@ -19,7 +19,7 @@ class DocumentAssignmentAccessTest extends TestCase
 {
     use RefreshDatabase;
 
-    public function test_document_control_admin_can_assign_document_from_related_department(): void
+    public function test_document_control_admin_with_assign_permission_can_assign_document(): void
     {
         $department = Department::create([
             'kode_department' => 'QA',
@@ -32,7 +32,7 @@ class DocumentAssignmentAccessTest extends TestCase
         $this->assertTrue($admin->canAssignDocument($document));
     }
 
-    public function test_document_control_admin_cannot_assign_document_from_unrelated_department(): void
+    public function test_document_control_admin_without_assign_permission_cannot_assign_document(): void
     {
         $userDepartment = Department::create([
             'kode_department' => 'QA',
@@ -42,7 +42,7 @@ class DocumentAssignmentAccessTest extends TestCase
             'kode_department' => 'HR',
             'nama_department' => 'Human Resources',
         ]);
-        $admin = $this->documentControlAdmin($userDepartment);
+        $admin = $this->documentControlAdmin($userDepartment, withAssignPermission: false);
         $document = $this->proposedDocumentForDepartments([$documentDepartment]);
 
         $this->assertTrue($admin->isDocumentControlAdmin());
@@ -106,10 +106,24 @@ class DocumentAssignmentAccessTest extends TestCase
         $this->assertTrue($admin->canAssignDocument($document));
     }
 
-    private function documentControlAdmin(Department $department): User
+    private function documentControlAdmin(Department $department, bool $withAssignPermission = true): User
     {
         $role = Role::query()->firstOrCreate(['nama_role' => 'Admin Kontrol Dokumen']);
         $user = User::factory()->create(['m_department_id' => $department->id]);
+
+        if ($withAssignPermission) {
+            $permission = Permission::query()->firstOrCreate(
+                ['code' => 'documents.approval.assign'],
+                [
+                    'name' => 'Assign Approver Dokumen',
+                    'module' => 'Manajemen Dokumen',
+                    'route' => 'documents.approval.assign',
+                    'action' => 'assign',
+                ],
+            );
+
+            $role->permissions()->syncWithoutDetaching([$permission->id]);
+        }
 
         $user->roles()->attach($role);
 

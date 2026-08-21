@@ -9,6 +9,7 @@ return [
         ['label' => 'Butuh Diproses', 'route' => 'documents.inbox', 'icon' => 'inbox', 'permission' => 'documents.inbox.view'],
         ['label' => 'Tambah Dokumen', 'route' => 'documents.create', 'icon' => 'document-plus', 'permission' => 'documents.create.view'],
         ['label' => 'Dokumen Master', 'route' => 'documents.master', 'icon' => 'document-duplicate', 'permission' => 'documents.master.view'],
+        ['label' => 'Dokumen Obsolete', 'route' => 'documents.obsolete', 'icon' => 'archive-box-x-mark', 'permission' => 'documents.obsolete.view'],
         ['label' => 'Template Dokumen', 'route' => 'document-templates.index', 'icon' => 'document-text', 'permission' => 'document-templates.view'],
     ],
 

@@ -27,7 +27,13 @@ class EnsureRoutePermission
             return $next($request);
         }
 
-        if ($routeName === null || ! Permission::query()->where('route', $routeName)->exists()) {
+        $routeHasConfiguredPermission = collect(config('access.permissions', []))
+            ->contains(fn (array $permission): bool => ($permission['route'] ?? null) === $routeName);
+
+        if (
+            $routeName === null
+            || (! $routeHasConfiguredPermission && ! Permission::query()->where('route', $routeName)->exists())
+        ) {
             return $next($request);
         }
 

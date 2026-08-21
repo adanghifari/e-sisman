@@ -1,36 +1,54 @@
-<x-layouts::app :title="__('Detail Dokumen Master')">
-    @php
-        $levelKey = $document->documentLevel?->kode ?? 'level-3';
-        $levelNumbers = [
-            'level-1' => 'I',
-            'level-2' => 'II',
-            'level-3' => 'III',
-        ];
-        $isObsolete = $document->status?->nama_status === \App\Models\StatusDocument::OBSOLETE;
-        $ownerLabel = $levelKey === 'level-1' ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
-        $publishedAt = $document->tanggal_terbit ?? $document->approved_at;
-        $levelTitle = trim(($document->documentLevel?->nama_level ?? '').' : '.\Illuminate\Support\Str::after($document->documentLevel?->nama_dokumen ?? '', ': '), ' :');
-        $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
-    @endphp
+@props([
+    'title',
+    'heading',
+    'indexRoute',
+    'indexLabel',
+    'document',
+    'masterDisplayNumber',
+    'stampLabel',
+    'stampTone' => 'sky',
+    'fileRoutePrefix',
+    'approvalFlowStages' => collect(),
+    'contentFiles' => collect(),
+    'attachmentFiles' => collect(),
+])
 
+@php
+    $levelKey = $document->documentLevel?->kode ?? 'level-3';
+    $ownerLabel = $levelKey === 'level-1' ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
+    $publishedAt = $document->tanggal_terbit ?? $document->approved_at;
+    $levelTitle = trim(($document->documentLevel?->nama_level ?? '').' : '.\Illuminate\Support\Str::after($document->documentLevel?->nama_dokumen ?? '', ': '), ' :');
+    $processLabel = collect([
+        $document->businessProcess?->nama_proses_bisnis,
+        $document->businessFunction?->nama_proses_fungsi,
+    ])->filter()->implode(' / ');
+    $fileTypeLabels = [
+        'filled_template' => 'Template Dokumen',
+        'imported_document' => 'Dokumen Import',
+        'revision_content' => 'Isi Dokumen Versi Revisi',
+        'revision_form' => 'Lembar Revisi',
+        'attachment' => 'Lampiran',
+    ];
+    $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
+@endphp
+
+<x-layouts::app :title="__($title)">
     <div class="space-y-8">
         <nav class="flex items-center gap-3 text-sm font-medium text-slate-500" aria-label="Breadcrumb">
             <a href="{{ route('dashboard') }}" class="transition hover:text-sky-700" wire:navigate>Home</a>
             <flux:icon name="chevron-right" class="size-4 text-slate-400" />
-            <a href="{{ route('documents.master') }}" class="transition hover:text-sky-700" wire:navigate>Dokumen Master</a>
+            <a href="{{ route($indexRoute) }}" class="transition hover:text-sky-700" wire:navigate>{{ $indexLabel }}</a>
             <flux:icon name="chevron-right" class="size-4 text-slate-400" />
-            <span class="text-slate-700">{{ $document->nomor_dokumen ?: 'Detail Dokumen' }}</span>
+            <span class="text-slate-700">{{ $masterDisplayNumber }}</span>
         </nav>
 
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
-                <h1 class="text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
-                    Detail Dokumen Master
-                </h1>
+                <h1 class="text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">{{ $heading }}</h1>
                 <p class="mt-2 text-base font-medium text-slate-500">{{ $document->nama_dokumen }}</p>
             </div>
 
-            <x-ui.status-badge :label="$isObsolete ? 'Obsolete' : 'Master'" :tone="$isObsolete ? 'red' : 'sky'" class="mt-1" />
+            <x-ui.status-badge :label="$stampLabel" :tone="$stampTone" class="mt-1" />
         </div>
 
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
@@ -39,7 +57,7 @@
                     <dl class="divide-y divide-slate-100 px-6 py-4">
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Nama Dokumen</dt>
-                            <dd class="text-sm font-bold leading-6 text-slate-900">{{ $document->nama_dokumen }}</dd>
+                            <dd class="text-sm font-bold uppercase leading-6 text-slate-900">{{ $document->nama_dokumen }}</dd>
                         </div>
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Level Dokumen</dt>
@@ -49,17 +67,19 @@
                             <dt class="text-sm font-semibold text-slate-500">Nomor Dokumen</dt>
                             <dd class="text-sm font-bold text-slate-900">{{ $masterDisplayNumber }}</dd>
                         </div>
+                        @if ($document->revised_from)
+                            <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                <dt class="text-sm font-semibold text-slate-500">Nomor Dokumen Revisi</dt>
+                                <dd class="text-sm font-bold text-slate-900">{{ $document->nomor_dokumen ?: '-' }}</dd>
+                            </div>
+                        @endif
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Revisi</dt>
                             <dd class="text-sm font-bold text-slate-900">{{ $document->formatted_revision }}</dd>
                         </div>
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
-                            <dt class="text-sm font-semibold text-slate-500">Proses Bisnis</dt>
-                            <dd class="text-sm font-bold text-slate-900">{{ $document->businessProcess?->nama_proses_bisnis ?: '-' }}</dd>
-                        </div>
-                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Proses / Fungsi</dt>
-                            <dd class="text-sm font-bold text-slate-900">{{ $document->businessFunction?->nama_proses_fungsi ?: '-' }}</dd>
+                            <dd class="text-sm font-bold text-slate-900">{{ $processLabel ?: '-' }}</dd>
                         </div>
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                             <dt class="text-sm font-semibold text-slate-500">Department Terkait</dt>
@@ -109,15 +129,15 @@
                                 <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
                                     <div class="min-w-0">
                                         <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
-                                        <p class="text-xs font-medium text-slate-500">{{ strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                        <p class="text-xs font-medium text-slate-500">{{ $fileTypeLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                     </div>
-                                    <a href="{{ route('documents.master.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                    <a href="{{ route($fileRoutePrefix.'.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                         Buka
                                     </a>
                                 </div>
 
                                 <iframe
-                                    src="{{ route('documents.master.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                    src="{{ route($fileRoutePrefix.'.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
                                     class="min-h-[760px] w-full bg-white xl:h-[82vh]"
                                 ></iframe>
                             </section>
@@ -135,9 +155,9 @@
                             <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
                                 <div class="min-w-0">
                                     <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
-                                    <p class="text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
+                                    <p class="text-xs font-medium text-slate-500">{{ $fileTypeLabels[$file->type_file] ?? 'Lampiran' }} - {{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
                                 </div>
-                                <a href="{{ route('documents.master.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                <a href="{{ route($fileRoutePrefix.'.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                     Buka
                                 </a>
                             </div>
@@ -162,6 +182,13 @@
                             <input type="text" value="{{ $masterDisplayNumber }}" readonly class="{{ $readonlyInput }}">
                         </label>
 
+                        @if ($document->revised_from)
+                            <label class="block">
+                                <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen Revisi</span>
+                                <input type="text" value="{{ $document->nomor_dokumen ?: '-' }}" readonly class="{{ $readonlyInput }}">
+                            </label>
+                        @endif
+
                         <label class="block">
                             <span class="mb-2 block text-base font-medium text-slate-500">Revisi</span>
                             <input type="text" value="{{ $document->formatted_revision }}" readonly class="{{ $readonlyInput }}">
@@ -171,7 +198,7 @@
                             <div class="flex items-center gap-3">
                                 <flux:icon name="document-check" class="size-6 text-slate-700" />
                                 <span>Stamp</span>
-                                <x-ui.status-badge :label="$isObsolete ? 'Obsolete' : 'Master'" :tone="$isObsolete ? 'red' : 'sky'" class="ml-auto" />
+                                <x-ui.status-badge :label="$stampLabel" :tone="$stampTone" class="ml-auto" />
                             </div>
                             <div class="flex items-center gap-3">
                                 <flux:icon name="calendar-days" class="size-6 text-slate-700" />
@@ -186,24 +213,7 @@
                         </div>
                     </div>
 
-                    @if ($canRequestRevision)
-                        <div class="border-t border-dashed border-slate-200 px-6 py-5">
-                            <div class="grid gap-3">
-                                <a
-                                    href="{{ route('documents.create.level', ['level-4', 'revised_from' => $document->id]) }}"
-                                    class="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
-                                    wire:navigate
-                                >
-                                    <flux:icon name="arrow-path" class="size-4" />
-                                    Ajukan Revisi
-                                </a>
-                                <button type="button" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-50" data-obsolete-modal-open>
-                                    <flux:icon name="archive-box-x-mark" class="size-4" />
-                                    Obsolete
-                                </button>
-                            </div>
-                        </div>
-                    @endif
+                    {{ $actions ?? '' }}
                 </section>
 
                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -227,7 +237,6 @@
                         @forelse ($approvalHistory as $approval)
                             @php
                                 $approvalStatusCode = $approval->status?->kode_status;
-                                $stageOrder = $approvalStageOrders->get($approval->stages);
                                 $approvalTimestamp = $approval->responded_at;
                                 $approvalStatusTone = match ($approvalStatusCode) {
                                     \App\Models\ApprovalStatus::PENDING => 'amber',
@@ -242,9 +251,7 @@
                                     <p class="truncate text-sm font-semibold text-slate-800">{{ $approval->approver?->name ?? '-' }}</p>
                                     <x-ui.status-badge :label="$approval->status?->nama_status ?? '-'" :tone="$approvalStatusTone" />
                                 </div>
-                                <p class="mt-1 text-xs font-medium text-slate-500">
-                                    {{ $approval->stages ?: 'Approval' }}
-                                </p>
+                                <p class="mt-1 text-xs font-medium text-slate-500">{{ $approval->stages ?: 'Approval' }}</p>
                                 @if ($approvalTimestamp)
                                     <p class="mt-1 text-xs font-medium text-slate-500">
                                         Diproses pada {{ $approvalTimestamp->translatedFormat('d M Y H:i:s') }}
@@ -265,58 +272,5 @@
         </div>
     </div>
 
-    @if ($canRequestRevision)
-        <div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/40 px-4 py-6" data-obsolete-modal>
-            <form method="POST" action="{{ route('documents.master.obsolete', $document) }}" class="w-full max-w-xl overflow-hidden rounded-lg bg-white shadow-xl">
-                @csrf
-                <div class="flex items-start justify-between gap-4 border-b border-slate-100 px-6 py-5">
-                    <div>
-                        <h2 class="text-lg font-semibold text-slate-900">Pengajuan Obsolete</h2>
-                        <p class="mt-1 text-sm text-slate-500">Isi alasan obsolete sebelum dokumen masuk ke proses approval.</p>
-                    </div>
-                    <button type="button" class="text-slate-400 transition hover:text-slate-700" data-obsolete-modal-close>
-                        <flux:icon name="x-mark" class="size-5" />
-                    </button>
-                </div>
-                <div class="px-6 py-5">
-                    <x-ui.textarea
-                        label="Catatan / Alasan Obsolete"
-                        name="catatan_obsolete"
-                        rows="5"
-                        placeholder="Tulis alasan obsolete..."
-                        required
-                    />
-                    @error('catatan_obsolete')
-                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                    @enderror
-                </div>
-                <div class="flex justify-end gap-2 border-t border-slate-100 px-6 py-4">
-                    <x-ui.action-button type="button" variant="secondary" data-obsolete-modal-close>
-                        Batal
-                    </x-ui.action-button>
-                    <button type="submit" class="inline-flex h-10 items-center justify-center rounded-lg bg-red-600 px-4 text-sm font-semibold text-white transition hover:bg-red-700">
-                        Pengajuan Obsolete
-                    </button>
-                </div>
-            </form>
-        </div>
-
-        <script>
-            (() => {
-                const modal = document.querySelector('[data-obsolete-modal]');
-
-                document.addEventListener('click', (event) => {
-                    if (event.target.closest('[data-obsolete-modal-open]')) {
-                        modal?.classList.remove('hidden');
-                        modal?.classList.add('flex');
-                    }
-
-                    if (event.target.closest('[data-obsolete-modal-close]')) {
-                        modal?.classList.add('hidden');
-                        modal?.classList.remove('flex');
-                    }
-                });
-            })();
-        </script>
-    @endif
+    {{ $modals ?? '' }}
 </x-layouts::app>
