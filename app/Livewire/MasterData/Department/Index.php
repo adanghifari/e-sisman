@@ -27,6 +27,8 @@ class Index extends Component
 
     public function edit(int $id): void
     {
+        $this->authorizePermission('update');
+
         $department = Department::findOrFail($id);
 
         $this->showForm = true;
@@ -43,6 +45,8 @@ class Index extends Component
         CreateDepartment $createDepartment,
         UpdateDepartment $updateDepartment,
     ): void {
+        $this->authorizePermission($this->editingId ? 'update' : 'create');
+
         $data = [
             'kode_department' => $this->kode_department,
             'nama_department' => $this->nama_department,
@@ -65,6 +69,8 @@ class Index extends Component
         int $id,
         ToggleDepartmentStatus $toggleDepartmentStatus,
     ): void {
+        $this->authorizePermission('update');
+
         $department = Department::findOrFail($id);
 
         $toggleDepartmentStatus->handle($department);
@@ -75,6 +81,8 @@ class Index extends Component
      */
     public function delete(DeleteDepartment $deleteDepartment): void
     {
+        $this->authorizePermission('delete');
+
         if ($this->deletingId === null) {
             return;
         }
@@ -119,6 +127,11 @@ class Index extends Component
     protected function masterDataModelClass(): string
     {
         return Department::class;
+    }
+
+    protected function permissionPrefix(): string
+    {
+        return 'master-data.departments';
     }
 
     protected function resetForm(): void

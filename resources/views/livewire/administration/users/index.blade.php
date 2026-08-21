@@ -86,12 +86,14 @@
                             />
                         </td>
                         <td class="px-5 py-4">
-                            <x-ui.icon-button
-                                icon="pencil"
-                                label="Edit user"
-                                size="sm"
-                                wire:click="edit({{ $user->id }})"
-                            />
+                            @if ($canUpdate)
+                                <x-ui.icon-button
+                                    icon="pencil"
+                                    label="Edit user"
+                                    size="sm"
+                                    wire:click="edit({{ $user->id }})"
+                                />
+                            @endif
                         </td>
                     </tr>
                 @empty

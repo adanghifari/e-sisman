@@ -22,6 +22,8 @@ trait HandlesMasterDataCrudState
 
     abstract protected function masterDataModelClass(): string;
 
+    abstract protected function permissionPrefix(): string;
+
     abstract protected function resetForm(): void;
 
     public function updatingSearch(): void
@@ -36,6 +38,7 @@ trait HandlesMasterDataCrudState
 
     public function create(): void
     {
+        $this->authorizePermission('create');
         $this->resetForm();
 
         $this->showForm = true;
@@ -44,6 +47,7 @@ trait HandlesMasterDataCrudState
 
     public function confirmDelete(int $id): void
     {
+        $this->authorizePermission('delete');
         $modelClass = $this->masterDataModelClass();
 
         $modelClass::findOrFail($id);
@@ -76,5 +80,30 @@ trait HandlesMasterDataCrudState
         ]);
 
         $this->is_active = true;
+    }
+
+    public function getCanCreateProperty(): bool
+    {
+        return $this->can('create');
+    }
+
+    public function getCanUpdateProperty(): bool
+    {
+        return $this->can('update');
+    }
+
+    public function getCanDeleteProperty(): bool
+    {
+        return $this->can('delete');
+    }
+
+    protected function authorizePermission(string $action): void
+    {
+        abort_unless($this->can($action), 403);
+    }
+
+    private function can(string $action): bool
+    {
+        return auth()->user()?->hasPermission($this->permissionPrefix().'.'.$action) ?? false;
     }
 }

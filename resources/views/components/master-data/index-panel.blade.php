@@ -6,15 +6,18 @@
     'statusOptions',
     'status',
     'createAction' => 'create',
+    'canCreate' => true,
 ])
 
 <x-ui.panel :title="$title" :description="$description" :padded="false">
-    <x-slot:actions>
-        <x-ui.action-button type="button" wire:click="{{ $createAction }}" class="gap-2">
-            <flux:icon name="plus" class="size-4" />
-            Tambah Data
-        </x-ui.action-button>
-    </x-slot:actions>
+    @if ($canCreate)
+        <x-slot:actions>
+            <x-ui.action-button type="button" wire:click="{{ $createAction }}" class="gap-2">
+                <flux:icon name="plus" class="size-4" />
+                Tambah Data
+            </x-ui.action-button>
+        </x-slot:actions>
+    @endif
 
     <div class="grid gap-4 border-b border-slate-200 p-5 md:grid-cols-[minmax(260px,1fr)_minmax(180px,260px)]">
         <x-ui.input

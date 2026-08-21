@@ -24,6 +24,41 @@ class DocumentInboxTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $role = Role::query()->firstOrCreate(['nama_role' => 'User']);
+        $permissions = collect([
+            [
+                'code' => 'documents.inbox.view',
+                'name' => 'Lihat Inbox Approval',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.inbox',
+                'action' => 'view',
+            ],
+            [
+                'code' => 'documents.master.view',
+                'name' => 'Lihat Dokumen Master',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.master',
+                'action' => 'view',
+            ],
+            [
+                'code' => 'documents.master.detail',
+                'name' => 'Lihat Detail Dokumen Master',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.master.show',
+                'action' => 'view',
+            ],
+        ])->map(fn (array $permission): Permission => Permission::query()->firstOrCreate(
+            ['code' => $permission['code']],
+            $permission,
+        ));
+
+        $role->permissions()->syncWithoutDetaching($permissions->pluck('id')->all());
+    }
+
     public function test_pending_approval_for_login_user_is_shown_in_needs_process_tab(): void
     {
         $approver = User::factory()->create(['name' => 'Approver Login']);
@@ -1253,6 +1288,34 @@ class DocumentInboxTest extends TestCase
             Approval::query()
                 ->where('t_document_id', $document->id)
                 ->where('user_id', $approver->id)
+                ->firstOrFail()
+            ->status
+            ->kode_status,
+        );
+    }
+
+    public function test_unassigned_user_cannot_approve_document_by_direct_url(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $assignedApprover = User::factory()->create();
+        $unassignedUser = User::factory()->create();
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Tidak Boleh Diapprove Sembarangan',
+            'nomor_dokumen' => 'PS-SMR-NO-RANDOM-APPROVE',
+        ]);
+        $this->createApproval($document, $assignedApprover, ApprovalStatus::PENDING);
+
+        $this->actingAs($unassignedUser)
+            ->post(route('documents.approval.approve', $document))
+            ->assertForbidden();
+
+        $this->assertSame(
+            ApprovalStatus::PENDING,
+            Approval::query()
+                ->where('t_document_id', $document->id)
+                ->where('user_id', $assignedApprover->id)
                 ->firstOrFail()
                 ->status
                 ->kode_status,

@@ -27,6 +27,8 @@ class Index extends Component
 
     public function edit(int $id): void
     {
+        $this->authorizePermission('update');
+
         $businessFunction = BusinessFunction::findOrFail($id);
 
         $this->showForm = true;
@@ -43,6 +45,8 @@ class Index extends Component
         CreateBusinessFunction $createBusinessFunction,
         UpdateBusinessFunction $updateBusinessFunction,
     ): void {
+        $this->authorizePermission($this->editingId ? 'update' : 'create');
+
         $data = [
             'kode' => $this->kode,
             'nama_proses_fungsi' => $this->nama_proses_fungsi,
@@ -65,6 +69,8 @@ class Index extends Component
         int $id,
         ToggleBusinessFunctionStatus $toggleBusinessFunctionStatus,
     ): void {
+        $this->authorizePermission('update');
+
         $businessFunction = BusinessFunction::findOrFail($id);
 
         $toggleBusinessFunctionStatus->handle($businessFunction);
@@ -75,6 +81,8 @@ class Index extends Component
      */
     public function delete(DeleteBusinessFunction $deleteBusinessFunction): void
     {
+        $this->authorizePermission('delete');
+
         if ($this->deletingId === null) {
             return;
         }
@@ -119,6 +127,11 @@ class Index extends Component
     protected function masterDataModelClass(): string
     {
         return BusinessFunction::class;
+    }
+
+    protected function permissionPrefix(): string
+    {
+        return 'master-data.process-functions';
     }
 
     protected function resetForm(): void

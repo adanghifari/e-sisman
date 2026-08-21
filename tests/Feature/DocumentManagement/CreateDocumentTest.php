@@ -23,6 +23,55 @@ class CreateDocumentTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $role = Role::query()->firstOrCreate(['nama_role' => 'User']);
+        $permissions = collect([
+            [
+                'code' => 'documents.create.view',
+                'name' => 'Lihat Tambah Dokumen',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.create',
+                'action' => 'view',
+            ],
+            [
+                'code' => 'documents.create.create',
+                'name' => 'Submit Tambah Dokumen',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.store',
+                'action' => 'create',
+            ],
+            [
+                'code' => 'documents.master.view',
+                'name' => 'Lihat Dokumen Master',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.master',
+                'action' => 'view',
+            ],
+            [
+                'code' => 'documents.master.detail',
+                'name' => 'Lihat Detail Dokumen Master',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.master.show',
+                'action' => 'view',
+            ],
+            [
+                'code' => 'documents.inbox.view',
+                'name' => 'Lihat Inbox Approval',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.inbox',
+                'action' => 'view',
+            ],
+        ])->map(fn (array $permission): Permission => Permission::query()->firstOrCreate(
+            ['code' => $permission['code']],
+            $permission,
+        ));
+
+        $role->permissions()->syncWithoutDetaching($permissions->pluck('id')->all());
+    }
+
     public function test_level_three_create_page_is_displayed(): void
     {
         $user = User::factory()->create([
@@ -556,6 +605,16 @@ class CreateDocumentTest extends TestCase
             ->assertSee(StatusDocument::PROPOSED);
 
         $documentControlRole = Role::query()->firstOrCreate(['nama_role' => 'Admin Kontrol Dokumen']);
+        $assignPermission = Permission::query()->firstOrCreate(
+            ['code' => 'documents.approval.assign'],
+            [
+                'name' => 'Assign Approver Dokumen',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.approval.assign',
+                'action' => 'assign',
+            ],
+        );
+        $documentControlRole->permissions()->syncWithoutDetaching([$assignPermission->id]);
         $documentControlAdmin = User::factory()->create([
             'm_department_id' => $sourceDepartment->id,
             'name' => 'Admin Kontrol Dokumen',

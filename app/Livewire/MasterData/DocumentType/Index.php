@@ -25,6 +25,8 @@ class Index extends Component
 
     public function edit(int $id): void
     {
+        $this->authorizePermission('update');
+
         $documentType = DocumentType::findOrFail($id);
 
         $this->showForm = true;
@@ -40,6 +42,8 @@ class Index extends Component
         CreateDocumentType $createDocumentType,
         UpdateDocumentType $updateDocumentType,
     ): void {
+        $this->authorizePermission($this->editingId ? 'update' : 'create');
+
         $data = [
             'nama_types' => $this->nama_types,
             'is_active' => $this->is_active,
@@ -61,6 +65,8 @@ class Index extends Component
         int $id,
         ToggleDocumentTypeStatus $toggleDocumentTypeStatus,
     ): void {
+        $this->authorizePermission('update');
+
         $documentType = DocumentType::findOrFail($id);
 
         $toggleDocumentTypeStatus->handle($documentType);
@@ -71,6 +77,8 @@ class Index extends Component
      */
     public function delete(DeleteDocumentType $deleteDocumentType): void
     {
+        $this->authorizePermission('delete');
+
         if ($this->deletingId === null) {
             return;
         }
@@ -111,6 +119,11 @@ class Index extends Component
     protected function masterDataModelClass(): string
     {
         return DocumentType::class;
+    }
+
+    protected function permissionPrefix(): string
+    {
+        return 'master-data.document-types';
     }
 
     protected function resetForm(): void

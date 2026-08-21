@@ -50,6 +50,9 @@ class DatabaseSeederTest extends TestCase
         $this->assertFalse($documentControlRole->permissions()->where('code', 'users.delete')->exists());
 
         $this->assertTrue($userRole->permissions()->where('code', 'documents.master.view')->exists());
+        $this->assertTrue($userRole->permissions()->where('code', 'documents.master.detail')->exists());
+        $this->assertTrue($userRole->permissions()->where('code', 'documents.master.download')->exists());
+        $this->assertTrue($userRole->permissions()->where('code', 'documents.master.preview')->exists());
         $this->assertTrue($userRole->permissions()->where('code', 'documents.obsolete.view')->exists());
         $this->assertTrue($userRole->permissions()->where('code', 'documents.obsolete.detail')->exists());
         $this->assertTrue($userRole->permissions()->where('code', 'documents.obsolete.download')->exists());

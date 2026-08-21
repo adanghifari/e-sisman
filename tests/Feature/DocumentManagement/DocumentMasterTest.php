@@ -504,7 +504,7 @@ class DocumentMasterTest extends TestCase
 
     public function test_master_detail_shows_approval_history_sorted_by_stage_with_response_timestamp(): void
     {
-        $viewer = User::factory()->create();
+        $viewer = $this->userWithPermission('documents.master.detail');
         $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
         $approvedApprovalStatus = ApprovalStatus::create([
             'kode_status' => ApprovalStatus::APPROVED,
@@ -573,7 +573,7 @@ class DocumentMasterTest extends TestCase
 
     public function test_master_detail_for_revision_shows_parent_and_revision_numbers_without_reference_rows(): void
     {
-        $viewer = User::factory()->create();
+        $viewer = $this->userWithPermission('documents.master.detail');
         $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
         $referenceDocument = $this->createDocument($viewer, $approvedStatus, [
             'nama_dokumen' => 'Dokumen Acuan Lama',
@@ -628,7 +628,9 @@ class DocumentMasterTest extends TestCase
             'kode_department' => 'HR',
             'nama_department' => 'Human Resources',
         ]);
-        $otherDepartmentUser = User::factory()->create(['m_department_id' => $otherDepartment->id]);
+        $otherDepartmentUser = $this->userWithoutPermission('documents.obsolete.create', [
+            'm_department_id' => $otherDepartment->id,
+        ]);
 
         $this->actingAs($sameDepartmentUser)
             ->get(route('documents.master.show', $document))
@@ -921,6 +923,7 @@ class DocumentMasterTest extends TestCase
                 'module' => 'Manajemen Dokumen',
                 'route' => match ($permissionCode) {
                     'documents.master.view' => 'documents.master',
+                    'documents.master.detail' => 'documents.master.show',
                     'documents.obsolete.detail' => 'documents.obsolete.show',
                     'documents.obsolete.restore' => 'documents.obsolete.restore',
                     default => 'documents.obsolete',
@@ -936,6 +939,18 @@ class DocumentMasterTest extends TestCase
         $user = User::factory()->create();
 
         $role->permissions()->syncWithoutDetaching([$permission->id]);
+        $masterDetailPermission = Permission::query()->firstOrCreate(
+            ['code' => 'documents.master.detail'],
+            [
+                'name' => 'documents.master.detail',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.master.show',
+                'action' => 'view',
+            ],
+        );
+
+        $role->permissions()->syncWithoutDetaching([$masterDetailPermission->id]);
+
         if (in_array($permissionCode, ['documents.obsolete.create', 'documents.obsolete.restore'], true)) {
             $viewPermission = Permission::query()->firstOrCreate(
                 ['code' => 'documents.obsolete.view'],
@@ -992,6 +1007,7 @@ class DocumentMasterTest extends TestCase
                 'module' => 'Manajemen Dokumen',
                 'route' => match ($permissionCode) {
                     'documents.master.view' => 'documents.master',
+                    'documents.master.detail' => 'documents.master.show',
                     'documents.obsolete.detail' => 'documents.obsolete.show',
                     'documents.obsolete.restore' => 'documents.obsolete.restore',
                     default => 'documents.obsolete',
@@ -1005,7 +1021,17 @@ class DocumentMasterTest extends TestCase
         );
         $role = Role::query()->firstOrCreate(['nama_role' => 'Role tanpa '.$permissionCode]);
         $user = User::factory()->create($attributes);
+        $masterDetailPermission = Permission::query()->firstOrCreate(
+            ['code' => 'documents.master.detail'],
+            [
+                'name' => 'documents.master.detail',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.master.show',
+                'action' => 'view',
+            ],
+        );
 
+        $role->permissions()->syncWithoutDetaching([$masterDetailPermission->id]);
         $user->roles()->attach($role);
 
         return $user->refresh();

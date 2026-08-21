@@ -132,21 +132,9 @@ class User extends Authenticatable implements PasskeyUser
 
     public function canAssignDocument(Document $document): bool
     {
-        if ($this->isDeveloper() || $this->hasExplicitPermission('documents.approval.assign')) {
-            return true;
-        }
-
-        if (! $this->isDocumentControlAdmin() || $this->m_department_id === null) {
-            return false;
-        }
-
-        if ($document->relationLoaded('departments')) {
-            return $document->departments->contains('id', $this->m_department_id);
-        }
-
-        return $document->departments()
-            ->whereKey($this->m_department_id)
-            ->exists();
+        return $this->isDeveloper()
+            || $this->isAdmin()
+            || $this->hasExplicitPermission('documents.approval.assign');
     }
 
     public function hasExplicitPermission(string $permissionCode): bool

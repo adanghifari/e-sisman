@@ -8,6 +8,7 @@
         search-placeholder="Cari jenis dokumen..."
         :status-options="$statusOptions"
         :status="$status"
+        :can-create="$this->canCreate"
     >
         <x-ui.scrollable-table max-height="620px" min-width="100%" :horizontal="false" class="table-fixed text-base">
             <colgroup>
@@ -35,25 +36,29 @@
                         </td>
                         <td class="px-5 py-4">
                             <div class="flex items-center justify-start gap-3">
-                                <x-ui.icon-button
-                                    icon="pencil"
-                                    label="Edit jenis dokumen"
-                                    size="sm"
-                                    wire:click="edit({{ $documentType->id }})"
-                                />
+                                @if ($this->canUpdate)
+                                    <x-ui.icon-button
+                                        icon="pencil"
+                                        label="Edit jenis dokumen"
+                                        size="sm"
+                                        wire:click="edit({{ $documentType->id }})"
+                                    />
 
-                                <x-ui.inline-status-toggle
-                                    :active="$documentType->is_active"
-                                    wire:click="toggleStatus({{ $documentType->id }})"
-                                    aria-label="{{ $documentType->is_active ? 'Nonaktifkan jenis dokumen' : 'Aktifkan jenis dokumen' }}"
-                                />
+                                    <x-ui.inline-status-toggle
+                                        :active="$documentType->is_active"
+                                        wire:click="toggleStatus({{ $documentType->id }})"
+                                        aria-label="{{ $documentType->is_active ? 'Nonaktifkan jenis dokumen' : 'Aktifkan jenis dokumen' }}"
+                                    />
+                                @endif
 
-                                <x-ui.icon-button
-                                    icon="trash"
-                                    label="Hapus jenis dokumen"
-                                    size="sm"
-                                    wire:click="confirmDelete({{ $documentType->id }})"
-                                />
+                                @if ($this->canDelete)
+                                    <x-ui.icon-button
+                                        icon="trash"
+                                        label="Hapus jenis dokumen"
+                                        size="sm"
+                                        wire:click="confirmDelete({{ $documentType->id }})"
+                                    />
+                                @endif
                             </div>
                         </td>
                     </tr>

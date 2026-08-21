@@ -90,6 +90,27 @@ return [
             'action' => 'view',
         ],
         [
+            'code' => 'documents.master.detail',
+            'name' => 'Lihat Detail Dokumen Master',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.master.show',
+            'action' => 'view',
+        ],
+        [
+            'code' => 'documents.master.download',
+            'name' => 'Download File Dokumen Master',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.master.files.show',
+            'action' => 'download',
+        ],
+        [
+            'code' => 'documents.master.preview',
+            'name' => 'Preview File Dokumen Master',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.master.files.preview',
+            'action' => 'preview',
+        ],
+        [
             'code' => 'documents.obsolete.view',
             'name' => 'Lihat Dokumen Obsolete',
             'module' => 'Manajemen Dokumen',

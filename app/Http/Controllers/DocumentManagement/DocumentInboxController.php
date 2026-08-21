@@ -348,26 +348,13 @@ class DocumentInboxController extends Controller
     {
         $user = $request->user();
 
-        if ($user->isDeveloper() || $user->hasExplicitPermission('documents.approval.assign')) {
+        if ($user->isDeveloper() || $user->isAdmin() || $user->hasExplicitPermission('documents.approval.assign')) {
             return function ($query): void {
                 $query->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED));
             };
         }
 
-        if (! $user->isAdmin() && (! $user->isDocumentControlAdmin() || $user->m_department_id === null)) {
-            return null;
-        }
-
-        return function ($query) use ($user): void {
-            $query->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED));
-            $query->whereDoesntHave('approvals', function ($query): void {
-                $query->where('stages', '!=', 'TTD Penyusun Resmi');
-            });
-
-            if (! $user->isAdmin()) {
-                $query->whereHas('departments', fn ($query) => $query->whereKey($user->m_department_id));
-            }
-        };
+        return null;
     }
 
     private function approvalRow(Document $document, ?Approval $approval, bool $canAssign = false, ?User $user = null): array
