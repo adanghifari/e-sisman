@@ -545,14 +545,15 @@ class CreateDocumentTest extends TestCase
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'needs-process']))
             ->assertOk()
-            ->assertSee('Prosedur Revisi Master Updated')
-            ->assertSee('Pengajuan Revisi')
-            ->assertSee(StatusDocument::PROPOSED);
+            ->assertDontSee('Prosedur Revisi Master Updated');
 
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
             ->assertOk()
-            ->assertDontSee('Prosedur Revisi Master Updated');
+            ->assertSee('Prosedur Revisi Master Updated')
+            ->assertSee('Pengajuan Revisi')
+            ->assertSee('FMPS-SMR-010')
+            ->assertSee(StatusDocument::PROPOSED);
 
         $documentControlRole = Role::query()->firstOrCreate(['nama_role' => 'Admin Kontrol Dokumen']);
         $documentControlAdmin = User::factory()->create([
@@ -593,9 +594,7 @@ class CreateDocumentTest extends TestCase
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'needs-process']))
             ->assertOk()
-            ->assertSee('Prosedur Revisi Master Updated')
-            ->assertSee('Pengajuan Revisi')
-            ->assertSee(StatusDocument::PROPOSED);
+            ->assertDontSee('Prosedur Revisi Master Updated');
 
         $this->actingAs($submitter)
             ->post(route('documents.store', 'level-4'), [

@@ -202,8 +202,8 @@ class DocumentMasterController extends Controller
                 ->sortBy('stage_order')
                 ->values()
                 ?? collect(),
-            'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document'])->values(),
-            'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
+            'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document', 'revision_content'])->values(),
+            'attachmentFiles' => $document->files->whereIn('type_file', ['attachment', 'revision_form'])->values(),
         ]);
     }
 

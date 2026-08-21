@@ -123,7 +123,6 @@ class DocumentInboxController extends Controller
         $assignedMonitorDocumentScope = $this->assignedMonitorDocumentScope($request);
         $assignableDocumentScope = $this->assignableDocumentScope($request);
         $rejectedCorrectionScope = $this->rejectedCorrectionScope($request);
-        $pendingRevisionOwnerScope = $this->pendingRevisionOwnerScope($request);
 
         $query = Document::query()
             ->withExists([
@@ -148,7 +147,7 @@ class DocumentInboxController extends Controller
                 },
             ]);
 
-        $query->where(function ($query) use ($approvalScope, $assignedMonitorDocumentScope, $assignableDocumentScope, $rejectedCorrectionScope, $pendingRevisionOwnerScope): void {
+        $query->where(function ($query) use ($approvalScope, $assignedMonitorDocumentScope, $assignableDocumentScope, $rejectedCorrectionScope): void {
             $query->whereHas('approvals', $approvalScope);
             $query->orWhere($assignedMonitorDocumentScope);
 
@@ -158,7 +157,6 @@ class DocumentInboxController extends Controller
             }
 
             $query->orWhere($rejectedCorrectionScope);
-            $query->orWhere($pendingRevisionOwnerScope);
         });
 
         return $query->get()
@@ -167,8 +165,7 @@ class DocumentInboxController extends Controller
                     return true;
                 }
 
-                return $this->isPendingRevisionOwnerTask($document, $request->user())
-                    || $this->isAssignedMonitorTask($document, $request->user())
+                return $this->isAssignedMonitorTask($document, $request->user())
                     || $document->approvals->first() !== null
                     || ! $document->has_flow_approvals;
             })
@@ -212,11 +209,6 @@ class DocumentInboxController extends Controller
                         ->orWhere(function ($query) use ($user): void {
                             $query
                                 ->whereDoesntHave('status', fn ($query) => $query->where('nama_status', StatusDocument::REJECTED))
-                                ->where(function ($query): void {
-                                    $query
-                                        ->whereNull('revised_from')
-                                        ->orWhereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::APPROVED));
-                                })
                                 ->where(function ($query) use ($user): void {
                                     $query
                                         ->where('user_id', $user->id)
@@ -226,8 +218,7 @@ class DocumentInboxController extends Controller
                 }
             })
             ->get()
-            ->reject(fn (Document $document): bool => $this->isPendingRevisionOwnerTask($document, $user)
-                || $this->isAssignedMonitorTask($document, $user))
+            ->reject(fn (Document $document): bool => $this->isAssignedMonitorTask($document, $user))
             ->map(fn (Document $document): array => $this->processedHistoryRow(
                 $document,
                 $this->processedHistoryApproval($document, $user),

@@ -6,6 +6,7 @@ use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
 use App\Models\Department;
 use App\Models\Document;
+use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
 use App\Models\Approval;
@@ -149,6 +150,24 @@ class DocumentMasterTest extends TestCase
             'submitted_at' => now(),
         ]);
         $revision->departments()->sync($source->departments()->pluck('departments.id')->all());
+        DocumentFile::create([
+            't_document_id' => $revision->id,
+            'type_file' => 'revision_content',
+            'path_file' => "documents/{$revision->id}/dokumen-revisi.pdf",
+            'uploaded_by' => $submitter->id,
+            'original_file_name' => 'dokumen-revisi.pdf',
+            'stored_file_name' => 'dokumen-revisi.pdf',
+            'file_size' => 24000,
+        ]);
+        DocumentFile::create([
+            't_document_id' => $revision->id,
+            'type_file' => 'revision_form',
+            'path_file' => "documents/{$revision->id}/lembar-revisi.pdf",
+            'uploaded_by' => $submitter->id,
+            'original_file_name' => 'lembar-revisi.pdf',
+            'stored_file_name' => 'lembar-revisi.pdf',
+            'file_size' => 12000,
+        ]);
 
         $flow = ApprovalFlow::create([
             'm_document_level_id' => $source->m_document_level_id,
@@ -193,6 +212,15 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Tgl Obsolete')
             ->assertSee('00.00')
             ->assertSee('Obsolete');
+
+        $this->actingAs($submitter)
+            ->get(route('documents.master.show', $revision))
+            ->assertOk()
+            ->assertSee('Isi Dokumen Versi Revisi')
+            ->assertSee('dokumen-revisi.pdf')
+            ->assertSee('Lembar Revisi')
+            ->assertSee('lembar-revisi.pdf')
+            ->assertDontSee('Belum ada file isi dokumen.');
     }
 
     public function test_master_detail_shows_approval_history_sorted_by_stage_with_response_timestamp(): void

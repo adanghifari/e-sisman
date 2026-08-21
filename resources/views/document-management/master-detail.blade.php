@@ -14,6 +14,13 @@
             $document->businessProcess?->nama_proses_bisnis,
             $document->businessFunction?->nama_proses_fungsi,
         ])->filter()->implode(' / ');
+        $fileTypeLabels = [
+            'filled_template' => 'Template Dokumen',
+            'imported_document' => 'Dokumen Import',
+            'revision_content' => 'Isi Dokumen Versi Revisi',
+            'revision_form' => 'Lembar Revisi',
+            'attachment' => 'Lampiran',
+        ];
         $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
     @endphp
 
@@ -115,7 +122,7 @@
                                 <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
                                     <div class="min-w-0">
                                         <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
-                                        <p class="text-xs font-medium text-slate-500">{{ strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                        <p class="text-xs font-medium text-slate-500">{{ $fileTypeLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                     </div>
                                     <a href="{{ route('documents.master.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                         Buka
@@ -141,7 +148,7 @@
                             <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
                                 <div class="min-w-0">
                                     <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
-                                    <p class="text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
+                                    <p class="text-xs font-medium text-slate-500">{{ $fileTypeLabels[$file->type_file] ?? 'Lampiran' }} - {{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
                                 </div>
                                 <a href="{{ route('documents.master.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                     Buka

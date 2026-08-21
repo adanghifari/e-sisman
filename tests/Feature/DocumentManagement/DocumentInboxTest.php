@@ -457,15 +457,16 @@ class DocumentInboxTest extends TestCase
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'needs-process']))
             ->assertOk()
-            ->assertSee('Dokumen Revisi Baru')
-            ->assertSee('Pengajuan Revisi')
-            ->assertSee(StatusDocument::PROPOSED)
+            ->assertDontSee('Dokumen Revisi Baru')
             ->assertDontSee('TTD Penyusun Resmi');
 
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
             ->assertOk()
-            ->assertDontSee('Dokumen Revisi Baru');
+            ->assertSee('Dokumen Revisi Baru')
+            ->assertSee('Pengajuan Revisi')
+            ->assertSee('FMIK-SMR-PARENT')
+            ->assertSee(StatusDocument::PROPOSED);
     }
 
     public function test_submitter_history_shows_revision_form_number_after_work_instruction_revision_is_approved(): void
