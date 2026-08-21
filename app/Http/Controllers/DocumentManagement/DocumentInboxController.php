@@ -134,7 +134,6 @@ class DocumentInboxController extends Controller
         $assignedMonitorDocumentScope = $this->assignedMonitorDocumentScope($request);
         $assignableDocumentScope = $this->assignableDocumentScope($request);
         $rejectedCorrectionScope = $this->rejectedCorrectionScope($request);
-        $pendingRevisionOwnerScope = $this->pendingRevisionOwnerScope($request);
 
         $query = Document::query()
             ->withExists([
@@ -159,7 +158,7 @@ class DocumentInboxController extends Controller
                 },
             ]);
 
-        $query->where(function ($query) use ($approvalScope, $assignedMonitorDocumentScope, $assignableDocumentScope, $rejectedCorrectionScope, $pendingRevisionOwnerScope): void {
+        $query->where(function ($query) use ($approvalScope, $assignedMonitorDocumentScope, $assignableDocumentScope, $rejectedCorrectionScope): void {
             $query->whereHas('approvals', $approvalScope);
             $query->orWhere($assignedMonitorDocumentScope);
 
@@ -169,32 +168,15 @@ class DocumentInboxController extends Controller
             }
 
             $query->orWhere($rejectedCorrectionScope);
-            $query->orWhere($pendingRevisionOwnerScope);
         });
 
         return $query->get()
-            ->each(function (Document $document) use ($request): void {
-                if (! $this->isPendingRequestOwnerTask($document, $request->user())) {
-                    return;
-                }
-
-                $document->setRelation('approvals', $document->approvals()
-                    ->where('stages', '!=', 'TTD Penyusun Resmi')
-                    ->with(['status', 'approver'])
-                    ->orderByRaw('responded_at is not null')
-                    ->orderByRaw('case when m_approval_status_id = ? then 0 else 1 end', [
-                        ApprovalStatus::findByCode(ApprovalStatus::PENDING)->id,
-                    ])
-                    ->orderBy('assigned_at')
-                    ->get());
-            })
             ->filter(function (Document $document) use ($request): bool {
                 if ($document->status?->nama_status === StatusDocument::REJECTED) {
                     return true;
                 }
 
-                return $this->isPendingRequestOwnerTask($document, $request->user())
-                    || $this->isAssignedMonitorTask($document, $request->user())
+                return $this->isAssignedMonitorTask($document, $request->user())
                     || $document->approvals->first() !== null
                     || ! $document->has_flow_approvals;
             })
@@ -238,11 +220,6 @@ class DocumentInboxController extends Controller
                         ->orWhere(function ($query) use ($user): void {
                             $query
                                 ->whereDoesntHave('status', fn ($query) => $query->where('nama_status', StatusDocument::REJECTED))
-                                ->where(function ($query): void {
-                                    $query
-                                        ->whereNull('revised_from')
-                                        ->orWhereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::APPROVED));
-                                })
                                 ->where(function ($query) use ($user): void {
                                     $query
                                         ->where('user_id', $user->id)
@@ -252,8 +229,7 @@ class DocumentInboxController extends Controller
                 }
             })
             ->get()
-            ->reject(fn (Document $document): bool => $this->isPendingRequestOwnerTask($document, $user)
-                || $this->isAssignedMonitorTask($document, $user))
+            ->reject(fn (Document $document): bool => $this->isAssignedMonitorTask($document, $user))
             ->map(fn (Document $document): array => $this->processedHistoryRow(
                 $document,
                 $this->processedHistoryApproval($document, $user),
@@ -383,26 +359,13 @@ class DocumentInboxController extends Controller
     {
         $user = $request->user();
 
-        if ($user->isDeveloper() || $user->hasExplicitPermission('documents.approval.assign')) {
+        if ($user->isDeveloper() || $user->isAdmin() || $user->hasExplicitPermission('documents.approval.assign')) {
             return function ($query): void {
                 $query->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED));
             };
         }
 
-        if (! $user->isAdmin() && (! $user->isDocumentControlAdmin() || $user->m_department_id === null)) {
-            return null;
-        }
-
-        return function ($query) use ($user): void {
-            $query->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED));
-            $query->whereDoesntHave('approvals', function ($query): void {
-                $query->where('stages', '!=', 'TTD Penyusun Resmi');
-            });
-
-            if (! $user->isAdmin()) {
-                $query->whereHas('departments', fn ($query) => $query->whereKey($user->m_department_id));
-            }
-        };
+        return null;
     }
 
     private function approvalRow(Document $document, ?Approval $approval, bool $canAssign = false, ?User $user = null): array
@@ -411,31 +374,12 @@ class DocumentInboxController extends Controller
         $respondedAt = $approval?->responded_at;
         $submittedAt = $document->submitted_at ?? $document->created_at;
         $isRejectedCorrection = $document->status?->nama_status === StatusDocument::REJECTED && $approval === null;
-        $isPendingRequestOwnerDocument = $user !== null && $this->isPendingRequestOwnerTask($document, $user);
-        $isPendingRequestOwnerTask = $isPendingRequestOwnerDocument && $approval === null && ! $canAssign;
-        $isRequestOwnerActiveStageTask = $isPendingRequestOwnerDocument
-            && $approval !== null
-            && $approval->user_id !== $user->id
-            && ! $canAssign;
-        $pendingOwnerApproval = $isPendingRequestOwnerTask ? $this->pendingOwnerApproval($document) : null;
-        $isAssignableDocumentTask = $approval === null
-            && $canAssign
-            && $document->status?->nama_status === StatusDocument::PROPOSED;
+        $isPendingRevisionOwnerTask = $user !== null && $this->isPendingRevisionOwnerTask($document, $user) && $approval === null && ! $canAssign;
         $isAssignedMonitorTask = $user !== null && $approval !== null && $this->isAssignedMonitorApproval($approval, $user);
         $statusCode = $approval?->status?->kode_status
             ?? $approval?->status?->nama_status
             ?? $document->status?->nama_status
             ?? '-';
-        $displayStatus = $this->documentDisplayStatus(
-            $document,
-            $approval,
-            $isPendingRequestOwnerTask,
-            $isAssignableDocumentTask,
-            $isRequestOwnerActiveStageTask,
-        );
-        $displayStatusCode = $isPendingRequestOwnerTask || $isAssignableDocumentTask || $isRequestOwnerActiveStageTask
-            ? ApprovalStatus::PENDING
-            : $statusCode;
 
         return [
             'id' => $document->id,
@@ -443,13 +387,12 @@ class DocumentInboxController extends Controller
             'number' => $this->documentDisplayNumber($document),
             'name' => $document->nama_dokumen ?? '-',
             'type' => $this->documentTypeLabel($document),
-            'type_tone' => $document->request_type === 'obsolete' ? 'red' : null,
             'stage' => match (true) {
                 $isRejectedCorrection => 'Perbaikan Pengajuan',
-                $isPendingRequestOwnerTask => $document->request_type === 'obsolete' ? 'Pengajuan Obsolete' : 'Pengajuan Revisi',
+                $isPendingRevisionOwnerTask => 'Pengajuan Revisi',
                 default => $approval?->stages ?: ($canAssign ? 'Belum assign approver' : 'Approval'),
             },
-            'waiting_for' => $approval?->approver?->name ?? ($canAssign || $isPendingRequestOwnerTask ? 'Admin Kontrol Dokumen' : '-'),
+            'waiting_for' => $approval?->approver?->name ?? ($canAssign || $isPendingRevisionOwnerTask ? 'Admin Kontrol Dokumen' : '-'),
             'owner' => $document->creator?->name ?? '-',
             'department' => $document->departments
                 ->map(fn ($department) => $department->kode_department ?: $department->nama_department)
@@ -461,21 +404,19 @@ class DocumentInboxController extends Controller
             'submitted_at_sort' => $submittedAt?->timestamp ?? 0,
             'updated_at' => $respondedAt?->translatedFormat('d M Y H:i') ?? '-',
             'updated_at_sort' => $respondedAt?->timestamp ?? 0,
-            'status' => $displayStatus,
-            'tone' => $this->approvalTone($displayStatusCode),
+            'status' => $approval?->status?->nama_status ?? $document->status?->nama_status ?? $statusCode,
+            'tone' => $this->approvalTone($statusCode),
             'action' => match (true) {
                 $isRejectedCorrection => 'Perlu Perbaikan',
                 $isAssignedMonitorTask => $this->waitingActionLabel($approval),
                 $approval !== null => $this->waitingActionLabel($approval),
-                $isPendingRequestOwnerTask => $pendingOwnerApproval !== null
-                    ? $this->waitingActionLabel($pendingOwnerApproval)
-                    : 'Perlu Verifikasi Admin KD',
+                $isPendingRevisionOwnerTask => 'Lihat',
                 default => 'Perlu Verifikasi Admin KD',
             },
         ];
     }
 
-    private function isPendingRequestOwnerTask(Document $document, User $user): bool
+    private function isPendingRevisionOwnerTask(Document $document, User $user): bool
     {
         return $document->revised_from !== null
             && in_array($document->status?->nama_status, [
@@ -483,17 +424,6 @@ class DocumentInboxController extends Controller
                 StatusDocument::PROPOSED,
             ], true)
             && in_array($user->id, [$document->user_id, $document->official_preparer_id], true);
-    }
-
-    private function pendingOwnerApproval(Document $document): ?Approval
-    {
-        return $document->approvals
-            ->first(fn (Approval $approval): bool => $approval->responded_at === null
-                && $approval->status?->kode_status === ApprovalStatus::PENDING
-                && $approval->stages !== 'TTD Penyusun Resmi')
-            ?? $document->approvals
-                ->first(fn (Approval $approval): bool => $approval->responded_at === null
-                    && $approval->stages !== 'TTD Penyusun Resmi');
     }
 
     private function taskApproval(Document $document, User $user): ?Approval
@@ -595,71 +525,22 @@ class DocumentInboxController extends Controller
 
     private function documentTypeLabel(Document $document): string
     {
-        if ($document->request_type === 'obsolete') {
-            return 'Obsolete';
-        }
-
         return match ($document->documentType?->nama_types) {
             'IK' => 'Instruksi Kerja',
             default => $document->documentType?->nama_types ?? '-',
         };
     }
 
-    private function documentDisplayStatus(
-        Document $document,
-        ?Approval $approval,
-        bool $isPendingRequestOwnerTask,
-        bool $isAssignableDocumentTask = false,
-        bool $isRequestOwnerActiveStageTask = false,
-    ): string
-    {
-        if ($isPendingRequestOwnerTask && in_array($document->status?->nama_status, [
-            StatusDocument::DRAFT,
-            StatusDocument::PROPOSED,
-        ], true)) {
-            return 'Dalam Review';
-        }
-
-        if ($isAssignableDocumentTask) {
-            return 'Dalam Review';
-        }
-
-        if ($isRequestOwnerActiveStageTask) {
-            return 'Dalam Review';
-        }
-
-        return $approval?->status?->nama_status
-            ?? $document->status?->nama_status
-            ?? '-';
-    }
-
     private function documentDisplayNumber(Document $document): string
     {
-        if ($document->request_type === 'obsolete') {
-            return $this->masterRequestNumber($document)
-                ?? $document->nomor_dokumen
-                ?? '-';
-        }
-
         return $this->revisionRequestNumber($document)
             ?? $document->nomor_dokumen
             ?? '-';
     }
 
-    private function masterRequestNumber(Document $document): ?string
-    {
-        if ($document->revised_from === null) {
-            return $document->nomor_dokumen;
-        }
-
-        return Document::query()
-            ->whereKey($document->revisionRootId())
-            ->value('nomor_dokumen');
-    }
-
     private function revisionRequestNumber(Document $document): ?string
     {
-        if ($document->request_type !== 'revision' || $document->revised_from === null) {
+        if (! in_array($document->request_type, ['revision', 'obsolete'], true) || $document->revised_from === null) {
             return null;
         }
 

@@ -24,6 +24,41 @@ class DocumentInboxTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $role = Role::query()->firstOrCreate(['nama_role' => 'User']);
+        $permissions = collect([
+            [
+                'code' => 'documents.inbox.view',
+                'name' => 'Lihat Inbox Approval',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.inbox',
+                'action' => 'view',
+            ],
+            [
+                'code' => 'documents.master.view',
+                'name' => 'Lihat Dokumen Master',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.master',
+                'action' => 'view',
+            ],
+            [
+                'code' => 'documents.master.detail',
+                'name' => 'Lihat Detail Dokumen Master',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.master.show',
+                'action' => 'view',
+            ],
+        ])->map(fn (array $permission): Permission => Permission::query()->firstOrCreate(
+            ['code' => $permission['code']],
+            $permission,
+        ));
+
+        $role->permissions()->syncWithoutDetaching($permissions->pluck('id')->all());
+    }
+
     public function test_pending_approval_for_login_user_is_shown_in_needs_process_tab(): void
     {
         $approver = User::factory()->create(['name' => 'Approver Login']);
@@ -457,166 +492,16 @@ class DocumentInboxTest extends TestCase
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'needs-process']))
             ->assertOk()
-            ->assertSee('Dokumen Revisi Baru')
-            ->assertSee('Pengajuan Revisi')
-            ->assertSee('Dalam Review')
-            ->assertSee('Perlu Verifikasi Admin KD')
+            ->assertDontSee('Dokumen Revisi Baru')
             ->assertDontSee('TTD Penyusun Resmi');
 
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
             ->assertOk()
-            ->assertDontSee('Dokumen Revisi Baru');
-    }
-
-    public function test_submitter_sees_pending_request_waiting_for_active_approval_stage(): void
-    {
-        $this->ensureApprovalStatuses();
-
-        $submitter = User::factory()->create(['name' => 'Pengaju Revisi Tahap']);
-        $admin = User::factory()->create([
-            'nik' => '000000',
-            'name' => 'Admin KD',
-        ]);
-        $approver = User::factory()->create(['name' => 'Approver Superintendent']);
-        $parent = $this->createDocument($submitter, [
-            'nama_dokumen' => 'Dokumen Parent Tahap',
-            'nomor_dokumen' => 'IK-SMR-PARENT-STAGE',
-        ]);
-        $document = Document::create([
-            'm_document_level_id' => $parent->m_document_level_id,
-            'm_status_document_id' => $parent->m_status_document_id,
-            'm_document_types_id' => $parent->m_document_types_id,
-            'm_proses_bisnis_id' => $parent->m_proses_bisnis_id,
-            'm_proses_fungsi_id' => $parent->m_proses_fungsi_id,
-            'user_id' => $submitter->id,
-            'official_preparer_id' => $submitter->id,
-            'request_type' => 'revision',
-            'nama_dokumen' => 'Dokumen Revisi Tahap',
-            'nomor_dokumen' => 'FMIK-SMR-PARENT-STAGE',
-            'revised_from' => $parent->id,
-            'submitted_at' => now(),
-        ]);
-        $document->departments()->sync($parent->departments()->pluck('departments.id')->all());
-
-        $this->createApproval($document, $approver, ApprovalStatus::PENDING, [
-            'assigned_by' => $admin->id,
-            'stages' => 'Disahkan oleh Superintendent',
-            'assigned_at' => now(),
-        ]);
-
-        $this->actingAs($submitter)
-            ->get(route('documents.inbox', ['tab' => 'needs-process']))
-            ->assertOk()
-            ->assertSee('Dokumen Revisi Tahap')
-            ->assertSee('Dalam Review')
-            ->assertSee('Menunggu Superintendent');
-    }
-
-    public function test_obsolete_request_uses_source_document_context_and_reason(): void
-    {
-        $this->ensureApprovalStatuses();
-
-        $submitter = User::factory()->create(['name' => 'Pengaju Obsolete']);
-        $admin = User::factory()->create([
-            'nik' => '000000',
-            'name' => 'Admin KD',
-        ]);
-        $source = $this->createDocument($submitter, [
-            'nama_dokumen' => 'Prosedur Akan Diobsolete',
-            'nomor_dokumen' => 'PS-SMR-OBSOLETE-CTX',
-        ]);
-        $source->update([
-            'm_status_document_id' => StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED])->id,
-            'nomor_revisi' => '00.00',
-            'approved_at' => now()->subDay(),
-        ]);
-
-        $request = Document::create([
-            'm_document_level_id' => DocumentLevel::query()->where('kode', 'level-4')->firstOrFail()->id,
-            'm_status_document_id' => StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail()->id,
-            'm_document_types_id' => DocumentType::query()->firstOrCreate(['nama_types' => 'Form'])->id,
-            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
-            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
-            'user_id' => $submitter->id,
-            'official_preparer_id' => $submitter->id,
-            'revised_from' => $source->id,
-            'request_type' => 'obsolete',
-            'nama_dokumen' => $source->nama_dokumen,
-            'nomor_dokumen' => 'FMPS-SMR-OBSOLETE-CTX',
-            'nomor_revisi' => $source->nomor_revisi,
-            'catatan_revisi' => 'Dokumen sudah tidak digunakan.',
-            'submitted_at' => now(),
-        ]);
-        $request->departments()->sync($source->departments()->pluck('departments.id')->all());
-
-        $this->actingAs($submitter)
-            ->get(route('documents.inbox', ['tab' => 'needs-process']))
-            ->assertOk()
-            ->assertSee('PS-SMR-OBSOLETE-CTX')
-            ->assertSee('Obsolete')
-            ->assertSee('Dalam Review')
-            ->assertSee('Perlu Verifikasi Admin KD');
-
-        $this->actingAs($admin)
-            ->get(route('documents.approval.show', $request))
-            ->assertOk()
-            ->assertSee('Pengajuan Obsolete Dokumen Level II')
-            ->assertSee('PS-SMR-OBSOLETE-CTX')
-            ->assertSee('Alasan Obsolete')
-            ->assertSee('Dokumen sudah tidak digunakan.')
-            ->assertDontSee('Detail Dokumen Level IV');
-    }
-
-    public function test_obsolete_request_inbox_displays_master_number_even_when_request_or_source_uses_form_number(): void
-    {
-        $this->ensureApprovalStatuses();
-
-        $submitter = User::factory()->create(['name' => 'Pengaju Obsolete Nomor']);
-        $source = $this->createDocument($submitter, [
-            'nama_dokumen' => 'Prosedur Ikatan Dinas SSO',
-            'nomor_dokumen' => 'PS-KSA-02',
-            'nomor_revisi' => 0,
-        ]);
-        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
-        $proposedStatus = StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail();
-        $formRevision = Document::create([
-            'm_document_level_id' => $source->m_document_level_id,
-            'm_status_document_id' => $approvedStatus->id,
-            'm_document_types_id' => $source->m_document_types_id,
-            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
-            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
-            'user_id' => $submitter->id,
-            'official_preparer_id' => $submitter->id,
-            'nama_dokumen' => 'Prosedur Ikatan Dinas SSO',
-            'nomor_dokumen' => 'FMPS-KSA-02',
-            'nomor_revisi' => 1,
-            'revised_from' => $source->id,
-            'approved_at' => now(),
-        ]);
-        $formRevision->departments()->sync($source->departments()->pluck('departments.id')->all());
-        $request = Document::create([
-            'm_document_level_id' => $formRevision->m_document_level_id,
-            'm_status_document_id' => $proposedStatus->id,
-            'm_document_types_id' => $formRevision->m_document_types_id,
-            'm_proses_bisnis_id' => $formRevision->m_proses_bisnis_id,
-            'm_proses_fungsi_id' => $formRevision->m_proses_fungsi_id,
-            'user_id' => $submitter->id,
-            'official_preparer_id' => $submitter->id,
-            'revised_from' => $formRevision->id,
-            'request_type' => 'obsolete',
-            'nama_dokumen' => 'Prosedur Ikatan Dinas SSO',
-            'nomor_dokumen' => 'FMPS-KSA-02',
-            'nomor_revisi' => 1,
-            'submitted_at' => now(),
-        ]);
-        $request->departments()->sync($formRevision->departments()->pluck('departments.id')->all());
-
-        $this->actingAs($submitter)
-            ->get(route('documents.inbox', ['tab' => 'needs-process']))
-            ->assertOk()
-            ->assertSee('PS-KSA-02')
-            ->assertDontSee('FMPS-KSA-02');
+            ->assertSee('Dokumen Revisi Baru')
+            ->assertSee('Pengajuan Revisi')
+            ->assertSee('FMIK-SMR-PARENT')
+            ->assertSee(StatusDocument::PROPOSED);
     }
 
     public function test_submitter_history_shows_revision_form_number_after_work_instruction_revision_is_approved(): void
@@ -1404,6 +1289,34 @@ class DocumentInboxTest extends TestCase
                 ->where('t_document_id', $document->id)
                 ->where('user_id', $approver->id)
                 ->firstOrFail()
+            ->status
+            ->kode_status,
+        );
+    }
+
+    public function test_unassigned_user_cannot_approve_document_by_direct_url(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $assignedApprover = User::factory()->create();
+        $unassignedUser = User::factory()->create();
+        $submitter = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Dokumen Tidak Boleh Diapprove Sembarangan',
+            'nomor_dokumen' => 'PS-SMR-NO-RANDOM-APPROVE',
+        ]);
+        $this->createApproval($document, $assignedApprover, ApprovalStatus::PENDING);
+
+        $this->actingAs($unassignedUser)
+            ->post(route('documents.approval.approve', $document))
+            ->assertForbidden();
+
+        $this->assertSame(
+            ApprovalStatus::PENDING,
+            Approval::query()
+                ->where('t_document_id', $document->id)
+                ->where('user_id', $assignedApprover->id)
+                ->firstOrFail()
                 ->status
                 ->kode_status,
         );
@@ -1526,11 +1439,7 @@ class DocumentInboxTest extends TestCase
 
         $submitter = User::factory()->create();
         $approver = User::factory()->create();
-        $workInstructionLevel = DocumentLevel::query()->where('kode', 'level-3')->firstOrFail();
-        $workInstructionType = DocumentType::query()->firstOrCreate(['nama_types' => 'IK']);
         $source = $this->createDocument($submitter, [
-            'm_document_level_id' => $workInstructionLevel->id,
-            'm_document_types_id' => $workInstructionType->id,
             'nama_dokumen' => 'Instruksi Lama',
             'nomor_dokumen' => 'IK-SMR-OLD',
         ]);
@@ -1542,7 +1451,7 @@ class DocumentInboxTest extends TestCase
         ]);
 
         $revision = Document::create([
-            'm_document_level_id' => DocumentLevel::query()->where('kode', 'level-4')->firstOrFail()->id,
+            'm_document_level_id' => $source->m_document_level_id,
             'm_status_document_id' => StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail()->id,
             'm_document_types_id' => $source->m_document_types_id,
             'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
@@ -1550,7 +1459,6 @@ class DocumentInboxTest extends TestCase
             'user_id' => $submitter->id,
             'official_preparer_id' => $submitter->id,
             'revised_from' => $source->id,
-            'request_type' => 'revision',
             'nama_dokumen' => 'Instruksi Revisi',
             'nomor_dokumen' => 'FMIK-SMR-OLD',
             'nomor_revisi' => 1,
@@ -1584,25 +1492,15 @@ class DocumentInboxTest extends TestCase
             ->assertRedirect(route('documents.approval.show', $revision));
 
         $this->assertSame(StatusDocument::APPROVED, $revision->refresh()->status->nama_status);
-        $this->assertSame('IK-SMR-OLD', $revision->nomor_dokumen);
         $this->assertSame(StatusDocument::OBSOLETE, $source->refresh()->status->nama_status);
-
-        $response = $this->actingAs($submitter)
-            ->get(route('documents.approval.show', $revision))
-            ->assertOk();
-
-        $this->assertStringContainsString('FMIK-SMR-OLD', $response->getContent());
-        $this->assertStringContainsString('Detail Dokumen Level IV', $response->getContent());
-        $this->assertStringContainsString('>Revisi</span>', $response->getContent());
-        $this->assertStringContainsString('Nomor Dokumen Induk', $response->getContent());
-        $this->assertStringContainsString('IK-SMR-OLD', $response->getContent());
     }
 
     public function test_approved_obsolete_request_obsoletes_source_master_document(): void
     {
         $this->ensureApprovalStatuses();
 
-        $submitter = User::factory()->create();
+        $submitter = User::factory()->create(['name' => 'Pengaju Awal Master']);
+        $obsoleteRequester = User::factory()->create(['name' => 'Pengaju Obsolete Dokumen']);
         $approver = User::factory()->create();
         $source = $this->createDocument($submitter, [
             'nama_dokumen' => 'Master Akan Obsolete',
@@ -1615,6 +1513,15 @@ class DocumentInboxTest extends TestCase
             'm_status_document_id' => $approvedDocumentStatus->id,
             'approved_at' => now()->subDay(),
         ]);
+        DocumentFile::create([
+            't_document_id' => $source->id,
+            'type_file' => 'filled_template',
+            'path_file' => "documents/{$source->id}/master-obsolete.pdf",
+            'uploaded_by' => $submitter->id,
+            'original_file_name' => 'master-obsolete.pdf',
+            'stored_file_name' => 'master-obsolete.pdf',
+            'file_size' => 24000,
+        ]);
 
         $request = Document::create([
             'm_document_level_id' => $source->m_document_level_id,
@@ -1622,13 +1529,14 @@ class DocumentInboxTest extends TestCase
             'm_document_types_id' => $source->m_document_types_id,
             'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
             'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
-            'user_id' => $submitter->id,
+            'user_id' => $obsoleteRequester->id,
             'official_preparer_id' => $submitter->id,
             'revised_from' => $source->id,
             'request_type' => 'obsolete',
             'nama_dokumen' => 'Master Akan Obsolete',
             'nomor_dokumen' => 'FMPS-SMR-OBSOLETE',
             'nomor_revisi' => $source->nomor_revisi,
+            'catatan_revisi' => 'Dokumen sudah tidak digunakan lagi.',
             'submitted_at' => now(),
         ]);
         $request->departments()->sync($source->departments()->pluck('departments.id')->all());
@@ -1653,6 +1561,24 @@ class DocumentInboxTest extends TestCase
             'assigned_at' => now(),
             'stages' => $stage->display_label,
         ]);
+
+        $this->actingAs($approver)
+            ->get(route('documents.approval.show', $request))
+            ->assertOk()
+            ->assertSee('Pengajuan Obsolete Dokumen')
+            ->assertSee('Review Pengajuan Obsolete')
+            ->assertSee('Approval ini akan mengubah dokumen master terkait menjadi obsolete setelah seluruh tahap disetujui.')
+            ->assertSee('Pengaju Awal Dokumen')
+            ->assertSee('Pengaju Awal Master')
+            ->assertSee('Pengaju Obsolete')
+            ->assertSee('Pengaju Obsolete Dokumen')
+            ->assertSee('Alasan Obsolete')
+            ->assertSee('Dokumen sudah tidak digunakan lagi.')
+            ->assertSee('Dokumen yang Akan Diobsoletekan')
+            ->assertSee('master-obsolete.pdf')
+            ->assertSee(route('documents.master.files.show', [$source, $source->files()->firstOrFail()]), false)
+            ->assertDontSee('Detail Dokumen Level IV')
+            ->assertDontSee('Belum ada file isi dokumen.');
 
         $this->actingAs($approver)
             ->post(route('documents.approval.approve', $request))

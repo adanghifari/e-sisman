@@ -89,6 +89,8 @@ class Index extends Component
 
     public function edit(int $id): void
     {
+        $this->authorizePermission('users.update');
+
         $user = User::query()
             ->with('roles:id')
             ->findOrFail($id);
@@ -104,6 +106,8 @@ class Index extends Component
 
     public function save(): void
     {
+        $this->authorizePermission('users.update');
+
         $validated = $this->validate([
             'm_department_id' => ['nullable', 'integer', Rule::exists('departments', 'id')],
             'role_id' => ['nullable', 'integer', Rule::exists('roles', 'id')],
@@ -171,6 +175,12 @@ class Index extends Component
                 'active' => 'Active',
                 'inactive' => 'Inactive',
             ],
+            'canUpdate' => auth()->user()?->hasPermission('users.update') ?? false,
         ]);
+    }
+
+    private function authorizePermission(string $permissionCode): void
+    {
+        abort_unless(auth()->user()?->hasPermission($permissionCode), 403);
     }
 }

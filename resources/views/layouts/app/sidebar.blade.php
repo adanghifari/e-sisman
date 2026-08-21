@@ -6,20 +6,34 @@
     <body class="min-h-screen bg-slate-50 text-slate-900">
         @php
             $user = auth()->user();
+            $canSeeMenuItem = function (array $item) use ($user): bool {
+                $permission = $item['permission'] ?? null;
+                $route = $item['route'] ?? null;
+
+                if ($permission !== null) {
+                    return $user->hasPermission($permission);
+                }
+
+                if ($route !== null) {
+                    return $user->canAccessRoute($route);
+                }
+
+                return $permission === null && $route === null;
+            };
             $menuGroups = collect(config('navigation'))
-                ->map(function (array $items) use ($user): array {
+                ->map(function (array $items) use ($canSeeMenuItem): array {
                     return collect($items)
-                        ->map(function (array $item) use ($user): ?array {
+                        ->map(function (array $item) use ($canSeeMenuItem): ?array {
                             if (isset($item['children'])) {
                                 $children = collect($item['children'])
-                                    ->filter(fn (array $child): bool => $user->hasPermission($child['permission'] ?? ''))
+                                    ->filter($canSeeMenuItem)
                                     ->values()
                                     ->all();
 
                                 return count($children) > 0 ? [...$item, 'children' => $children] : null;
                             }
 
-                            return $user->hasPermission($item['permission'] ?? '') ? $item : null;
+                            return $canSeeMenuItem($item) ? $item : null;
                         })
                         ->filter()
                         ->values()
@@ -165,6 +179,14 @@
                 variant="warning"
                 :title="session('department_warning.title')"
                 :message="session('department_warning.message')"
+            />
+        @endif
+
+        @if (session('restore_warning'))
+            <x-ui.success-dialog
+                variant="warning"
+                :title="session('restore_warning.title')"
+                :message="session('restore_warning.message')"
             />
         @endif
 

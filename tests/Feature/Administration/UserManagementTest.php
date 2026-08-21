@@ -4,6 +4,7 @@ namespace Tests\Feature\Administration;
 
 use App\Livewire\Administration\User\Index;
 use App\Models\Department;
+use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -22,12 +23,15 @@ class UserManagementTest extends TestCase
             'jabatan' => 'Quality Assurance Officer',
             'no_whatsapp' => '628123456789',
         ]);
+        $viewer = $this->userWithPermission('users.view');
 
-        Livewire::test(Index::class)
+        Livewire::actingAs($viewer)
+            ->test(Index::class)
             ->assertSee('List User')
             ->assertSee('Nadia Putri')
             ->assertSee('Quality Assurance Officer')
-            ->assertSee('628123456789');
+            ->assertSee('628123456789')
+            ->assertDontSee('Edit user');
     }
 
     public function test_user_can_be_updated_from_management_page(): void
@@ -43,8 +47,10 @@ class UserManagementTest extends TestCase
             'no_whatsapp' => null,
             'is_active' => true,
         ]);
+        $editor = $this->userWithPermission('users.update');
 
-        Livewire::test(Index::class)
+        Livewire::actingAs($editor)
+            ->test(Index::class)
             ->call('edit', $user->id)
             ->set('m_department_id', (string) $department->id)
             ->set('role_id', (string) $role->id)
@@ -61,5 +67,42 @@ class UserManagementTest extends TestCase
         $this->assertSame('628765432100', $user->no_whatsapp);
         $this->assertFalse($user->is_active);
         $this->assertTrue($user->roles()->whereKey($role->id)->exists());
+    }
+
+    public function test_user_viewer_cannot_run_update_actions(): void
+    {
+        $viewer = $this->userWithPermission('users.view');
+        $user = User::factory()->create();
+
+        Livewire::actingAs($viewer)
+            ->test(Index::class)
+            ->call('edit', $user->id)
+            ->assertForbidden();
+
+        Livewire::actingAs($viewer)
+            ->test(Index::class)
+            ->set('editingId', $user->id)
+            ->call('save')
+            ->assertForbidden();
+    }
+
+    private function userWithPermission(string $permissionCode): User
+    {
+        $permission = Permission::query()->firstOrCreate(
+            ['code' => $permissionCode],
+            [
+                'name' => $permissionCode,
+                'module' => 'Administrasi',
+                'route' => 'users.index',
+                'action' => str($permissionCode)->afterLast('.')->value(),
+            ],
+        );
+        $role = Role::query()->firstOrCreate(['nama_role' => 'Role '.$permissionCode]);
+        $user = User::factory()->create();
+
+        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        $user->roles()->attach($role);
+
+        return $user->refresh();
     }
 }

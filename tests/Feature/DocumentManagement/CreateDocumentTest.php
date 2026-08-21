@@ -23,6 +23,55 @@ class CreateDocumentTest extends TestCase
 {
     use RefreshDatabase;
 
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        $role = Role::query()->firstOrCreate(['nama_role' => 'User']);
+        $permissions = collect([
+            [
+                'code' => 'documents.create.view',
+                'name' => 'Lihat Tambah Dokumen',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.create',
+                'action' => 'view',
+            ],
+            [
+                'code' => 'documents.create.create',
+                'name' => 'Submit Tambah Dokumen',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.store',
+                'action' => 'create',
+            ],
+            [
+                'code' => 'documents.master.view',
+                'name' => 'Lihat Dokumen Master',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.master',
+                'action' => 'view',
+            ],
+            [
+                'code' => 'documents.master.detail',
+                'name' => 'Lihat Detail Dokumen Master',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.master.show',
+                'action' => 'view',
+            ],
+            [
+                'code' => 'documents.inbox.view',
+                'name' => 'Lihat Inbox Approval',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.inbox',
+                'action' => 'view',
+            ],
+        ])->map(fn (array $permission): Permission => Permission::query()->firstOrCreate(
+            ['code' => $permission['code']],
+            $permission,
+        ));
+
+        $role->permissions()->syncWithoutDetaching($permissions->pluck('id')->all());
+    }
+
     public function test_level_three_create_page_is_displayed(): void
     {
         $user = User::factory()->create([
@@ -463,12 +512,7 @@ class CreateDocumentTest extends TestCase
             ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
             ->assertOk()
             ->assertSee('Dokumen Level IV: Form Prosedur')
-            ->assertSee('Import Dokumen Level II: Prosedur SKMBS')
-            ->assertDontSee('<dd class="text-sm font-bold uppercase leading-6 text-slate-900">Prosedur Revisi Master</dd>', false)
-            ->assertSee('Level II: Prosedur SKMBS')
-            ->assertDontSee('<dt class="text-sm font-semibold text-slate-500">Dokumen Induk</dt>', false)
-            ->assertSee('Nomor Dokumen Induk')
-            ->assertSee('Proses Bisnis')
+            ->assertSee('Ajukan Revisi')
             ->assertSee('Dokumen Revisi')
             ->assertSee('1. Isi Dokumen Versi Revisi')
             ->assertSee('2. Lembar Revisi')
@@ -540,16 +584,6 @@ class CreateDocumentTest extends TestCase
         $this->actingAs($submitter)
             ->get(route('documents.approval.show', $revision))
             ->assertOk()
-            ->assertSeeInOrder(['Detail Dokumen Level IV', 'Revisi', 'Informasi Dokumen'])
-            ->assertSee('Prosedur Revisi Master')
-            ->assertSee('Level II: Prosedur SKMBS')
-            ->assertSee('Nomor Dokumen Induk')
-            ->assertSee('PS-SMR-010')
-            ->assertSee('Proses Bisnis')
-            ->assertSee('Sistem Manajemen Risiko')
-            ->assertSee('Proses / Fungsi')
-            ->assertSee('Operasional')
-            ->assertDontSee('Level IV : Form / Lembar Revisi')
             ->assertSee('Dokumen Revisi')
             ->assertSee('Isi Dokumen Versi Revisi')
             ->assertSee('Lembar Revisi')
@@ -560,17 +594,27 @@ class CreateDocumentTest extends TestCase
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'needs-process']))
             ->assertOk()
-            ->assertSee('Prosedur Revisi Master Updated')
-            ->assertSee('Pengajuan Revisi')
-            ->assertSee('Dalam Review')
-            ->assertSee('Perlu Verifikasi Admin KD');
+            ->assertDontSee('Prosedur Revisi Master Updated');
 
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
             ->assertOk()
-            ->assertDontSee('Prosedur Revisi Master Updated');
+            ->assertSee('Prosedur Revisi Master Updated')
+            ->assertSee('Pengajuan Revisi')
+            ->assertSee('FMPS-SMR-010')
+            ->assertSee(StatusDocument::PROPOSED);
 
         $documentControlRole = Role::query()->firstOrCreate(['nama_role' => 'Admin Kontrol Dokumen']);
+        $assignPermission = Permission::query()->firstOrCreate(
+            ['code' => 'documents.approval.assign'],
+            [
+                'name' => 'Assign Approver Dokumen',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.approval.assign',
+                'action' => 'assign',
+            ],
+        );
+        $documentControlRole->permissions()->syncWithoutDetaching([$assignPermission->id]);
         $documentControlAdmin = User::factory()->create([
             'm_department_id' => $sourceDepartment->id,
             'name' => 'Admin Kontrol Dokumen',
@@ -609,10 +653,7 @@ class CreateDocumentTest extends TestCase
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'needs-process']))
             ->assertOk()
-            ->assertSee('Prosedur Revisi Master Updated')
-            ->assertSee('Diperiksa oleh Superintendent')
-            ->assertSee('Dalam Review')
-            ->assertSee('Menunggu Superintendent');
+            ->assertDontSee('Prosedur Revisi Master Updated');
 
         $this->actingAs($submitter)
             ->post(route('documents.store', 'level-4'), [

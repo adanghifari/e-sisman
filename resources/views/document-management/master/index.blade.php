@@ -146,7 +146,7 @@
                                                                 <x-ui.status-badge label="Obsolete" tone="red" />
                                                             </td>
                                                             <td class="px-5 py-4">
-                                                                <x-ui.icon-button :href="route('documents.master.show', $obsolete)" icon="eye" label="Lihat detail obsolete" size="sm" />
+                                                                <x-ui.icon-button :href="route('documents.obsolete.show', $obsolete)" icon="eye" label="Lihat detail obsolete" size="sm" />
                                                             </td>
                                                         </tr>
                                                     @endforeach

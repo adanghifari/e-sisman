@@ -8,6 +8,7 @@
         search-placeholder="Cari kode atau department..."
         :status-options="$statusOptions"
         :status="$status"
+        :can-create="$this->canCreate"
     >
         <x-ui.scrollable-table max-height="620px" min-width="100%" :horizontal="false" class="table-fixed text-base">
             <colgroup>
@@ -38,25 +39,29 @@
                         </td>
                         <td class="px-5 py-4">
                             <div class="flex items-center justify-start gap-3">
-                                <x-ui.icon-button
-                                    icon="pencil"
-                                    label="Edit department"
-                                    size="sm"
-                                    wire:click="edit({{ $department->id }})"
-                                />
+                                @if ($this->canUpdate)
+                                    <x-ui.icon-button
+                                        icon="pencil"
+                                        label="Edit department"
+                                        size="sm"
+                                        wire:click="edit({{ $department->id }})"
+                                    />
 
-                                <x-ui.inline-status-toggle
-                                    :active="$department->is_active"
-                                    wire:click="toggleStatus({{ $department->id }})"
-                                    aria-label="{{ $department->is_active ? 'Nonaktifkan department' : 'Aktifkan department' }}"
-                                />
+                                    <x-ui.inline-status-toggle
+                                        :active="$department->is_active"
+                                        wire:click="toggleStatus({{ $department->id }})"
+                                        aria-label="{{ $department->is_active ? 'Nonaktifkan department' : 'Aktifkan department' }}"
+                                    />
+                                @endif
 
-                                <x-ui.icon-button
-                                    icon="trash"
-                                    label="Hapus department"
-                                    size="sm"
-                                    wire:click="confirmDelete({{ $department->id }})"
-                                />
+                                @if ($this->canDelete)
+                                    <x-ui.icon-button
+                                        icon="trash"
+                                        label="Hapus department"
+                                        size="sm"
+                                        wire:click="confirmDelete({{ $department->id }})"
+                                    />
+                                @endif
                             </div>
                         </td>
                     </tr>

@@ -43,11 +43,22 @@ class DatabaseSeederTest extends TestCase
         $this->assertTrue($documentControlRole->permissions()->where('code', 'approval-flows.create')->exists());
         $this->assertTrue($documentControlRole->permissions()->where('code', 'approval-flows.update')->exists());
         $this->assertTrue($documentControlRole->permissions()->where('code', 'approval-flows.delete')->exists());
+        $this->assertTrue($documentControlRole->permissions()->where('code', 'documents.obsolete.create')->exists());
+        $this->assertTrue($documentControlRole->permissions()->where('code', 'documents.obsolete.restore')->exists());
         $this->assertFalse($documentControlRole->permissions()->where('code', 'users.create')->exists());
         $this->assertFalse($documentControlRole->permissions()->where('code', 'users.update')->exists());
         $this->assertFalse($documentControlRole->permissions()->where('code', 'users.delete')->exists());
 
         $this->assertTrue($userRole->permissions()->where('code', 'documents.master.view')->exists());
+        $this->assertTrue($userRole->permissions()->where('code', 'documents.master.detail')->exists());
+        $this->assertTrue($userRole->permissions()->where('code', 'documents.master.download')->exists());
+        $this->assertTrue($userRole->permissions()->where('code', 'documents.master.preview')->exists());
+        $this->assertTrue($userRole->permissions()->where('code', 'documents.obsolete.view')->exists());
+        $this->assertTrue($userRole->permissions()->where('code', 'documents.obsolete.detail')->exists());
+        $this->assertTrue($userRole->permissions()->where('code', 'documents.obsolete.download')->exists());
+        $this->assertTrue($userRole->permissions()->where('code', 'documents.obsolete.preview')->exists());
+        $this->assertFalse($userRole->permissions()->where('code', 'documents.obsolete.create')->exists());
+        $this->assertFalse($userRole->permissions()->where('code', 'documents.obsolete.restore')->exists());
         $this->assertFalse($userRole->permissions()->where('code', 'documents.approval.assign')->exists());
 
         $documentControlAdmin = User::query()->where('email', 'admin.kontrol@example.com')->firstOrFail();

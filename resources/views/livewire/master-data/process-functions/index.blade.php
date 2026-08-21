@@ -8,6 +8,7 @@
         search-placeholder="Cari kode atau proses / fungsi..."
         :status-options="$statusOptions"
         :status="$status"
+        :can-create="$this->canCreate"
     >
         <x-ui.scrollable-table max-height="620px" min-width="100%" :horizontal="false" class="table-fixed text-base">
             <colgroup>
@@ -38,25 +39,29 @@
                         </td>
                         <td class="px-5 py-4">
                             <div class="flex items-center justify-start gap-3">
-                                <x-ui.icon-button
-                                    icon="pencil"
-                                    label="Edit proses / fungsi"
-                                    size="sm"
-                                    wire:click="edit({{ $businessFunction->id }})"
-                                />
+                                @if ($this->canUpdate)
+                                    <x-ui.icon-button
+                                        icon="pencil"
+                                        label="Edit proses / fungsi"
+                                        size="sm"
+                                        wire:click="edit({{ $businessFunction->id }})"
+                                    />
 
-                                <x-ui.inline-status-toggle
-                                    :active="$businessFunction->is_active"
-                                    wire:click="toggleStatus({{ $businessFunction->id }})"
-                                    aria-label="{{ $businessFunction->is_active ? 'Nonaktifkan proses / fungsi' : 'Aktifkan proses / fungsi' }}"
-                                />
+                                    <x-ui.inline-status-toggle
+                                        :active="$businessFunction->is_active"
+                                        wire:click="toggleStatus({{ $businessFunction->id }})"
+                                        aria-label="{{ $businessFunction->is_active ? 'Nonaktifkan proses / fungsi' : 'Aktifkan proses / fungsi' }}"
+                                    />
+                                @endif
 
-                                <x-ui.icon-button
-                                    icon="trash"
-                                    label="Hapus proses / fungsi"
-                                    size="sm"
-                                    wire:click="confirmDelete({{ $businessFunction->id }})"
-                                />
+                                @if ($this->canDelete)
+                                    <x-ui.icon-button
+                                        icon="trash"
+                                        label="Hapus proses / fungsi"
+                                        size="sm"
+                                        wire:click="confirmDelete({{ $businessFunction->id }})"
+                                    />
+                                @endif
                             </div>
                         </td>
                     </tr>

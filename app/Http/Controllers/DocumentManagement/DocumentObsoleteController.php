@@ -8,17 +8,16 @@ use App\Models\BusinessProcess;
 use App\Models\Document;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
-use App\Models\DocumentType;
 use App\Models\StatusDocument;
-use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
-class DocumentMasterController extends Controller
+class DocumentObsoleteController extends Controller
 {
     public function __invoke(Request $request): View
     {
@@ -26,37 +25,23 @@ class DocumentMasterController extends Controller
             'search' => trim((string) $request->query('search', '')),
             'type' => (string) $request->query('type', ''),
             'process' => (string) $request->query('process', ''),
-            'stamp' => (string) $request->query('stamp', ''),
             'sort' => (string) $request->query('sort', 'newest'),
         ];
 
-        $approvedStatusId = StatusDocument::query()
-            ->where('nama_status', StatusDocument::APPROVED)
+        $obsoleteStatusId = StatusDocument::query()
+            ->where('nama_status', StatusDocument::OBSOLETE)
             ->value('id');
 
         $query = Document::query()
             ->with([
                 'status',
                 'documentLevel',
-                'documentType',
                 'businessProcess',
                 'businessFunction',
-                'creator',
-                'officialPreparer',
                 'departments',
-                'files',
-                'revisedFrom.status',
-                'revisedFrom.documentLevel',
-                'revisedFrom.businessProcess',
-                'revisedFrom.businessFunction',
-                'revisedFrom.departments',
-                'obsoleteRevisions.status',
-                'obsoleteRevisions.documentLevel',
-                'obsoleteRevisions.businessProcess',
-                'obsoleteRevisions.businessFunction',
-                'obsoleteRevisions.departments',
+                'revisedFrom',
             ])
-            ->where('m_status_document_id', $approvedStatusId)
+            ->where('m_status_document_id', $obsoleteStatusId)
             ->where(function ($query): void {
                 $query
                     ->whereNull('request_type')
@@ -93,58 +78,37 @@ class DocumentMasterController extends Controller
             default => $query->orderByDesc('approved_at')->orderByDesc('tanggal_terbit')->orderByDesc('id'),
         };
 
-        $documents = $query->get()
-            ->groupBy(fn (Document $document): int => $document->revisionRootId())
-            ->map(fn ($family): Document => $family
-                ->sortByDesc(fn (Document $document): string => sprintf(
-                    '%010d-%010d-%010d',
-                    $document->nomor_revisi,
-                    $document->approved_at?->timestamp ?? 0,
-                    $document->id,
-                ))
-                ->first())
-            ->values();
+        $obsoleteDocuments = $query->get();
+        $obsoleteDocuments->each(function (Document $document): void {
+            $rootDocument = $document->revised_from !== null
+                ? Document::query()->whereKey($document->revisionRootId())->first()
+                : null;
 
-        $documents->each(function (Document $document) use ($request): void {
-            $rootDocument = Document::query()
-                ->whereKey($document->revisionRootId())
-                ->first();
-            $family = $document->revisionFamily()
-                ->load([
-                    'status',
-                    'documentLevel',
-                    'businessProcess',
-                    'businessFunction',
-                    'departments',
-                ])
-                ->sortBy('nomor_revisi')
-                ->values();
-            $obsoleteDocuments = $family
-                ->where('id', '!=', $document->id)
-                ->filter(fn (Document $revision): bool => $revision->status?->nama_status === StatusDocument::OBSOLETE
-                    && $revision->nomor_revisi < $document->nomor_revisi)
-                ->map(function (Document $revision) use ($family, $rootDocument): Document {
-                    $nextRevision = $family
-                        ->where('nomor_revisi', '>', $revision->nomor_revisi)
-                        ->sortBy('nomor_revisi')
-                        ->first();
-
-                    $revision->setAttribute(
-                        'master_obsolete_date',
-                        $nextRevision?->tanggal_terbit ?? $nextRevision?->approved_at,
-                    );
-                    $revision->setAttribute('master_display_number', $rootDocument?->nomor_dokumen ?: $revision->nomor_dokumen);
-
-                    return $revision;
-                });
-
-            $document->setRelation(
-                'masterObsoleteDocuments',
-                $obsoleteDocuments->unique('id')->sortByDesc('approved_at')->values(),
-            );
-            $document->setAttribute('master_display_number', $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen);
-            $document->setAttribute('can_request_revision', $this->canRequestRevision($request, $document));
+            $document->setAttribute('obsolete_display_number', $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen);
         });
+        $documents = $obsoleteDocuments
+            ->groupBy(fn (Document $document): int => $document->revisionRootId())
+            ->map(function ($family): Document {
+                $sortedFamily = $family
+                    ->sortByDesc(fn (Document $document): string => sprintf(
+                        '%010d-%010d-%010d',
+                        $document->nomor_revisi,
+                        $document->approved_at?->timestamp ?? 0,
+                        $document->id,
+                    ))
+                    ->values();
+                $latestDocument = $sortedFamily->first();
+
+                $latestDocument->setRelation(
+                    'obsoleteChildDocuments',
+                    $sortedFamily
+                        ->where('id', '!=', $latestDocument->id)
+                        ->values(),
+                );
+
+                return $latestDocument;
+            })
+            ->values();
 
         $typeOptions = ['' => 'Semua Level'] + DocumentLevel::query()
             ->orderBy('id')
@@ -156,16 +120,13 @@ class DocumentMasterController extends Controller
             ->pluck('nama_proses_bisnis', 'id')
             ->all();
 
-        return view('document-management.master.index', [
+        return view('document-management.obsolete.index', [
             'documents' => $documents,
-            'totalDocuments' => $documents->count(),
+            'totalDocuments' => $obsoleteDocuments->count(),
             'filters' => $filters,
             'typeOptions' => $typeOptions,
             'processOptions' => $processOptions,
-            'stampOptions' => [
-                '' => 'Semua Stamp',
-                StatusDocument::APPROVED => 'Master',
-            ],
+            'canCreateObsolete' => $request->user()?->hasPermission('documents.obsolete.create') ?? false,
             'sortOptions' => [
                 'newest' => 'Terbaru',
                 'oldest' => 'Terlama',
@@ -195,17 +156,12 @@ class DocumentMasterController extends Controller
             'revisedFrom.status',
         ]);
 
-        abort_unless(
-            $document->status?->nama_status === StatusDocument::APPROVED,
-            404,
-        );
+        abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
         abort_if($document->request_type === 'obsolete', 404);
 
-        return view('document-management.master.show', [
+        return view('document-management.obsolete.show', [
             'document' => $document,
             'masterDisplayNumber' => $this->masterDisplayNumber($document),
-            'canRequestRevision' => $this->canRequestRevision($request, $document),
-            'canRequestObsolete' => $this->canRequestObsolete($request, $document),
             'canRestoreMaster' => $this->canRestoreMaster($request, $document),
             'approvalFlowStages' => $document->documentLevel
                 ?->approvalFlows
@@ -218,48 +174,9 @@ class DocumentMasterController extends Controller
         ]);
     }
 
-    public function obsolete(Request $request, Document $document): RedirectResponse
-    {
-        $document->loadMissing('status', 'documentLevel', 'departments');
-
-        abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
-        abort_unless($this->canRequestObsolete($request, $document), 403);
-
-        $validated = $request->validate([
-            'catatan_obsolete' => ['required', 'string', 'max:1000'],
-        ]);
-
-        $level = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
-        $type = DocumentType::query()->where('nama_types', 'Form')->firstOrFail();
-        $status = StatusDocument::findByName(StatusDocument::PROPOSED);
-
-        $requestDocument = Document::create([
-            'm_document_level_id' => $level->id,
-            'm_status_document_id' => $status->id,
-            'm_document_types_id' => $type->id,
-            'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
-            'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
-            'user_id' => $request->user()->id,
-            'official_preparer_id' => $document->official_preparer_id ?: $request->user()->id,
-            'reference' => null,
-            'revised_from' => $document->id,
-            'request_type' => 'obsolete',
-            'nama_dokumen' => $document->nama_dokumen,
-            'nomor_dokumen' => $this->revisionFormNumber($document),
-            'nomor_revisi' => $document->nomor_revisi,
-            'catatan_revisi' => $validated['catatan_obsolete'],
-            'submitted_at' => now(),
-        ]);
-        $requestDocument->departments()->sync($document->departments()->pluck('departments.id')->all());
-
-        return redirect()
-            ->route('documents.inbox')
-            ->with('status', 'Pengajuan obsolete berhasil dikirim.');
-    }
-
     public function restore(Request $request, Document $document): RedirectResponse
     {
-        $document->loadMissing('status', 'departments');
+        $document->loadMissing('status');
 
         abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
         abort_unless($this->canRestoreMaster($request, $document), 403);
@@ -275,7 +192,7 @@ class DocumentMasterController extends Controller
 
         if ($activeMaster !== null) {
             return redirect()
-                ->route('documents.master.show', $document)
+                ->route('documents.obsolete.show', $document)
                 ->with('restore_warning', [
                     'title' => 'Belum Bisa Dijadikan Master',
                     'message' => $this->restoreBlockedMessage($document, $activeMaster),
@@ -304,7 +221,7 @@ class DocumentMasterController extends Controller
 
     public function file(Request $request, Document $document, DocumentFile $file, RecordDocumentDownload $recordDocumentDownload): BinaryFileResponse
     {
-        $this->authorizeMasterFileAccess($document, $file);
+        $this->authorizeObsoleteFileAccess($document, $file);
 
         $path = Storage::disk('local')->path($file->path_file);
         abort_unless(is_file($path), 404);
@@ -318,7 +235,7 @@ class DocumentMasterController extends Controller
 
     public function preview(Document $document, DocumentFile $file): BinaryFileResponse
     {
-        $this->authorizeMasterFileAccess($document, $file);
+        $this->authorizeObsoleteFileAccess($document, $file);
         abort_unless(Str::of($file->original_file_name)->lower()->endsWith('.pdf'), 415);
 
         $path = Storage::disk('local')->path($file->path_file);
@@ -329,37 +246,12 @@ class DocumentMasterController extends Controller
         ]);
     }
 
-    private function authorizeMasterFileAccess(Document $document, DocumentFile $file): void
+    private function authorizeObsoleteFileAccess(Document $document, DocumentFile $file): void
     {
         $document->loadMissing('status');
 
         abort_unless($file->t_document_id === $document->id, 404);
-        abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
-    }
-
-    private function canRequestRevision(Request $request, Document $document): bool
-    {
-        if ($document->status?->nama_status !== StatusDocument::APPROVED) {
-            return false;
-        }
-
-        $user = $request->user();
-
-        if ($user?->isDeveloper() || $user?->isAdmin()) {
-            return true;
-        }
-
-        if ($user?->m_department_id === null) {
-            return false;
-        }
-
-        if ($document->relationLoaded('departments')) {
-            return $document->departments->contains('id', $user->m_department_id);
-        }
-
-        return $document->departments()
-            ->whereKey($user->m_department_id)
-            ->exists();
+        abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
     }
 
     private function canRestoreMaster(Request $request, Document $document): bool
@@ -369,15 +261,6 @@ class DocumentMasterController extends Controller
         }
 
         return $request->user()?->hasPermission('documents.obsolete.restore') ?? false;
-    }
-
-    private function canRequestObsolete(Request $request, Document $document): bool
-    {
-        if ($document->status?->nama_status !== StatusDocument::APPROVED) {
-            return false;
-        }
-
-        return $request->user()?->hasPermission('documents.obsolete.create') ?? false;
     }
 
     private function restoreBlockedMessage(Document $document, Document $activeMaster): string
@@ -398,27 +281,5 @@ class DocumentMasterController extends Controller
             ->first();
 
         return $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen ?: '-';
-    }
-
-    private function revisionFormNumber(Document $document): string
-    {
-        $prefix = match ($document->documentLevel?->kode) {
-            'level-1' => 'FMSM',
-            'level-2' => 'FMPS',
-            'level-3' => 'FMIK',
-            default => 'FM',
-        };
-        $segments = collect(explode('-', (string) $document->nomor_dokumen))
-            ->filter()
-            ->values();
-
-        if ($segments->isNotEmpty()) {
-            $segments->shift();
-        }
-
-        return collect([$prefix])
-            ->merge($segments)
-            ->filter()
-            ->implode('-');
     }
 }
