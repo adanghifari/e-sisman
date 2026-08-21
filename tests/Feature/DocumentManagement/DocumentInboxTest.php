@@ -28,13 +28,14 @@ class DocumentInboxTest extends TestCase
     {
         $approver = User::factory()->create(['name' => 'Approver Login']);
         $submitter = User::factory()->create(['name' => 'Pengaju Dokumen']);
+        $assignedAt = now()->setDate(2026, 8, 18)->setTime(14, 25, 36);
         $document = $this->createDocument($submitter, [
             'nama_dokumen' => 'Prosedur Kalibrasi Alat',
             'nomor_dokumen' => 'PS-SMR-123',
         ]);
         $this->createApproval($document, $approver, ApprovalStatus::PENDING, [
             'stages' => 'Approval Manager',
-            'assigned_at' => now(),
+            'assigned_at' => $assignedAt,
         ]);
 
         $this->actingAs($approver)
@@ -45,6 +46,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Prosedur Kalibrasi Alat')
             ->assertSee('PS-SMR-123')
             ->assertSee('Approval Manager')
+            ->assertSee('18 Aug 2026 14:25:36')
             ->assertSee('Menunggu Manager')
             ->assertSee('Dalam Review')
             ->assertSee('Pengaju Dokumen');
@@ -699,6 +701,52 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Detail Riwayat Approval')
             ->assertSee('Diproses pada 18 Aug 2026 14:25:36')
             ->assertDontSee('Keputusan Approval');
+    }
+
+    public function test_revision_detail_from_processed_history_shows_master_and_revision_numbers(): void
+    {
+        $approver = User::factory()->create(['name' => 'Approver Revisi Detail']);
+        $submitter = User::factory()->create(['name' => 'Pengaju Revisi Detail']);
+        $source = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Prosedur Lama Detail',
+            'nomor_dokumen' => 'PS-SMR-OLD',
+            'nomor_revisi' => 0,
+        ]);
+        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        $source->update(['m_status_document_id' => $approvedStatus->id]);
+        $revision = Document::create([
+            'm_document_level_id' => $source->m_document_level_id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $source->m_document_types_id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'nama_dokumen' => 'Prosedur Revisi Detail',
+            'nomor_dokumen' => 'FMPS-SMR-OLD',
+            'nomor_revisi' => 1,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'submitted_at' => now(),
+        ]);
+        $revision->departments()->sync($source->departments()->pluck('departments.id')->all());
+        $this->createApproval($revision, $approver, ApprovalStatus::APPROVED, [
+            'responded_at' => now(),
+        ]);
+
+        $this->actingAs($approver)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Prosedur Revisi Detail')
+            ->assertSee('FMPS-SMR-OLD');
+
+        $this->actingAs($approver)
+            ->get(route('documents.approval.show', $revision))
+            ->assertOk()
+            ->assertSee('Nomor Dokumen')
+            ->assertSee('PS-SMR-OLD')
+            ->assertSee('Nomor Dokumen Revisi')
+            ->assertSee('FMPS-SMR-OLD');
     }
 
     public function test_developer_does_not_see_processed_history_for_other_users_without_processing_it(): void

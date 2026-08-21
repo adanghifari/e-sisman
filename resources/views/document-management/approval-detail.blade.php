@@ -267,8 +267,15 @@
                     <div class="space-y-5 px-6 py-6">
                         <label class="block">
                             <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen</span>
-                            <input type="text" value="{{ $displayDocumentNumber }}" readonly class="{{ $readonlyInput }}">
+                            <input type="text" value="{{ $masterDisplayNumber }}" readonly class="{{ $readonlyInput }}">
                         </label>
+
+                        @if ($document->revised_from)
+                            <label class="block">
+                                <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen Revisi</span>
+                                <input type="text" value="{{ $document->nomor_dokumen ?: '-' }}" readonly class="{{ $readonlyInput }}">
+                            </label>
+                        @endif
 
                         <label class="block">
                             <span class="mb-2 block text-base font-medium text-slate-500">Revisi</span>

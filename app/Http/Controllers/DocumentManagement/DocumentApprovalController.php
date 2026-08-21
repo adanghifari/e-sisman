@@ -58,8 +58,7 @@ class DocumentApprovalController extends Controller
 
         return view('document-management.approval-detail', [
             'document' => $document,
-            'contentDocument' => $contentDocument,
-            'displayDocumentNumber' => $this->displayDocumentNumber($document, $contentDocument),
+            'masterDisplayNumber' => $this->masterDisplayNumber($document),
             'activeApproval' => $this->activeApproval($request, $document),
             'approvalFlowStages' => $this->approvalFlowStages($document),
             'approvalFlowDocumentLevel' => $this->approvalFlowDocumentLevel($document),
@@ -419,6 +418,22 @@ class DocumentApprovalController extends Controller
         return $document->documentLevel;
     }
 
+    private function masterDisplayNumber(Document $document): string
+    {
+        if ($document->revised_from === null) {
+            return $document->nomor_dokumen ?: '-';
+        }
+
+        $rootDocument = Document::query()
+            ->whereKey($document->revisionRootId())
+            ->first();
+
+        return $rootDocument?->nomor_dokumen
+            ?: $document->revisedFrom?->nomor_dokumen
+            ?: $document->nomor_dokumen
+            ?: '-';
+    }
+
     private function isDocumentAssignmentLocked(Document $document): bool
     {
         $lockedStatuses = [StatusDocument::APPROVED, StatusDocument::REJECTED];
@@ -592,7 +607,6 @@ class DocumentApprovalController extends Controller
                 'm_document_level_id',
                 'm_document_types_id',
                 'reference',
-                'nomor_dokumen',
             ])
             ->find($document->revised_from);
 
@@ -604,7 +618,6 @@ class DocumentApprovalController extends Controller
             'm_document_level_id' => $source->m_document_level_id,
             'm_document_types_id' => $source->m_document_types_id,
             'reference' => $source->reference,
-            'nomor_dokumen' => $source->nomor_dokumen,
         ]);
     }
 
