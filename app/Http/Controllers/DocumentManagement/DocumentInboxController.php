@@ -63,6 +63,17 @@ class DocumentInboxController extends Controller
     }
 
     /**
+     * @return array{needs_process: int, processed_history: int}
+     */
+    public function dashboardCounts(Request $request): array
+    {
+        return [
+            'needs_process' => count($this->myTasks($request)),
+            'processed_history' => count($this->myProcessedHistory($request)),
+        ];
+    }
+
+    /**
      * @return array{search: string, type: string, status: string, stage: string, sort: string}
      */
     private function filters(Request $request): array
