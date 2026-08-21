@@ -112,6 +112,77 @@ class DocumentMasterTest extends TestCase
         $response->assertSee(route('documents.master.show', $latestRevision), false);
     }
 
+    public function test_master_page_obsolete_dropdown_uses_master_document_number_for_revision_forms(): void
+    {
+        $user = User::factory()->create();
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+
+        $rootDocument = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Lama',
+            'nomor_dokumen' => 'PS-SMR-001',
+            'nomor_revisi' => 0,
+            'approved_at' => now()->subDays(3),
+        ]);
+        $obsoleteRevision = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Revisi Pertama',
+            'nomor_dokumen' => 'FMPS-SMR-001',
+            'nomor_revisi' => 1,
+            'revised_from' => $rootDocument->id,
+            'approved_at' => now()->subDays(2),
+        ]);
+        $this->createDocument($user, $approvedStatus, [
+            'nama_dokumen' => 'Prosedur Revisi Aktif',
+            'nomor_dokumen' => 'FMPS-SMR-001',
+            'nomor_revisi' => 2,
+            'revised_from' => $rootDocument->id,
+            'approved_at' => now(),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertSee('Prosedur Revisi Aktif')
+            ->assertSee('PS-SMR-001')
+            ->assertSee('00.01')
+            ->assertSee(route('documents.master.show', $obsoleteRevision), false);
+
+        $this->assertStringNotContainsString(
+            '<td class="px-5 py-4 font-semibold uppercase tracking-wide text-slate-700">'.PHP_EOL.'                                                                FMPS-SMR-001',
+            $response->getContent(),
+        );
+    }
+
+    public function test_obsolete_page_shows_only_obsolete_documents(): void
+    {
+        $user = User::factory()->create();
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+
+        $obsoleteDocument = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Dokumen Lama Obsolete',
+            'nomor_dokumen' => 'PS-SMR-OBS',
+            'nomor_revisi' => 2,
+        ]);
+        $this->createDocument($user, $approvedStatus, [
+            'nama_dokumen' => 'Dokumen Master Aktif',
+            'nomor_dokumen' => 'PS-SMR-ACT',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.obsolete'))
+            ->assertOk()
+            ->assertSee('Dokumen Obsolete')
+            ->assertSee('Tambah Dokumen Obsolete')
+            ->assertSee('Dokumen Lama Obsolete')
+            ->assertSee('PS-SMR-OBS')
+            ->assertSee('00.02')
+            ->assertSee('Obsolete')
+            ->assertSee(route('documents.master.show', $obsoleteDocument), false)
+            ->assertDontSee('Dokumen Master Aktif')
+            ->assertDontSee('PS-SMR-ACT');
+    }
+
     public function test_approved_level_four_revision_becomes_master_and_groups_old_master_as_obsolete(): void
     {
         $submitter = User::factory()->create();

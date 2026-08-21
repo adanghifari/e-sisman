@@ -116,7 +116,7 @@ class DocumentMasterController extends Controller
             $obsoleteDocuments = $family
                 ->where('id', '!=', $document->id)
                 ->filter(fn (Document $revision): bool => $revision->status?->nama_status === StatusDocument::OBSOLETE)
-                ->map(function (Document $revision) use ($family): Document {
+                ->map(function (Document $revision) use ($family, $rootDocument): Document {
                     $nextRevision = $family
                         ->where('nomor_revisi', '>', $revision->nomor_revisi)
                         ->sortBy('nomor_revisi')
@@ -126,6 +126,7 @@ class DocumentMasterController extends Controller
                         'master_obsolete_date',
                         $nextRevision?->tanggal_terbit ?? $nextRevision?->approved_at,
                     );
+                    $revision->setAttribute('master_display_number', $rootDocument?->nomor_dokumen ?: $revision->nomor_dokumen);
 
                     return $revision;
                 });

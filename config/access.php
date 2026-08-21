@@ -90,6 +90,13 @@ return [
             'action' => 'view',
         ],
         [
+            'code' => 'documents.obsolete.view',
+            'name' => 'Lihat Dokumen Obsolete',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.obsolete',
+            'action' => 'view',
+        ],
+        [
             'code' => 'documents.approval.assign',
             'name' => 'Assign Approver Dokumen',
             'module' => 'Manajemen Dokumen',

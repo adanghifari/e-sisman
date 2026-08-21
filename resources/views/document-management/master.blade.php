@@ -137,7 +137,7 @@
 
                                                         <tr>
                                                             <td class="px-5 py-4 font-semibold uppercase tracking-wide text-slate-700">
-                                                                {{ $obsolete->nomor_dokumen ?: $obsolete->nama_dokumen }}
+                                                                {{ $obsolete->master_display_number ?: $obsolete->nomor_dokumen ?: $obsolete->nama_dokumen }}
                                                             </td>
                                                             <td class="px-5 py-4 text-slate-600">{{ $obsolete->formatted_revision }}</td>
                                                             <td class="px-5 py-4 text-slate-600">{{ $obsoletePublishedAt?->format('d/m/Y') ?: '-' }}</td>

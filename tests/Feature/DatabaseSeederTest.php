@@ -48,6 +48,7 @@ class DatabaseSeederTest extends TestCase
         $this->assertFalse($documentControlRole->permissions()->where('code', 'users.delete')->exists());
 
         $this->assertTrue($userRole->permissions()->where('code', 'documents.master.view')->exists());
+        $this->assertTrue($userRole->permissions()->where('code', 'documents.obsolete.view')->exists());
         $this->assertFalse($userRole->permissions()->where('code', 'documents.approval.assign')->exists());
 
         $documentControlAdmin = User::query()->where('email', 'admin.kontrol@example.com')->firstOrFail();
