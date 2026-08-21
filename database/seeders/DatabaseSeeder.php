@@ -22,6 +22,8 @@ class DatabaseSeeder extends Seeder
             ApprovalStatusSeeder::class,
             DocumentLevelSeeder::class,
             DocumentTypeSeeder::class,
+            BusinessProcessSeeder::class,
+            BusinessFunctionSeeder::class,
             PermissionSeeder::class,
         ]);
 

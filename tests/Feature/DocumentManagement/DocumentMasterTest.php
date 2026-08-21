@@ -181,7 +181,7 @@ class DocumentMasterTest extends TestCase
         $this->assertSame(StatusDocument::OBSOLETE, $source->status->nama_status);
         $this->assertSame($source->m_document_level_id, $revision->m_document_level_id);
         $this->assertSame($source->m_document_types_id, $revision->m_document_types_id);
-        $this->assertSame('PS-KSA-02', $revision->nomor_dokumen);
+        $this->assertSame('FMPS-KSA-02', $revision->nomor_dokumen);
         $this->assertSame(1, $revision->nomor_revisi);
 
         $this->actingAs($submitter)
