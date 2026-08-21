@@ -12,14 +12,20 @@
                         ->map(function (array $item) use ($user): ?array {
                             if (isset($item['children'])) {
                                 $children = collect($item['children'])
-                                    ->filter(fn (array $child): bool => $user->hasPermission($child['permission'] ?? ''))
+                                    ->filter(function (array $child) use ($user): bool {
+                                        $permission = $child['permission'] ?? null;
+
+                                        return $permission === null || $user->hasPermission($permission);
+                                    })
                                     ->values()
                                     ->all();
 
                                 return count($children) > 0 ? [...$item, 'children' => $children] : null;
                             }
 
-                            return $user->hasPermission($item['permission'] ?? '') ? $item : null;
+                            $permission = $item['permission'] ?? null;
+
+                            return $permission === null || $user->hasPermission($permission) ? $item : null;
                         })
                         ->filter()
                         ->values()

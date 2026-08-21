@@ -91,6 +91,7 @@ class DocumentObsoleteController extends Controller
             'filters' => $filters,
             'typeOptions' => $typeOptions,
             'processOptions' => $processOptions,
+            'canCreateObsolete' => $request->user()?->hasPermission('documents.obsolete.create') ?? false,
             'sortOptions' => [
                 'newest' => 'Terbaru',
                 'oldest' => 'Terlama',

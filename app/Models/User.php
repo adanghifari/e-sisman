@@ -162,10 +162,6 @@ class User extends Authenticatable implements PasskeyUser
             return true;
         }
 
-        if (! Role::query()->exists() || ! $this->roles()->exists()) {
-            return true;
-        }
-
         return $this->roles()
             ->whereHas('permissions', fn ($query) => $query->where('code', $permissionCode))
             ->exists();
@@ -180,10 +176,6 @@ class User extends Authenticatable implements PasskeyUser
             return true;
         }
 
-        if (! Role::query()->exists() || ! $this->roles()->exists()) {
-            return true;
-        }
-
         return $this->roles()
             ->whereHas('permissions', fn ($query) => $query->whereIn('code', $permissionCodes))
             ->exists();
@@ -192,10 +184,6 @@ class User extends Authenticatable implements PasskeyUser
     public function canAccessRoute(?string $route): bool
     {
         if ($route === null || $this->isAdmin()) {
-            return true;
-        }
-
-        if (! Role::query()->exists() || ! $this->roles()->exists()) {
             return true;
         }
 

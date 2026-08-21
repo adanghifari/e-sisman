@@ -205,6 +205,7 @@ class DocumentMasterController extends Controller
             'document' => $document,
             'masterDisplayNumber' => $this->masterDisplayNumber($document),
             'canRequestRevision' => $this->canRequestRevision($request, $document),
+            'canRequestObsolete' => $this->canRequestObsolete($request, $document),
             'canRestoreMaster' => $this->canRestoreMaster($request, $document),
             'approvalFlowStages' => $document->documentLevel
                 ?->approvalFlows
@@ -222,7 +223,7 @@ class DocumentMasterController extends Controller
         $document->loadMissing('status', 'documentLevel', 'departments');
 
         abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
-        abort_unless($this->canRequestRevision($request, $document), 403);
+        abort_unless($this->canRequestObsolete($request, $document), 403);
 
         $validated = $request->validate([
             'catatan_obsolete' => ['required', 'string', 'max:1000'],
@@ -369,7 +370,16 @@ class DocumentMasterController extends Controller
             return false;
         }
 
-        return $this->canManageDocumentDepartment($request, $document);
+        return $request->user()?->hasPermission('documents.obsolete.restore') ?? false;
+    }
+
+    private function canRequestObsolete(Request $request, Document $document): bool
+    {
+        if ($document->status?->nama_status !== StatusDocument::APPROVED) {
+            return false;
+        }
+
+        return $request->user()?->hasPermission('documents.obsolete.create') ?? false;
     }
 
     private function restoreBlockedMessage(Document $document, Document $activeMaster): string
@@ -381,27 +391,6 @@ class DocumentMasterController extends Controller
         }
 
         return "Versi {$activeVersion} masih menjadi master. Silakan obsolete-kan versi {$activeVersion} dulu.";
-    }
-
-    private function canManageDocumentDepartment(Request $request, Document $document): bool
-    {
-        $user = $request->user();
-
-        if ($user?->isDeveloper() || $user?->isAdmin()) {
-            return true;
-        }
-
-        if ($user?->m_department_id === null) {
-            return false;
-        }
-
-        if ($document->relationLoaded('departments')) {
-            return $document->departments->contains('id', $user->m_department_id);
-        }
-
-        return $document->departments()
-            ->whereKey($user->m_department_id)
-            ->exists();
     }
 
     private function masterDisplayNumber(Document $document): string

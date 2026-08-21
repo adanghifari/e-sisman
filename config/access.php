@@ -97,6 +97,20 @@ return [
             'action' => 'view',
         ],
         [
+            'code' => 'documents.obsolete.create',
+            'name' => 'Tambah Dokumen Obsolete',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.obsolete',
+            'action' => 'create',
+        ],
+        [
+            'code' => 'documents.obsolete.restore',
+            'name' => 'Jadikan Master Dokumen Obsolete',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.master.restore',
+            'action' => 'restore',
+        ],
+        [
             'code' => 'documents.approval.assign',
             'name' => 'Assign Approver Dokumen',
             'module' => 'Manajemen Dokumen',

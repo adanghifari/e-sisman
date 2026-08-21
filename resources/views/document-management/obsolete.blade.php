@@ -27,16 +27,18 @@
             </div>
         </x-ui.filter-bar>
 
-        <div class="flex justify-end">
-            <a
-                href="{{ route('documents.master') }}"
-                class="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
-                wire:navigate
-            >
-                <flux:icon name="plus" class="size-4" />
-                Tambah Dokumen Obsolete
-            </a>
-        </div>
+        @if ($canCreateObsolete)
+            <div class="flex justify-end">
+                <a
+                    href="{{ route('documents.master') }}"
+                    class="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
+                    wire:navigate
+                >
+                    <flux:icon name="plus" class="size-4" />
+                    Tambah Dokumen Obsolete
+                </a>
+            </div>
+        @endif
 
         <x-ui.panel
             title="Daftar Dokumen Obsolete"

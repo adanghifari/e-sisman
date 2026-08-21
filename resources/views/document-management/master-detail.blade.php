@@ -206,21 +206,25 @@
                         </div>
                     </div>
 
-                    @if ($canRequestRevision)
+                    @if ($canRequestRevision || $canRequestObsolete)
                         <div class="border-t border-dashed border-slate-200 px-6 py-5">
                             <div class="grid gap-3">
-                                <a
-                                    href="{{ route('documents.create.level', ['level-4', 'revised_from' => $document->id]) }}"
-                                    class="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
-                                    wire:navigate
-                                >
-                                    <flux:icon name="arrow-path" class="size-4" />
-                                    Ajukan Revisi
-                                </a>
-                                <button type="button" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-50" data-obsolete-modal-open>
-                                    <flux:icon name="archive-box-x-mark" class="size-4" />
-                                    Obsolete
-                                </button>
+                                @if ($canRequestRevision)
+                                    <a
+                                        href="{{ route('documents.create.level', ['level-4', 'revised_from' => $document->id]) }}"
+                                        class="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+                                        wire:navigate
+                                    >
+                                        <flux:icon name="arrow-path" class="size-4" />
+                                        Ajukan Revisi
+                                    </a>
+                                @endif
+                                @if ($canRequestObsolete)
+                                    <button type="button" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-50" data-obsolete-modal-open>
+                                        <flux:icon name="archive-box-x-mark" class="size-4" />
+                                        Obsolete
+                                    </button>
+                                @endif
                             </div>
                         </div>
                     @endif
@@ -297,7 +301,7 @@
         </div>
     </div>
 
-    @if ($canRequestRevision)
+    @if ($canRequestObsolete)
         <div class="fixed inset-0 z-50 hidden items-center justify-center bg-slate-950/40 px-4 py-6" data-obsolete-modal>
             <form method="POST" action="{{ route('documents.master.obsolete', $document) }}" class="w-full max-w-xl overflow-hidden rounded-lg bg-white shadow-xl">
                 @csrf
