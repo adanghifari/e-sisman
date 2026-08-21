@@ -552,6 +552,12 @@ class DocumentInboxController extends Controller
 
     private function documentDisplayNumber(Document $document): string
     {
+        if ($document->request_type === 'obsolete') {
+            return $this->rootDocumentNumber($document)
+                ?? $document->nomor_dokumen
+                ?? '-';
+        }
+
         return $this->revisionRequestNumber($document)
             ?? $document->nomor_dokumen
             ?? '-';
@@ -559,7 +565,7 @@ class DocumentInboxController extends Controller
 
     private function revisionRequestNumber(Document $document): ?string
     {
-        if (! in_array($document->request_type, ['revision', 'obsolete'], true) || $document->revised_from === null) {
+        if ($document->request_type !== 'revision' || $document->revised_from === null) {
             return null;
         }
 
@@ -591,6 +597,19 @@ class DocumentInboxController extends Controller
             ->merge($segments)
             ->filter()
             ->implode('-');
+    }
+
+    private function rootDocumentNumber(Document $document): ?string
+    {
+        if ($document->revised_from === null) {
+            return null;
+        }
+
+        $rootDocument = Document::query()
+            ->select(['id', 'nomor_dokumen', 'revised_from'])
+            ->find($document->revisionRootId());
+
+        return $rootDocument?->nomor_dokumen;
     }
 
     private function approvalTone(string $statusCode): string

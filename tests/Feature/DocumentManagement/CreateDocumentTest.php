@@ -58,6 +58,13 @@ class CreateDocumentTest extends TestCase
                 'action' => 'view',
             ],
             [
+                'code' => 'documents.create.drafts.delete',
+                'name' => 'Hapus Draft Dokumen Saya',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.create.drafts.destroy',
+                'action' => 'delete',
+            ],
+            [
                 'code' => 'documents.master.view',
                 'name' => 'Lihat Dokumen Master',
                 'module' => 'Manajemen Dokumen',
@@ -486,6 +493,118 @@ class CreateDocumentTest extends TestCase
         $this->assertSame('PS-SMR-012', $draft->nomor_dokumen);
         $this->assertSame(StatusDocument::DRAFT, $draft->status->nama_status);
         $this->assertTrue($draft->files()->where('original_file_name', 'template-baru.pdf')->exists());
+    }
+
+    public function test_user_can_delete_own_draft_from_draft_list(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+
+        $draftStatus = StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        $documentType = DocumentType::create(['nama_types' => 'Prosedur']);
+        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+
+        $draft = Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $draftStatus->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Draft Akan Dihapus',
+            'nomor_dokumen' => 'PS-SMR-016',
+            'nomor_revisi' => 0,
+            'created_at' => now(),
+        ]);
+        $draft->departments()->sync([$department->id]);
+
+        Storage::disk('local')->put('documents/'.$draft->id.'/template.pdf', 'dummy');
+        $file = $draft->files()->create([
+            'type_file' => 'filled_template',
+            'path_file' => 'documents/'.$draft->id.'/template.pdf',
+            'uploaded_by' => $user->id,
+            'updated_at' => now(),
+            'original_file_name' => 'template.pdf',
+            'stored_file_name' => 'template.pdf',
+            'file_size' => 1024,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.create.drafts'))
+            ->assertOk()
+            ->assertSee('Draft Akan Dihapus')
+            ->assertSee('Hapus')
+            ->assertSee(route('documents.create.drafts.destroy', $draft), false);
+
+        $this->actingAs($user)
+            ->delete(route('documents.create.drafts.destroy', $draft))
+            ->assertRedirect(route('documents.create.drafts'))
+            ->assertSessionHas('status', 'Draft berhasil dihapus.');
+
+        $this->assertDatabaseMissing('t_document', [
+            'id' => $draft->id,
+        ]);
+        $this->assertDatabaseMissing('t_document_files', [
+            'id' => $file->id,
+        ]);
+        $this->assertDatabaseMissing('document_departments', [
+            't_document_id' => $draft->id,
+            'department_id' => $department->id,
+        ]);
+        Storage::disk('local')->assertMissing('documents/'.$draft->id.'/template.pdf');
+    }
+
+    public function test_user_cannot_delete_another_users_draft(): void
+    {
+        $user = User::factory()->create();
+        $otherUser = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+
+        $draftStatus = StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        $documentType = DocumentType::create(['nama_types' => 'Prosedur']);
+        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+
+        $draft = Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $draftStatus->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $otherUser->id,
+            'nama_dokumen' => 'Draft User Lain',
+            'nomor_dokumen' => 'PS-SMR-017',
+            'nomor_revisi' => 0,
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->delete(route('documents.create.drafts.destroy', $draft))
+            ->assertForbidden();
+
+        $this->assertDatabaseHas('t_document', [
+            'id' => $draft->id,
+        ]);
     }
 
     public function test_saving_existing_draft_can_remove_saved_file(): void

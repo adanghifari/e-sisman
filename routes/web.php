@@ -39,6 +39,8 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::get('documents/drafts', [DocumentController::class, 'drafts'])->name('documents.create.drafts');
     Route::get('documents/drafts/{document}/edit', [DocumentController::class, 'editDraft'])
         ->name('documents.create.drafts.edit');
+    Route::delete('documents/drafts/{document}', [DocumentController::class, 'destroyDraft'])
+        ->name('documents.create.drafts.destroy');
     Route::get('documents/create/{level}', [DocumentController::class, 'create'])
         ->whereIn('level', array_keys(config('document-levels')))
         ->name('documents.create.level');

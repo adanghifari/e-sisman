@@ -1586,6 +1586,13 @@ class DocumentInboxTest extends TestCase
 
         $this->assertSame(StatusDocument::APPROVED, $request->refresh()->status->nama_status);
         $this->assertSame(StatusDocument::OBSOLETE, $source->refresh()->status->nama_status);
+
+        $this->actingAs($approver)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Master Akan Obsolete')
+            ->assertSee('PS-SMR-OBSOLETE')
+            ->assertDontSee('FMPS-SMR-OBSOLETE');
     }
 
     public function test_first_flow_stage_requires_manual_approver_selection(): void

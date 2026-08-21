@@ -78,6 +78,29 @@ class DocumentController extends Controller
         ]);
     }
 
+    public function destroyDraft(Request $request, mixed $document): RedirectResponse
+    {
+        $document = $document instanceof Document
+            ? $document
+            : Document::query()->with(['status', 'files'])->findOrFail($document);
+
+        $this->authorizeDraftAccess($request, $document);
+
+        DB::transaction(function () use ($document): void {
+            $document->files->each(function ($file): void {
+                Storage::disk('local')->delete($file->path_file);
+                $file->delete();
+            });
+
+            $document->departments()->detach();
+            $document->delete();
+        });
+
+        return redirect()
+            ->route('documents.create.drafts')
+            ->with('status', 'Draft berhasil dihapus.');
+    }
+
     public function store(Request $request, string $level): RedirectResponse
     {
         $draft = $this->draftForRequest($request);
