@@ -48,7 +48,7 @@
                         <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Revisi</th>
                         <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Diunduh Oleh</th>
                         <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Waktu Unduh</th>
-                        <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Diunduh Ke</th>
+                        <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Unduhan Ke</th>
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">

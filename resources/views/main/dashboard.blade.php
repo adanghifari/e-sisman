@@ -1,10 +1,5 @@
 <x-layouts::app :title="__('Dashboard')">
     @php
-        $summaryCards = [
-            ['label' => 'Butuh Diproses', 'value' => '12', 'hint' => '4 verifikasi admin'],
-            ['label' => 'Dokumen Master', 'value' => '186', 'hint' => '12 publish bulan ini'],
-        ];
-
         $needsProcess = [
             ['number' => 'KBS-PB-PR-001', 'name' => 'Prosedur Pengendalian Dokumen', 'type' => 'Prosedur', 'stage' => 'Verifikasi Admin', 'owner' => 'Rendy Aulia', 'date' => '10 Agu 2026', 'status' => 'Menunggu'],
             ['number' => 'KBS-OPS-IK-014', 'name' => 'Instruksi Kerja Bongkar Muat Curah', 'type' => 'IK', 'stage' => 'Review Kadis', 'owner' => 'Oktavia Putri', 'date' => '09 Agu 2026', 'status' => 'Review'],
@@ -52,19 +47,6 @@
             ],
         ];
 
-        $activities = [
-            ['text' => 'Admin mengembalikan IK Pengelolaan Template Dokumen', 'time' => '10:42'],
-            ['text' => 'Manager menyetujui Prosedur Audit Internal', 'time' => '09:55'],
-            ['text' => 'User mengajukan revisi dokumen', 'time' => '09:20'],
-            ['text' => 'Dokumen berubah menjadi Dokumen Master', 'time' => '08:48'],
-            ['text' => 'Kadis melakukan review IK Bongkar Muat Curah', 'time' => '08:15'],
-            ['text' => 'Admin memverifikasi Prosedur Pengendalian Dokumen', 'time' => 'Kemarin'],
-            ['text' => 'User memperbaiki Form Checklist Inspeksi Harian', 'time' => 'Kemarin'],
-            ['text' => 'Manager meminta koreksi SOP Penanganan Temuan Audit', 'time' => 'Kemarin'],
-            ['text' => 'Admin menerbitkan IK Kalibrasi Peralatan Ukur', 'time' => '2 hari lalu'],
-            ['text' => 'Dokumen Evaluasi Supplier selesai approval', 'time' => '2 hari lalu'],
-        ];
-
         $documentStatusSummary = [
             ['label' => 'Dalam Penyusunan', 'value' => 18, 'tone' => 'slate'],
             ['label' => 'Verifikasi Admin', 'value' => 12, 'tone' => 'sky'],
@@ -86,12 +68,13 @@
             <div class="space-y-6">
                 <div class="grid items-start gap-4 sm:grid-cols-2">
                     @foreach ($summaryCards as $card)
-                        <x-ui.summary-card
-                            :label="$card['label']"
-                            :value="$card['value']"
-                            :hint="$card['hint']"
-                            badge="Live"
-                        />
+                        <a href="{{ route('documents.inbox', ['tab' => $card['tab']]) }}" class="block transition hover:-translate-y-0.5 hover:shadow-sm" wire:navigate>
+                            <x-ui.summary-card
+                                :label="$card['label']"
+                                :value="$card['value']"
+                                :hint="$card['hint']"
+                            />
+                        </a>
                     @endforeach
                 </div>
 
@@ -159,12 +142,12 @@
                 >
                     <x-slot:actions>
                         <span class="rounded-md bg-slate-100 px-2.5 py-1 text-xs font-semibold text-slate-600">
-                            {{ count($activities) }} item
+                            {{ $activities->count() }} item
                         </span>
                     </x-slot:actions>
 
                     <x-ui.scroll-area max-height="190px" class="mt-4 space-y-4 pr-2">
-                        @foreach ($activities as $activity)
+                        @forelse ($activities as $activity)
                             <div class="flex gap-3">
                                 <span class="mt-1 size-2 rounded-full bg-sky-500"></span>
                                 <div class="min-w-0">
@@ -172,7 +155,11 @@
                                     <p class="mt-1 text-xs font-medium text-slate-400">{{ $activity['time'] }}</p>
                                 </div>
                             </div>
-                        @endforeach
+                        @empty
+                            <div class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-4 py-5 text-center text-sm font-medium text-slate-500">
+                                Belum ada aktivitas terbaru.
+                            </div>
+                        @endforelse
                     </x-ui.scroll-area>
                 </x-ui.panel>
 

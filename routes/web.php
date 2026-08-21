@@ -1,5 +1,6 @@
 <?php
 
+use App\Http\Controllers\DashboardController;
 use App\Http\Controllers\DocumentManagement\DocumentApprovalController;
 use App\Http\Controllers\DocumentManagement\DocumentController;
 use App\Http\Controllers\DocumentManagement\DocumentInboxController;
@@ -21,7 +22,7 @@ use Illuminate\Support\Facades\Route;
 Route::view('/', 'welcome')->name('home');
 
 Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(function () {
-    Route::view('dashboard', 'main.dashboard')->name('dashboard');
+    Route::get('dashboard', DashboardController::class)->name('dashboard');
     Route::get('documents/inbox', DocumentInboxController::class)->name('documents.inbox');
     Route::get('documents/inbox/{document}', [DocumentApprovalController::class, 'show'])->name('documents.approval.show');
     Route::get('documents/inbox/{document}/assign', fn ($document) => redirect()->route('documents.approval.show', $document));

@@ -27,6 +27,22 @@ class DocumentDownloadActivityQuery
             ->count();
     }
 
+    public function dashboardRows(int $limit = 10): Collection
+    {
+        return $this->builder()
+            ->limit($limit)
+            ->get()
+            ->map(fn ($activity): array => [
+                'text' => sprintf(
+                    '%s mengunduh %s - %s',
+                    $activity->downloaded_by ?: '-',
+                    $activity->number ?: '-',
+                    $activity->name,
+                ),
+                'time' => Carbon::parse($activity->downloaded_at)->format('d/m/Y H:i'),
+            ]);
+    }
+
     /**
      * @param  array{document_name?: string, document_number?: string, downloaded_by?: string}  $filters
      */
