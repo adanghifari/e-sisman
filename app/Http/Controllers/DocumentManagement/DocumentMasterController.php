@@ -373,11 +373,7 @@ class DocumentMasterController extends Controller
 
     private function canRequestObsolete(Request $request, Document $document): bool
     {
-        if ($document->status?->nama_status !== StatusDocument::APPROVED) {
-            return false;
-        }
-
-        return $request->user()?->hasPermission('documents.obsolete.create') ?? false;
+        return $this->canRequestRevision($request, $document);
     }
 
     private function restoreBlockedMessage(Document $document, Document $activeMaster): string
