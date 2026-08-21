@@ -4,6 +4,12 @@
     'selectedUser' => null,
 ])
 
+@php
+    $selectedSourceLabel = $selectedUser?->id === auth()->id()
+        ? 'Tanpa perwakilan'
+        : 'Diwakilkan';
+@endphp
+
 <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm" data-official-preparer>
     <div class="flex items-center justify-between gap-4 border-b border-slate-200 px-6 py-5">
         <h2 class="text-lg font-bold text-slate-900">{{ $label }}</h2>
@@ -57,19 +63,25 @@
             @enderror
         </div>
 
-        <div class="hidden rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3" data-official-preparer-card>
+        <div @class([
+            'rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3',
+            'hidden' => ! $selectedUser,
+        ]) data-official-preparer-card>
             <span class="block text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Penyusun Resmi</span>
             <div class="mt-2 flex items-center gap-2.5">
-                <span class="grid size-9 shrink-0 place-items-center rounded-full bg-white text-xs font-bold text-emerald-700 ring-1 ring-emerald-200" data-official-preparer-initials></span>
+                <span class="grid size-9 shrink-0 place-items-center rounded-full bg-white text-xs font-bold text-emerald-700 ring-1 ring-emerald-200" data-official-preparer-initials>{{ $selectedUser?->initials() }}</span>
                 <span class="min-w-0">
-                    <span class="block truncate text-sm font-bold leading-tight text-slate-900" data-official-preparer-name></span>
-                    <span class="mt-0.5 block truncate text-xs font-medium leading-tight text-slate-500" data-official-preparer-meta></span>
+                    <span class="block truncate text-sm font-bold leading-tight text-slate-900" data-official-preparer-name>{{ $selectedUser?->name }}</span>
+                    <span class="mt-0.5 block truncate text-xs font-medium leading-tight text-slate-500" data-official-preparer-meta>{{ $selectedUser ? ($selectedUser->jabatan ?: $selectedUser->email) : '' }}</span>
                 </span>
-                <span class="ml-auto rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200" data-official-preparer-source></span>
+                <span class="ml-auto rounded-full bg-white px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200" data-official-preparer-source>{{ $selectedUser ? $selectedSourceLabel : '' }}</span>
             </div>
         </div>
 
-        <div class="rounded-lg border border-dashed border-slate-200 bg-white px-3 py-3 text-xs leading-5 text-slate-500" data-official-preparer-empty>
+        <div @class([
+            'rounded-lg border border-dashed border-slate-200 bg-white px-3 py-3 text-xs leading-5 text-slate-500',
+            'hidden' => $selectedUser,
+        ]) data-official-preparer-empty>
             Gunakan tombol
             <span class="inline-flex items-center rounded border border-sky-200 bg-sky-50 px-1.5 py-0.5 font-semibold text-sky-700">Saya Mengajukan tanpa Perwakilan</span>
             jika pengisi form juga menjadi penyusun resmi.

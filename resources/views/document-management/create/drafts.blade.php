@@ -44,15 +44,15 @@
                                 <td class="px-5 py-4 font-semibold text-slate-700">{{ $draft->nomor_dokumen ?: '-' }}</td>
                                 <td class="px-5 py-4 text-slate-600">{{ $draft->documentLevel?->nama_level ?: '-' }}</td>
                                 <td class="px-5 py-4 text-slate-600">
-                                    <p>{{ $draft->businessProcess?->nama_proses_bisnis ?: '-' }}</p>
-                                    <p class="mt-1 text-xs text-slate-500">{{ $draft->businessFunction?->nama_proses_fungsi ?: '-' }}</p>
+                                    <p>{{ $draft->businessProcess ? (($draft->businessProcess->kode ? $draft->businessProcess->kode.' - ' : '').$draft->businessProcess->nama_proses_bisnis) : '-' }}</p>
+                                    <p class="mt-1 text-xs text-slate-500">{{ $draft->businessFunction ? (($draft->businessFunction->kode ? $draft->businessFunction->kode.' - ' : '').$draft->businessFunction->nama_proses_fungsi) : '-' }}</p>
                                 </td>
                                 <td class="px-5 py-4 text-slate-600">{{ $draft->files->count() }} file</td>
                                 <td class="px-5 py-4 text-slate-600">
                                     {{ $draft->created_at ? \Illuminate\Support\Carbon::parse($draft->created_at)->translatedFormat('d M Y H:i:s') : '-' }}
                                 </td>
                                 <td class="px-5 py-4 text-right">
-                                    <a href="{{ route('documents.create.drafts.edit', [$draft->documentLevel?->kode, $draft]) }}" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700" wire:navigate>
+                                    <a href="{{ route('documents.create.drafts.edit', $draft) }}" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700" wire:navigate>
                                         Lanjutkan
                                     </a>
                                 </td>

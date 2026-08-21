@@ -6,6 +6,7 @@
     'multiple' => false,
     'maxFiles' => null,
     'maxFileSizeKb' => null,
+    'existingFiles' => collect(),
 ])
 
 @php
@@ -40,7 +41,39 @@
         <span class="mt-2 hidden text-xs font-semibold text-red-600" data-file-upload-error></span>
     </label>
 
-    <div class="mt-3 hidden rounded-lg border border-slate-200 bg-white p-4" data-file-upload-list></div>
+    <div
+        @class([
+            'mt-3 rounded-lg border border-slate-200 bg-white p-4',
+            'hidden' => collect($existingFiles)->isEmpty(),
+            'grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5' => collect($existingFiles)->isNotEmpty(),
+        ])
+        data-file-upload-list
+    >
+        @foreach (collect($existingFiles) as $file)
+            @php
+                $extension = strtolower(pathinfo($file['name'] ?? '', PATHINFO_EXTENSION) ?: 'file');
+                $isPdf = $extension === 'pdf';
+                $size = (int) ($file['size'] ?? 0);
+                $sizeKb = (int) ceil($size / 1024);
+                $formattedSize = $sizeKb >= 1024
+                    ? number_format($sizeKb / 1024, 1).' MB'
+                    : $sizeKb.' KB';
+            @endphp
+            <div class="group relative min-w-0 rounded-lg border border-slate-200 bg-white p-3 text-center transition hover:border-sky-200 hover:shadow-sm" data-existing-file-item>
+                <input type="hidden" value="{{ $file['id'] ?? '' }}" data-existing-file-id>
+                <div @class([
+                    'relative mx-auto flex h-20 w-16 items-center justify-center rounded-md border text-sm font-bold shadow-sm',
+                    'border-red-100 bg-red-50 text-red-600' => $isPdf,
+                    'border-sky-100 bg-sky-50 text-sky-700' => ! $isPdf,
+                ])>
+                    {{ $isPdf ? 'PDF' : 'DOC' }}
+                </div>
+                <span class="mt-3 block truncate text-sm font-semibold text-red-700">{{ $file['name'] ?? '-' }}</span>
+                <span class="mt-1 block text-xs text-slate-500">{{ $formattedSize }}</span>
+                <button type="button" class="absolute right-2 top-2 inline-flex size-7 items-center justify-center rounded-full border border-red-200 bg-white text-sm font-bold text-red-600 opacity-0 shadow-sm transition hover:bg-red-50 group-hover:opacity-100 focus:opacity-100" data-existing-file-remove aria-label="Hapus {{ $file['name'] ?? 'file' }}">x</button>
+            </div>
+        @endforeach
+    </div>
 
     <input
         id="{{ $inputId }}"
@@ -175,11 +208,11 @@
                 }
 
                 if (list) {
-                    list.innerHTML = '';
-                    list.classList.toggle('hidden', files.length === 0);
+                    list.querySelectorAll('[data-selected-file-item]').forEach((item) => item.remove());
+                    const hasExistingFiles = list.querySelector('[data-existing-file-item]') !== null;
                     list.className = 'mt-3 hidden rounded-lg border border-slate-200 bg-white p-4';
 
-                    if (files.length > 0) {
+                    if (files.length > 0 || hasExistingFiles) {
                         list.classList.remove('hidden');
                         list.classList.add('grid', 'grid-cols-2', 'gap-4', 'sm:grid-cols-3', 'lg:grid-cols-5');
                     }
@@ -189,6 +222,7 @@
                         const isPdf = extension === 'pdf';
                         const item = document.createElement('div');
                         item.className = 'group relative min-w-0 rounded-lg border border-slate-200 bg-white p-3 text-center transition hover:border-sky-200 hover:shadow-sm';
+                        item.dataset.selectedFileItem = '';
 
                         const icon = document.createElement('div');
                         icon.className = [
@@ -232,6 +266,36 @@
                 }
 
                 renderFileList(input);
+            });
+
+            document.addEventListener('click', (event) => {
+                const removeButton = event.target.closest('[data-existing-file-remove]');
+
+                if (!removeButton) {
+                    return;
+                }
+
+                const item = removeButton.closest('[data-existing-file-item]');
+                const list = removeButton.closest('[data-file-upload-list]');
+                const wrapper = removeButton.closest('[data-file-upload]');
+                const fileId = item?.querySelector('[data-existing-file-id]')?.value;
+
+                if (fileId) {
+                    const input = document.createElement('input');
+                    input.type = 'hidden';
+                    input.name = 'remove_existing_files[]';
+                    input.value = fileId;
+                    wrapper?.append(input);
+                }
+
+                item?.remove();
+
+                const hasFiles = (list?.querySelectorAll('[data-existing-file-item], [data-selected-file-item]').length ?? 0) > 0;
+                list?.classList.toggle('hidden', !hasFiles);
+
+                if (!hasFiles) {
+                    list?.classList.remove('grid', 'grid-cols-2', 'gap-4', 'sm:grid-cols-3', 'lg:grid-cols-5');
+                }
             });
 
             document.addEventListener('dragover', (event) => {

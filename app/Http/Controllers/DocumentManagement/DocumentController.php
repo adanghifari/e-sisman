@@ -46,6 +46,7 @@ class DocumentController extends Controller
         abort_if($level === 'level-4' && $revisionSource === null, 404);
 
         return view('document-management.create.level', [
+            'levelKey' => $level,
             'revisionSource' => $revisionSource,
             'procedureReferences' => $level === 'level-3'
                 ? $this->activeProcedureReferences()
@@ -53,7 +54,7 @@ class DocumentController extends Controller
         ]);
     }
 
-    public function editDraft(Request $request, string $level, mixed $document): View
+    public function editDraft(Request $request, mixed $document): View
     {
         $document = $document instanceof Document
             ? $document
@@ -62,11 +63,13 @@ class DocumentController extends Controller
         $this->authorizeDraftAccess($request, $document);
         $document->loadMissing(['status', 'documentLevel', 'departments', 'files', 'officialPreparer', 'revisedFrom.status', 'revisedFrom.documentLevel', 'revisedFrom.businessProcess', 'revisedFrom.businessFunction', 'revisedFrom.departments', 'revisedFrom.referenceDocument']);
 
-        abort_unless($document->documentLevel?->kode === $level, 404);
+        $level = $document->documentLevel?->kode;
+        abort_unless(filled($level) && array_key_exists($level, config('document-levels')), 404);
 
         $revisionSource = $document->revisedFrom;
 
         return view('document-management.create.level', [
+            'levelKey' => $level,
             'draft' => $document,
             'revisionSource' => $revisionSource,
             'procedureReferences' => $level === 'level-3'
@@ -83,7 +86,15 @@ class DocumentController extends Controller
             ->firstOrFail();
 
         $documentType = DocumentType::query()
-            ->where('nama_types', $this->documentTypeNameForLevel($level))
+            ->whereIn('nama_types', $this->documentTypeNamesForLevel($level))
+            ->orderByRaw(
+                'case nama_types '.
+                collect($this->documentTypeNamesForLevel($level))
+                    ->map(fn (string $name, int $index): string => "when ? then {$index}")
+                    ->implode(' ').
+                ' else 999 end',
+                $this->documentTypeNamesForLevel($level),
+            )
             ->firstOrFail();
 
         $validated = $request->validate($this->validationRulesForLevel($level, $draft));
@@ -103,6 +114,17 @@ class DocumentController extends Controller
             $validated['department_ids'] = collect($revisionSource->departments)->pluck('id')->all();
             $validated['reference'] = $revisionSource->reference;
             $validated['nama_dokumen'] = $validated['nama_dokumen'] ?? $revisionSource->nama_dokumen;
+        }
+
+        if (($validated['submit_action'] ?? null) === 'draft') {
+            $defaultContext = $this->defaultDocumentContext();
+            $validated['nama_dokumen'] = filled($validated['nama_dokumen'] ?? null)
+                ? $validated['nama_dokumen']
+                : 'Draft tanpa judul';
+            $validated['m_proses_bisnis_id'] = $validated['m_proses_bisnis_id'] ?? $defaultContext['m_proses_bisnis_id'];
+            $validated['m_proses_fungsi_id'] = $validated['m_proses_fungsi_id'] ?? $defaultContext['m_proses_fungsi_id'];
+            $validated['department_ids'] = $validated['department_ids'] ?? [];
+            $validated['official_preparer_id'] = $validated['official_preparer_id'] ?? $request->user()->id;
         }
 
         $documentNumber = $revisionSource !== null
@@ -145,7 +167,7 @@ class DocumentController extends Controller
                 'm_proses_fungsi_id' => $validated['m_proses_fungsi_id'],
                 'user_id' => $request->user()->id,
                 'official_preparer_id' => $validated['official_preparer_id'] ?? null,
-                'reference' => $level === 'level-3' ? $validated['reference'] : null,
+                'reference' => $level === 'level-3' ? ($validated['reference'] ?? null) : null,
                 'revised_from' => $revisionSource?->id,
                 'request_type' => $revisionSource !== null ? 'revision' : null,
                 'nama_dokumen' => $validated['nama_dokumen'],
@@ -166,6 +188,8 @@ class DocumentController extends Controller
             }
 
             $document->departments()->sync($validated['department_ids'] ?? []);
+
+            $this->removeExistingDocumentFiles($document, $validated['remove_existing_files'] ?? []);
 
             if ($request->hasFile('imported_document')) {
                 $this->replaceSingleDocumentFile($document, 'imported_document');
@@ -213,7 +237,7 @@ class DocumentController extends Controller
 
         if ($savedDocument !== null) {
             return redirect()
-                ->route('documents.create.drafts.edit', [$level, $savedDocument])
+                ->route('documents.create.drafts')
                 ->with('status', 'Draft berhasil disimpan.');
         }
 
@@ -224,41 +248,52 @@ class DocumentController extends Controller
 
     protected function documentTypeNameForLevel(string $level): string
     {
+        return $this->documentTypeNamesForLevel($level)[0] ?? 'IK';
+    }
+
+    /**
+     * @return array<int, string>
+     */
+    protected function documentTypeNamesForLevel(string $level): array
+    {
         return [
-            'level-1' => 'Manual',
-            'level-2' => 'Prosedur',
-            'level-3' => 'IK',
-            'level-4' => 'Form',
-        ][$level] ?? 'IK';
+            'level-1' => ['Manual'],
+            'level-2' => ['Prosedur'],
+            'level-3' => ['IK', 'Instruksi Kerja'],
+            'level-4' => ['Form'],
+        ][$level] ?? ['IK', 'Instruksi Kerja'];
     }
 
     protected function validationRulesForLevel(string $level, ?Document $draft = null): array
     {
         $submitAction = request('submit_action', $level === 'level-1' ? 'draft' : null);
         $requiresSubmittedFile = $submitAction !== 'draft';
+        $isDraftAction = $submitAction === 'draft';
 
         if ($level === 'level-1') {
             return [
-                'nama_dokumen' => ['required', 'string', 'max:255'],
-                'nomor_dokumen_suffix' => ['required', 'string', 'max:50'],
+                'nama_dokumen' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:255'],
+                'nomor_dokumen_suffix' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:50'],
                 'nomor_revisi' => ['nullable', 'string', 'max:20'],
                 'tanggal_terbit' => ['nullable', 'date'],
                 'catatan_revisi' => ['nullable', 'string', 'max:1000'],
-                'imported_document' => [$draft?->files()->where('type_file', 'imported_document')->exists() ? 'nullable' : 'required', 'file', 'mimes:pdf', 'max:10240'],
+                'imported_document' => [$isDraftAction || $draft?->files()->where('type_file', 'imported_document')->exists() ? 'nullable' : 'required', 'file', 'mimes:pdf', 'max:10240'],
                 'revised_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+                'remove_existing_files' => ['nullable', 'array'],
+                'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
             ];
         }
 
         if ($level === 'level-4') {
             return [
-                'nama_dokumen' => ['required', 'string', 'max:255'],
-                'm_proses_bisnis_id' => ['required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
-                'm_proses_fungsi_id' => ['required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
+                'nama_dokumen' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:255'],
+                'm_proses_bisnis_id' => [$isDraftAction ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
+                'm_proses_fungsi_id' => [$isDraftAction ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
                 'reference' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
-                'department_ids' => ['required', 'array', 'min:1'],
+                'department_ids' => [$isDraftAction ? 'nullable' : 'required', 'array', 'min:1'],
                 'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
-                'official_preparer_id' => ['required', 'integer', Rule::exists('users', 'id')],
+                'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
                 'nomor_dokumen_suffix' => ['required', 'string', 'max:50'],
                 'revision_content' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'revision_content')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
                 'revision_form' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'revision_form')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
@@ -267,24 +302,28 @@ class DocumentController extends Controller
                 'submit_action' => ['required', Rule::in(['draft', 'submit'])],
                 'revised_from' => ['required', 'integer', Rule::exists('t_document', 'id')],
                 'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+                'remove_existing_files' => ['nullable', 'array'],
+                'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
             ];
         }
 
         return [
-            'nama_dokumen' => ['required', 'string', 'max:255'],
-            'm_proses_bisnis_id' => ['required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
-            'm_proses_fungsi_id' => ['required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
-            'reference' => $this->referenceRulesForLevel($level),
-            'department_ids' => ['required', 'array', 'min:1'],
+            'nama_dokumen' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:255'],
+            'm_proses_bisnis_id' => [$isDraftAction ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
+            'm_proses_fungsi_id' => [$isDraftAction ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
+            'reference' => $isDraftAction ? ['nullable', 'integer', Rule::exists('t_document', 'id')] : $this->referenceRulesForLevel($level),
+            'department_ids' => [$isDraftAction ? 'nullable' : 'required', 'array', 'min:1'],
             'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
-            'official_preparer_id' => ['required', 'integer', Rule::exists('users', 'id')],
-            'nomor_dokumen_suffix' => ['required', 'string', 'max:50'],
+            'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
+            'nomor_dokumen_suffix' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:50'],
             'filled_template' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'filled_template')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
             'attachments' => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
             'submit_action' => ['required', Rule::in(['draft', 'submit'])],
             'revised_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+            'remove_existing_files' => ['nullable', 'array'],
+            'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
         ];
     }
 
@@ -591,6 +630,24 @@ class DocumentController extends Controller
     {
         $document->files()
             ->where('type_file', $type)
+            ->get()
+            ->each(function ($file): void {
+                Storage::disk('local')->delete($file->path_file);
+                $file->delete();
+            });
+    }
+
+    /**
+     * @param  array<int, int|string>  $fileIds
+     */
+    private function removeExistingDocumentFiles(Document $document, array $fileIds): void
+    {
+        if ($fileIds === []) {
+            return;
+        }
+
+        $document->files()
+            ->whereIn('id', $fileIds)
             ->get()
             ->each(function ($file): void {
                 Storage::disk('local')->delete($file->path_file);

@@ -4,7 +4,15 @@
         $revisionSource ??= null;
         $isEditingDraft = $draft !== null;
         $draftFilesByType = $draft?->files?->groupBy('type_file') ?? collect();
-        $levelKey = request()->route('level');
+        $existingFilePayload = fn (string $type) => $draftFilesByType
+            ->get($type, collect())
+            ->map(fn ($file) => [
+                'id' => $file->id,
+                'name' => $file->original_file_name,
+                'size' => $file->file_size,
+            ])
+            ->values();
+        $levelKey ??= request()->route('level') ?? $draft?->documentLevel?->kode;
         $level = config("document-levels.{$levelKey}");
         $levelNumbers = [
             'level-1' => 'I',
@@ -101,6 +109,12 @@
                 'label' => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department,
             ])
             ->values();
+        $formatBusinessProcess = fn ($businessProcess) => $businessProcess
+            ? (($businessProcess->kode ? $businessProcess->kode.' - ' : '').$businessProcess->nama_proses_bisnis)
+            : '-';
+        $formatBusinessFunction = fn ($businessFunction) => $businessFunction
+            ? (($businessFunction->kode ? $businessFunction->kode.' - ' : '').$businessFunction->nama_proses_fungsi)
+            : '-';
         $revisionDocumentSuffix = null;
         $revisionDocumentNumberSegments = [];
         if ($revisionSourceMaster?->nomor_dokumen) {
@@ -227,12 +241,8 @@
                                 :max-files="1"
                                 :max-file-size-kb="10240"
                                 :required="$draftFilesByType->get('imported_document', collect())->isEmpty()"
+                                :existing-files="$existingFilePayload('imported_document')"
                             />
-                            @if ($draftFilesByType->get('imported_document', collect())->isNotEmpty())
-                                <div class="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
-                                    File tersimpan: {{ $draftFilesByType->get('imported_document')->pluck('original_file_name')->implode(', ') }}
-                                </div>
-                            @endif
                             @error('imported_document')
                                 <span class="-mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
                             @enderror
@@ -349,11 +359,11 @@
                                 </div>
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                     <dt class="text-sm font-semibold text-slate-500">Proses Bisnis</dt>
-                                    <dd class="text-sm font-bold text-slate-900">{{ $revisionSource->businessProcess?->nama_proses_bisnis ?: '-' }}</dd>
+                                    <dd class="text-sm font-bold text-slate-900">{{ $formatBusinessProcess($revisionSource->businessProcess) }}</dd>
                                 </div>
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                     <dt class="text-sm font-semibold text-slate-500">Proses / Fungsi</dt>
-                                    <dd class="text-sm font-bold text-slate-900">{{ $revisionSource->businessFunction?->nama_proses_fungsi ?: '-' }}</dd>
+                                    <dd class="text-sm font-bold text-slate-900">{{ $formatBusinessFunction($revisionSource->businessFunction) }}</dd>
                                 </div>
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                     <dt class="text-sm font-semibold text-slate-500">Department Terkait</dt>
@@ -403,7 +413,7 @@
                                                 data-process-code="{{ $businessProcess->kode }}"
                                                 @selected((string) $selectedBusinessProcessId === (string) $businessProcess->id)
                                             >
-                                                {{ $businessProcess->nama_proses_bisnis }}
+                                                {{ $formatBusinessProcess($businessProcess) }}
                                             </option>
                                         @endforeach
                                     </select>
@@ -418,7 +428,7 @@
                                         <option value="">-Pilih-</option>
                                         @foreach ($businessFunctions as $businessFunction)
                                             <option value="{{ $businessFunction->id }}" @selected((string) $selectedBusinessFunctionId === (string) $businessFunction->id)>
-                                                {{ $businessFunction->nama_proses_fungsi }}
+                                                {{ $formatBusinessFunction($businessFunction) }}
                                             </option>
                                         @endforeach
                                     </select>
@@ -490,12 +500,8 @@
                                         :max-files="1"
                                         :max-file-size-kb="10240"
                                         :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content', collect())->isEmpty()"
+                                        :existing-files="$existingFilePayload('revision_content')"
                                     />
-                                    @if ($draftFilesByType->get('revision_content', collect())->isNotEmpty())
-                                        <div class="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
-                                            File tersimpan: {{ $draftFilesByType->get('revision_content')->pluck('original_file_name')->implode(', ') }}
-                                        </div>
-                                    @endif
 
                                     @error('revision_content')
                                         <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -515,12 +521,8 @@
                                         :max-files="1"
                                         :max-file-size-kb="10240"
                                         :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_form', collect())->isEmpty()"
+                                        :existing-files="$existingFilePayload('revision_form')"
                                     />
-                                    @if ($draftFilesByType->get('revision_form', collect())->isNotEmpty())
-                                        <div class="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
-                                            File tersimpan: {{ $draftFilesByType->get('revision_form')->pluck('original_file_name')->implode(', ') }}
-                                        </div>
-                                    @endif
 
                                     @error('revision_form')
                                         <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -540,12 +542,8 @@
                                         :max-files="1"
                                         :max-file-size-kb="10240"
                                         :required="$draftFilesByType->get('filled_template', collect())->isEmpty()"
+                                        :existing-files="$existingFilePayload('filled_template')"
                                     />
-                                    @if ($draftFilesByType->get('filled_template', collect())->isNotEmpty())
-                                        <div class="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
-                                            File tersimpan: {{ $draftFilesByType->get('filled_template')->pluck('original_file_name')->implode(', ') }}
-                                        </div>
-                                    @endif
 
                                     @error('filled_template')
                                         <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -566,12 +564,8 @@
                                     multiple
                                     :max-files="10"
                                     :max-file-size-kb="10240"
+                                    :existing-files="$existingFilePayload('attachment')"
                                 />
-                                @if ($draftFilesByType->get('attachment', collect())->isNotEmpty())
-                                    <div class="mt-3 rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-xs font-semibold text-emerald-700">
-                                        Lampiran tersimpan: {{ $draftFilesByType->get('attachment')->pluck('original_file_name')->implode(', ') }}
-                                    </div>
-                                @endif
 
                                 @error('attachments')
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -697,6 +691,10 @@
 
                             return;
                         }
+                    }
+
+                    if (event.submitter?.name === 'submit_action' && event.submitter.value === 'draft') {
+                        return;
                     }
 
                     const emptyPicker = Array.from(form.querySelectorAll('[data-user-search-select]'))
