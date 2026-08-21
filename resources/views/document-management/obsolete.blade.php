@@ -83,7 +83,7 @@
                                     {{ $document->departments->pluck('nama_department')->implode(', ') ?: 'Tanpa department' }}
                                 </p>
                             </td>
-                            <td class="px-3 py-4 font-semibold text-slate-700">{{ $document->nomor_dokumen ?: '-' }}</td>
+                            <td class="px-3 py-4 font-semibold text-slate-700">{{ $document->obsolete_display_number ?: $document->nomor_dokumen ?: '-' }}</td>
                             <td class="px-3 py-4 text-slate-600">{{ $document->formatted_revision }}</td>
                             <td class="px-3 py-4 text-slate-600">{{ $processLabel ?: '-' }}</td>
                             <td class="px-3 py-4 text-slate-600">{{ $publishedAt?->format('d/m/Y') ?: '-' }}</td>

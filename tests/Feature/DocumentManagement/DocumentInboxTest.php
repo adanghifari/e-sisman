@@ -1436,7 +1436,8 @@ class DocumentInboxTest extends TestCase
     {
         $this->ensureApprovalStatuses();
 
-        $submitter = User::factory()->create();
+        $submitter = User::factory()->create(['name' => 'Pengaju Awal Master']);
+        $obsoleteRequester = User::factory()->create(['name' => 'Pengaju Obsolete Dokumen']);
         $approver = User::factory()->create();
         $source = $this->createDocument($submitter, [
             'nama_dokumen' => 'Master Akan Obsolete',
@@ -1449,6 +1450,15 @@ class DocumentInboxTest extends TestCase
             'm_status_document_id' => $approvedDocumentStatus->id,
             'approved_at' => now()->subDay(),
         ]);
+        DocumentFile::create([
+            't_document_id' => $source->id,
+            'type_file' => 'filled_template',
+            'path_file' => "documents/{$source->id}/master-obsolete.pdf",
+            'uploaded_by' => $submitter->id,
+            'original_file_name' => 'master-obsolete.pdf',
+            'stored_file_name' => 'master-obsolete.pdf',
+            'file_size' => 24000,
+        ]);
 
         $request = Document::create([
             'm_document_level_id' => $source->m_document_level_id,
@@ -1456,13 +1466,14 @@ class DocumentInboxTest extends TestCase
             'm_document_types_id' => $source->m_document_types_id,
             'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
             'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
-            'user_id' => $submitter->id,
+            'user_id' => $obsoleteRequester->id,
             'official_preparer_id' => $submitter->id,
             'revised_from' => $source->id,
             'request_type' => 'obsolete',
             'nama_dokumen' => 'Master Akan Obsolete',
             'nomor_dokumen' => 'FMPS-SMR-OBSOLETE',
             'nomor_revisi' => $source->nomor_revisi,
+            'catatan_revisi' => 'Dokumen sudah tidak digunakan lagi.',
             'submitted_at' => now(),
         ]);
         $request->departments()->sync($source->departments()->pluck('departments.id')->all());
@@ -1487,6 +1498,24 @@ class DocumentInboxTest extends TestCase
             'assigned_at' => now(),
             'stages' => $stage->display_label,
         ]);
+
+        $this->actingAs($approver)
+            ->get(route('documents.approval.show', $request))
+            ->assertOk()
+            ->assertSee('Pengajuan Obsolete Dokumen')
+            ->assertSee('Review Pengajuan Obsolete')
+            ->assertSee('Approval ini akan mengubah dokumen master terkait menjadi obsolete setelah seluruh tahap disetujui.')
+            ->assertSee('Pengaju Awal Dokumen')
+            ->assertSee('Pengaju Awal Master')
+            ->assertSee('Pengaju Obsolete')
+            ->assertSee('Pengaju Obsolete Dokumen')
+            ->assertSee('Alasan Obsolete')
+            ->assertSee('Dokumen sudah tidak digunakan lagi.')
+            ->assertSee('Dokumen yang Akan Diobsoletekan')
+            ->assertSee('master-obsolete.pdf')
+            ->assertSee(route('documents.master.files.show', [$source, $source->files()->firstOrFail()]), false)
+            ->assertDontSee('Detail Dokumen Level IV')
+            ->assertDontSee('Belum ada file isi dokumen.');
 
         $this->actingAs($approver)
             ->post(route('documents.approval.approve', $request))

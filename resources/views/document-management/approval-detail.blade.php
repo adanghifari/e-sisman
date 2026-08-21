@@ -8,12 +8,17 @@
             'level-4' => 'IV',
         ];
         $isLevelOne = $levelKey === 'level-1';
-        $ownerLabel = $isLevelOne ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
         $statusCode = $activeApproval?->status?->kode_status ?? $document->status?->nama_status ?? '-';
         $statusLabel = $activeApproval?->status?->nama_status ?? $document->status?->nama_status ?? '-';
         $canCorrectRejectedSubmission = $document->status?->nama_status === \App\Models\StatusDocument::REJECTED
             && in_array(auth()->id(), [$document->user_id, $document->official_preparer_id], true);
-        $contentSectionTitle = $levelKey === 'level-4' ? 'Dokumen Revisi' : 'Isi Dokumen';
+        $isObsoleteRequest = $document->request_type === 'obsolete';
+        $ownerLabel = $isObsoleteRequest ? 'Pengaju Awal Dokumen' : ($isLevelOne ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses');
+        $contentSectionTitle = match (true) {
+            $isObsoleteRequest => 'Dokumen yang Akan Diobsoletekan',
+            $levelKey === 'level-4' => 'Dokumen Revisi',
+            default => 'Isi Dokumen',
+        };
         $approvalFlowLabel = $approvalFlowDocumentLevel?->nama_dokumen
             ?? $approvalFlowDocumentLevel?->nama_level
             ?? $document->documentLevel?->nama_dokumen
@@ -57,13 +62,29 @@
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
                 <h1 class="text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
-                    Detail Dokumen Level {{ $levelNumbers[$levelKey] ?? '-' }}
+                    {{ $isObsoleteRequest ? 'Pengajuan Obsolete Dokumen' : 'Detail Dokumen Level '.($levelNumbers[$levelKey] ?? '-') }}
                 </h1>
                 <p class="mt-2 text-base font-medium text-slate-500">{{ $document->nama_dokumen }}</p>
             </div>
 
             <x-ui.status-badge :label="$statusLabel" :tone="$statusCode === 'PENDING' ? 'amber' : ($statusCode === 'APPROVED' ? 'emerald' : 'red')" class="mt-1" />
         </div>
+
+        @if ($isObsoleteRequest)
+            <section class="rounded-lg border border-red-100 bg-red-50 px-5 py-4">
+                <div class="flex items-start gap-3">
+                    <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-white text-red-600 ring-1 ring-red-100">
+                        <flux:icon name="archive-box-x-mark" class="size-5" />
+                    </span>
+                    <div>
+                        <h2 class="text-base font-bold text-red-950">Review Pengajuan Obsolete</h2>
+                        <p class="mt-1 text-sm font-medium leading-6 text-red-800">
+                            Approval ini akan mengubah dokumen master terkait menjadi obsolete setelah seluruh tahap disetujui.
+                        </p>
+                    </div>
+                </div>
+            </section>
+        @endif
 
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
             <div class="space-y-6">
@@ -99,14 +120,14 @@
 
                     <div class="space-y-4 px-6 py-6">
                         <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                            <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pengisi Form</span>
+                            <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">{{ $isObsoleteRequest ? 'Pengaju Awal Dokumen' : 'Pengisi Form' }}</span>
                             <div class="mt-2 flex items-center gap-2.5">
                                 <span class="grid size-9 shrink-0 place-items-center rounded-full bg-sky-100 text-xs font-bold text-sky-700">
-                                    {{ $document->creator?->initials() ?? '-' }}
+                                    {{ ($isObsoleteRequest ? $document->revisedFrom?->creator : $document->creator)?->initials() ?? '-' }}
                                 </span>
                                 <span class="min-w-0">
-                                    <span class="block truncate text-sm font-bold leading-tight text-slate-900">{{ $document->creator?->name ?? '-' }}</span>
-                                    <span class="mt-0.5 block truncate text-xs font-medium leading-tight text-slate-500">{{ $document->creator?->jabatan ?: $document->creator?->email }}</span>
+                                    <span class="block truncate text-sm font-bold leading-tight text-slate-900">{{ ($isObsoleteRequest ? $document->revisedFrom?->creator : $document->creator)?->name ?? '-' }}</span>
+                                    <span class="mt-0.5 block truncate text-xs font-medium leading-tight text-slate-500">{{ ($isObsoleteRequest ? $document->revisedFrom?->creator : $document->creator)?->jabatan ?: (($isObsoleteRequest ? $document->revisedFrom?->creator : $document->creator)?->email ?? '-') }}</span>
                                 </span>
                             </div>
                         </div>
@@ -123,13 +144,63 @@
                                 </span>
                             </div>
                         </div>
+
+                        @if ($isObsoleteRequest)
+                            <div class="rounded-lg border border-red-100 bg-red-50 px-3 py-3">
+                                <span class="block text-[11px] font-semibold uppercase tracking-wide text-red-700">Pengaju Obsolete</span>
+                                <div class="mt-2 flex items-center gap-2.5">
+                                    <span class="grid size-9 shrink-0 place-items-center rounded-full bg-white text-xs font-bold text-red-700 ring-1 ring-red-100">
+                                        {{ $document->creator?->initials() ?? '-' }}
+                                    </span>
+                                    <span class="min-w-0">
+                                        <span class="block truncate text-sm font-bold leading-tight text-slate-900">{{ $document->creator?->name ?? '-' }}</span>
+                                        <span class="mt-0.5 block truncate text-xs font-medium leading-tight text-slate-500">{{ $document->creator?->jabatan ?: $document->creator?->email }}</span>
+                                    </span>
+                                </div>
+                            </div>
+                        @endif
                     </div>
 
                 </section>
 
+                @if ($isObsoleteRequest)
+                    <x-documents.form-section title="Alasan Obsolete" icon="archive-box-x-mark">
+                        <div class="px-6 py-6">
+                            <div class="rounded-lg border border-red-100 bg-red-50 px-4 py-4">
+                                <p class="text-sm font-semibold leading-6 text-red-900">
+                                    {{ $document->catatan_revisi ?: '-' }}
+                                </p>
+                            </div>
+                        </div>
+                    </x-documents.form-section>
+                @endif
+
                 <x-documents.form-section :title="$contentSectionTitle" icon="document-text">
                     <div class="space-y-4 px-6 py-6">
-                        @if ($levelKey === 'level-4')
+                        @if ($isObsoleteRequest)
+                            @forelse ($obsoleteSourceContentFiles as $file)
+                                <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                    <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                        <div class="min-w-0">
+                                            <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
+                                            <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                        </div>
+                                        <a href="{{ route('documents.master.files.show', [$document->revisedFrom, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                            Buka
+                                        </a>
+                                    </div>
+
+                                    <iframe
+                                        src="{{ route('documents.master.files.preview', [$document->revisedFrom, $file]) }}#view=FitH&navpanes=0"
+                                        class="min-h-[760px] w-full bg-white xl:h-[82vh]"
+                                    ></iframe>
+                                </section>
+                            @empty
+                                <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                    Belum ada file isi dokumen.
+                                </p>
+                            @endforelse
+                        @elseif ($levelKey === 'level-4')
                             @if ($revisionMainFiles->isNotEmpty())
                                 <div class="grid gap-4 2xl:grid-cols-2">
                                     @foreach ($revisionMainFiles as $file)

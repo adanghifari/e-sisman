@@ -224,6 +224,18 @@
                             </div>
                         </div>
                     @endif
+
+                    @if ($canRestoreMaster)
+                        <div class="border-t border-dashed border-slate-200 px-6 py-5">
+                            <form method="POST" action="{{ route('documents.master.restore', $document) }}">
+                                @csrf
+                                <button type="submit" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">
+                                    <flux:icon name="arrow-path" class="size-4" />
+                                    Jadikan Master
+                                </button>
+                            </form>
+                        </div>
+                    @endif
                 </section>
 
                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">

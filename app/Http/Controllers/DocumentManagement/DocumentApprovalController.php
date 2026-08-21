@@ -45,7 +45,15 @@ class DocumentApprovalController extends Controller
             'approvals.role',
             'documentLevel.approvalFlows.stages',
             'revisedFrom.documentLevel.approvalFlows.stages',
+            'revisedFrom.creator',
+            'revisedFrom.files.uploader',
         ]);
+
+        $obsoleteSourceContentFiles = $document->request_type === 'obsolete'
+            ? $document->revisedFrom?->files
+                ->whereIn('type_file', ['filled_template', 'imported_document', 'revision_content'])
+                ->values() ?? collect()
+            : collect();
 
         return view('document-management.approval-detail', [
             'document' => $document,
@@ -63,6 +71,7 @@ class DocumentApprovalController extends Controller
                 'revision_before',
                 'revision_after',
             ])->values(),
+            'obsoleteSourceContentFiles' => $obsoleteSourceContentFiles,
             'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
         ]);
     }

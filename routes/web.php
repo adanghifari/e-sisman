@@ -48,6 +48,7 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::get('document-templates/files/{file}', [DocumentTemplateController::class, 'file'])->name('document-templates.files.show');
     Route::get('documents/master/{document}', [DocumentMasterController::class, 'show'])->name('documents.master.show');
     Route::post('documents/master/{document}/obsolete', [DocumentMasterController::class, 'obsolete'])->name('documents.master.obsolete');
+    Route::post('documents/master/{document}/restore', [DocumentMasterController::class, 'restore'])->name('documents.master.restore');
     Route::get('documents/master/{document}/files/{file}', [DocumentMasterController::class, 'file'])->name('documents.master.files.show');
     Route::get('documents/master/{document}/files/{file}/preview', [DocumentMasterController::class, 'preview'])->name('documents.master.files.preview');
     Route::view('reports', 'reporting.index')->name('reports.index');

@@ -67,6 +67,13 @@ class DocumentObsoleteController extends Controller
         };
 
         $documents = $query->get();
+        $documents->each(function (Document $document): void {
+            $rootDocument = $document->revised_from !== null
+                ? Document::query()->whereKey($document->revisionRootId())->first()
+                : null;
+
+            $document->setAttribute('obsolete_display_number', $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen);
+        });
 
         $typeOptions = ['' => 'Semua Level'] + DocumentLevel::query()
             ->orderBy('id')

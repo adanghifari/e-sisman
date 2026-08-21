@@ -48,6 +48,36 @@ class DocumentMasterTest extends TestCase
             ->assertDontSee('PS-SMR-PROP');
     }
 
+    public function test_master_page_does_not_show_approved_obsolete_request_transaction(): void
+    {
+        $user = User::factory()->create();
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+
+        $source = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Master Akan Obsolete',
+            'nomor_dokumen' => 'PS-SMR-OBS-REQ',
+        ]);
+        $obsoleteRequest = $this->createDocument($user, $approvedStatus, [
+            'nama_dokumen' => 'Transaksi Obsolete Master',
+            'nomor_dokumen' => 'FMPS-SMR-OBS-REQ',
+            'revised_from' => $source->id,
+            'request_type' => 'obsolete',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertDontSee('Master Akan Obsolete')
+            ->assertDontSee('Transaksi Obsolete Master')
+            ->assertDontSee('PS-SMR-OBS-REQ')
+            ->assertDontSee('FMPS-SMR-OBS-REQ');
+
+        $this->actingAs($user)
+            ->get(route('documents.master.show', $obsoleteRequest))
+            ->assertNotFound();
+    }
+
     public function test_master_page_groups_obsolete_revision_inside_master_document(): void
     {
         $user = User::factory()->create();
@@ -181,6 +211,37 @@ class DocumentMasterTest extends TestCase
             ->assertSee(route('documents.master.show', $obsoleteDocument), false)
             ->assertDontSee('Dokumen Master Aktif')
             ->assertDontSee('PS-SMR-ACT');
+    }
+
+    public function test_obsolete_page_uses_master_document_number_for_revision_forms(): void
+    {
+        $user = User::factory()->create();
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+
+        $rootDocument = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Lama',
+            'nomor_dokumen' => 'PS-SMR-001',
+            'nomor_revisi' => 0,
+        ]);
+        $obsoleteRevision = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Revisi Obsolete',
+            'nomor_dokumen' => 'FMPS-SMR-001',
+            'nomor_revisi' => 1,
+            'revised_from' => $rootDocument->id,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->get(route('documents.obsolete'))
+            ->assertOk()
+            ->assertSee('Prosedur Revisi Obsolete')
+            ->assertSee('PS-SMR-001')
+            ->assertSee('00.01')
+            ->assertSee(route('documents.master.show', $obsoleteRevision), false);
+
+        $this->assertStringNotContainsString(
+            '<td class="px-3 py-4 font-semibold text-slate-700">FMPS-SMR-001</td>',
+            $response->getContent(),
+        );
     }
 
     public function test_approved_level_four_revision_becomes_master_and_groups_old_master_as_obsolete(): void
@@ -448,7 +509,115 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Obsolete')
             ->assertDontSee('Ajukan Revisi')
             ->assertDontSee('Pengajuan Obsolete')
+            ->assertDontSee('Jadikan Master')
             ->assertDontSee('data-obsolete-modal-open', false);
+    }
+
+    public function test_obsolete_revision_can_be_restored_as_master_and_only_older_versions_become_children(): void
+    {
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $owner = User::factory()->create();
+
+        $rootDocument = $this->createDocument($owner, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Restore',
+            'nomor_dokumen' => 'PS-SMR-RESTORE',
+            'nomor_revisi' => 0,
+            'approved_at' => now()->subDays(6),
+        ]);
+
+        $revisions = collect(range(1, 5))->map(function (int $revisionNumber) use ($owner, $obsoleteStatus, $rootDocument): Document {
+            return $this->createDocument($owner, $obsoleteStatus, [
+                'nama_dokumen' => 'Prosedur Restore Revisi '.$revisionNumber,
+                'nomor_dokumen' => 'FMPS-SMR-RESTORE',
+                'nomor_revisi' => $revisionNumber,
+                'revised_from' => $rootDocument->id,
+                'approved_at' => now()->subDays(6 - $revisionNumber),
+            ]);
+        });
+        $selectedRevision = $revisions->firstWhere('nomor_revisi', 3);
+        $documentDepartment = $selectedRevision->departments()->firstOrFail();
+        $sameDepartmentUser = User::factory()->create(['m_department_id' => $documentDepartment->id]);
+
+        $this->actingAs($sameDepartmentUser)
+            ->get(route('documents.master.show', $selectedRevision))
+            ->assertOk()
+            ->assertSee('Jadikan Master');
+
+        $this->actingAs($sameDepartmentUser)
+            ->post(route('documents.master.restore', $selectedRevision))
+            ->assertRedirect(route('documents.master.show', $selectedRevision));
+
+        $this->assertSame(StatusDocument::APPROVED, $selectedRevision->refresh()->status->nama_status);
+        $this->assertSame(StatusDocument::OBSOLETE, $rootDocument->refresh()->status->nama_status);
+        $this->assertSame(StatusDocument::OBSOLETE, $revisions->firstWhere('nomor_revisi', 5)->refresh()->status->nama_status);
+
+        $response = $this->actingAs($sameDepartmentUser)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertSee('Prosedur Restore Revisi 3')
+            ->assertSee('00.03')
+            ->assertSee('00.00')
+            ->assertSee('00.01')
+            ->assertSee('00.02')
+            ->assertSee(route('documents.master.show', $selectedRevision), false);
+
+        $this->assertStringNotContainsString('00.04', $response->getContent());
+        $this->assertStringNotContainsString('00.05', $response->getContent());
+        $this->assertStringNotContainsString(route('documents.master.show', $revisions->firstWhere('nomor_revisi', 4)), $response->getContent());
+        $this->assertStringNotContainsString(route('documents.master.show', $revisions->firstWhere('nomor_revisi', 5)), $response->getContent());
+    }
+
+    public function test_obsolete_revision_restore_is_blocked_when_same_family_still_has_active_master(): void
+    {
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $owner = User::factory()->create();
+
+        $rootDocument = $this->createDocument($owner, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Restore Blocked',
+            'nomor_dokumen' => 'PS-SMR-BLOCK',
+            'nomor_revisi' => 0,
+        ]);
+        $olderRevision = $this->createDocument($owner, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Restore Blocked Revisi 2',
+            'nomor_dokumen' => 'FMPS-SMR-BLOCK',
+            'nomor_revisi' => 2,
+            'revised_from' => $rootDocument->id,
+        ]);
+        $activeMaster = $this->createDocument($owner, $approvedStatus, [
+            'nama_dokumen' => 'Prosedur Restore Blocked Revisi 3',
+            'nomor_dokumen' => 'FMPS-SMR-BLOCK',
+            'nomor_revisi' => 3,
+            'revised_from' => $rootDocument->id,
+        ]);
+        $newerRevision = $this->createDocument($owner, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Restore Blocked Revisi 5',
+            'nomor_dokumen' => 'FMPS-SMR-BLOCK',
+            'nomor_revisi' => 5,
+            'revised_from' => $rootDocument->id,
+        ]);
+        $documentDepartment = $rootDocument->departments()->firstOrFail();
+        $olderRevision->departments()->sync([$documentDepartment->id]);
+        $activeMaster->departments()->sync([$documentDepartment->id]);
+        $newerRevision->departments()->sync([$documentDepartment->id]);
+        $sameDepartmentUser = User::factory()->create(['m_department_id' => $documentDepartment->id]);
+
+        $this->actingAs($sameDepartmentUser)
+            ->post(route('documents.master.restore', $olderRevision))
+            ->assertRedirect(route('documents.master.show', $olderRevision))
+            ->assertSessionHas('restore_warning.message', 'Versi terbaru 00.03 masih menjadi master. Silakan obsolete-kan versi terbaru dulu.');
+
+        $this->assertSame(StatusDocument::OBSOLETE, $olderRevision->refresh()->status->nama_status);
+        $this->assertSame(StatusDocument::APPROVED, $activeMaster->refresh()->status->nama_status);
+
+        $this->actingAs($sameDepartmentUser)
+            ->post(route('documents.master.restore', $newerRevision))
+            ->assertRedirect(route('documents.master.show', $newerRevision))
+            ->assertSessionHas('restore_warning.message', 'Versi 00.03 masih menjadi master. Silakan obsolete-kan versi 00.03 dulu.');
+
+        $this->assertSame(StatusDocument::OBSOLETE, $newerRevision->refresh()->status->nama_status);
+        $this->assertSame(StatusDocument::APPROVED, $activeMaster->refresh()->status->nama_status);
     }
 
     public function test_user_from_document_department_can_submit_master_obsolete_request(): void

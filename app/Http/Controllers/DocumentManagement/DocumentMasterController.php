@@ -13,6 +13,7 @@ use App\Models\StatusDocument;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
@@ -55,7 +56,12 @@ class DocumentMasterController extends Controller
                 'obsoleteRevisions.businessFunction',
                 'obsoleteRevisions.departments',
             ])
-            ->where('m_status_document_id', $approvedStatusId);
+            ->where('m_status_document_id', $approvedStatusId)
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('request_type')
+                    ->orWhere('request_type', '!=', 'obsolete');
+            });
 
         if ($filters['search'] !== '') {
             $search = $filters['search'];
@@ -115,7 +121,8 @@ class DocumentMasterController extends Controller
                 ->values();
             $obsoleteDocuments = $family
                 ->where('id', '!=', $document->id)
-                ->filter(fn (Document $revision): bool => $revision->status?->nama_status === StatusDocument::OBSOLETE)
+                ->filter(fn (Document $revision): bool => $revision->status?->nama_status === StatusDocument::OBSOLETE
+                    && $revision->nomor_revisi < $document->nomor_revisi)
                 ->map(function (Document $revision) use ($family, $rootDocument): Document {
                     $nextRevision = $family
                         ->where('nomor_revisi', '>', $revision->nomor_revisi)
@@ -192,11 +199,13 @@ class DocumentMasterController extends Controller
             in_array($document->status?->nama_status, [StatusDocument::APPROVED, StatusDocument::OBSOLETE], true),
             404,
         );
+        abort_if($document->request_type === 'obsolete', 404);
 
         return view('document-management.master-detail', [
             'document' => $document,
             'masterDisplayNumber' => $this->masterDisplayNumber($document),
             'canRequestRevision' => $this->canRequestRevision($request, $document),
+            'canRestoreMaster' => $this->canRestoreMaster($request, $document),
             'approvalFlowStages' => $document->documentLevel
                 ?->approvalFlows
                 ->flatMap(fn ($flow) => $flow->stages)
@@ -247,6 +256,50 @@ class DocumentMasterController extends Controller
             ->with('status', 'Pengajuan obsolete berhasil dikirim.');
     }
 
+    public function restore(Request $request, Document $document): RedirectResponse
+    {
+        $document->loadMissing('status', 'departments');
+
+        abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
+        abort_unless($this->canRestoreMaster($request, $document), 403);
+
+        $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
+        $obsoleteStatus = StatusDocument::findByName(StatusDocument::OBSOLETE);
+        $family = $document->revisionFamily();
+        $familyIds = $family->pluck('id');
+        $activeMaster = $family
+            ->first(fn (Document $revision): bool => $revision->id !== $document->id
+                && $revision->m_status_document_id === $approvedStatus->id);
+
+        if ($activeMaster !== null) {
+            return redirect()
+                ->route('documents.master.show', $document)
+                ->with('restore_warning', [
+                    'title' => 'Belum Bisa Dijadikan Master',
+                    'message' => $this->restoreBlockedMessage($document, $activeMaster),
+                ]);
+        }
+
+        DB::transaction(function () use ($document, $familyIds, $approvedStatus, $obsoleteStatus): void {
+            Document::query()
+                ->whereIn('id', $familyIds)
+                ->where('id', '!=', $document->id)
+                ->where('m_status_document_id', $approvedStatus->id)
+                ->update([
+                    'm_status_document_id' => $obsoleteStatus->id,
+                ]);
+
+            $document->update([
+                'm_status_document_id' => $approvedStatus->id,
+                'approved_at' => now(),
+            ]);
+        });
+
+        return redirect()
+            ->route('documents.master.show', $document)
+            ->with('status', 'Dokumen berhasil dijadikan master.');
+    }
+
     public function file(Request $request, Document $document, DocumentFile $file, RecordDocumentDownload $recordDocumentDownload): BinaryFileResponse
     {
         $this->authorizeMasterFileAccess($document, $file);
@@ -291,6 +344,47 @@ class DocumentMasterController extends Controller
             return false;
         }
 
+        $user = $request->user();
+
+        if ($user?->isDeveloper() || $user?->isAdmin()) {
+            return true;
+        }
+
+        if ($user?->m_department_id === null) {
+            return false;
+        }
+
+        if ($document->relationLoaded('departments')) {
+            return $document->departments->contains('id', $user->m_department_id);
+        }
+
+        return $document->departments()
+            ->whereKey($user->m_department_id)
+            ->exists();
+    }
+
+    private function canRestoreMaster(Request $request, Document $document): bool
+    {
+        if ($document->status?->nama_status !== StatusDocument::OBSOLETE) {
+            return false;
+        }
+
+        return $this->canManageDocumentDepartment($request, $document);
+    }
+
+    private function restoreBlockedMessage(Document $document, Document $activeMaster): string
+    {
+        $activeVersion = $activeMaster->formatted_revision;
+
+        if ($activeMaster->nomor_revisi > $document->nomor_revisi) {
+            return "Versi terbaru {$activeVersion} masih menjadi master. Silakan obsolete-kan versi terbaru dulu.";
+        }
+
+        return "Versi {$activeVersion} masih menjadi master. Silakan obsolete-kan versi {$activeVersion} dulu.";
+    }
+
+    private function canManageDocumentDepartment(Request $request, Document $document): bool
+    {
         $user = $request->user();
 
         if ($user?->isDeveloper() || $user?->isAdmin()) {

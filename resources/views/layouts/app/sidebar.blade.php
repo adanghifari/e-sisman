@@ -168,6 +168,14 @@
             />
         @endif
 
+        @if (session('restore_warning'))
+            <x-ui.success-dialog
+                variant="warning"
+                :title="session('restore_warning.title')"
+                :message="session('restore_warning.message')"
+            />
+        @endif
+
         @persist('toast')
             <flux:toast.group>
                 <flux:toast />
