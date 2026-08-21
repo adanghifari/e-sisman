@@ -26,6 +26,12 @@ class PermissionSeeder extends Seeder
         'document-templates.download',
     ];
 
+    private const DOCUMENT_CONTROL_ADMIN_EXTRA_PERMISSION_CODES = [
+        'approval-flows.create',
+        'approval-flows.update',
+        'approval-flows.delete',
+    ];
+
     public function run(): void
     {
         $permissions = collect(config('access.permissions', []));
@@ -94,7 +100,8 @@ class PermissionSeeder extends Seeder
             ->where(function ($query): void {
                 $query
                     ->where('module', '!=', 'Administrasi')
-                    ->orWhere('action', 'view');
+                    ->orWhere('action', 'view')
+                    ->orWhereIn('code', self::DOCUMENT_CONTROL_ADMIN_EXTRA_PERMISSION_CODES);
             })
             ->pluck('id');
 

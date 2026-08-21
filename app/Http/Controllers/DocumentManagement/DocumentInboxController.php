@@ -409,7 +409,7 @@ class DocumentInboxController extends Controller
                 ->map(fn ($department) => $department->kode_department ?: $department->nama_department)
                 ->filter()
                 ->implode(', ') ?: '-',
-            'date' => $assignedAt?->translatedFormat('d M Y') ?? $submittedAt?->translatedFormat('d M Y') ?? '-',
+            'date' => $assignedAt?->translatedFormat('d M Y H:i:s') ?? $submittedAt?->translatedFormat('d M Y H:i:s') ?? '-',
             'date_sort' => $assignedAt?->timestamp ?? $submittedAt?->timestamp ?? 0,
             'submitted_at' => $submittedAt?->translatedFormat('d M Y') ?? '-',
             'submitted_at_sort' => $submittedAt?->timestamp ?? 0,

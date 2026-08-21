@@ -36,10 +36,7 @@ class Index extends Component
 
     public function mount(): void
     {
-        $this->selectedDocumentLevelId = DocumentLevel::query()
-            ->active()
-            ->orderBy('sort_order')
-            ->orderBy('nama_level')
+        $this->selectedDocumentLevelId = $this->documentLevelsQuery()
             ->value('id');
 
         if ($this->selectedDocumentLevelId !== null) {
@@ -49,6 +46,8 @@ class Index extends Component
 
     public function selectDocumentLevel(int $documentLevelId): void
     {
+        abort_unless($this->documentLevelsQuery()->whereKey($documentLevelId)->exists(), 404);
+
         $this->selectedDocumentLevelId = $documentLevelId;
         $this->resetStageForm();
         $this->cancelDelete();
@@ -153,10 +152,7 @@ class Index extends Component
 
     public function getDocumentLevelsProperty(): Collection
     {
-        return DocumentLevel::query()
-            ->active()
-            ->orderBy('sort_order')
-            ->orderBy('nama_level')
+        return $this->documentLevelsQuery()
             ->get();
     }
 
@@ -243,6 +239,15 @@ class Index extends Component
     private function selectedLevelInheritsApprovalFlow(): bool
     {
         return $this->selectedDocumentLevel?->kode === 'level-4';
+    }
+
+    private function documentLevelsQuery()
+    {
+        return DocumentLevel::query()
+            ->active()
+            ->where('kode', '!=', 'level-4')
+            ->orderBy('sort_order')
+            ->orderBy('nama_level');
     }
 
     private function abortIfSelectedLevelInheritsApprovalFlow(): void

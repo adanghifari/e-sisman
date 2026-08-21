@@ -24,6 +24,7 @@ class ApprovalFlowTest extends TestCase
             ->assertSee('Level I')
             ->assertSee('Level II')
             ->assertSee('Level III')
+            ->assertDontSee('Level IV')
             ->assertDontSee('Pedoman');
     }
 
@@ -136,7 +137,7 @@ class ApprovalFlowTest extends TestCase
             ->assertHasErrors(['nama_tahap']);
     }
 
-    public function test_level_four_inherits_source_document_approval_flow(): void
+    public function test_level_four_is_not_available_on_approval_flow_page(): void
     {
         $this->actingAs(User::factory()->create(['nik' => '000000']));
 
@@ -144,10 +145,7 @@ class ApprovalFlowTest extends TestCase
 
         Livewire::test(Index::class)
             ->call('selectDocumentLevel', $level->id)
-            ->assertSee('Mengikuti Flow Dokumen Induk')
-            ->assertDontSee('Tambah Tahap')
-            ->call('createStage')
-            ->assertForbidden();
+            ->assertNotFound();
 
         $this->assertDatabaseMissing('m_approval_flows', [
             'm_document_level_id' => $level->id,
