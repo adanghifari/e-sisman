@@ -1,6 +1,7 @@
 @props([
     'label',
     'users',
+    'selectedUser' => null,
 ])
 
 <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm" data-official-preparer>
@@ -45,6 +46,7 @@
             <x-ui.user-search-select
                 name="official_preparer_id"
                 :users="$users"
+                :selected-user="$selectedUser"
                 placeholder="Pilih penyusun pemilik proses"
                 data-official-preparer-picker
                 required

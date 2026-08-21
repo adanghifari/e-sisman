@@ -35,6 +35,7 @@
             type="text"
             name="nomor_dokumen_suffix"
             value="{{ old('nomor_dokumen_suffix', $defaultValue) }}"
+            @if (filled(old('nomor_dokumen_suffix', $defaultValue))) data-user-edited="true" @endif
             required
             class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
         >

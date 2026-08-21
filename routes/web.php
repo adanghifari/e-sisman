@@ -35,7 +35,11 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
         ->withErrors(['stage_approvers' => 'Halaman assign sudah diperbarui. Silakan simpan ulang dari detail dokumen.']));
     Route::get('documents/inbox/{document}/files/{file}', [DocumentApprovalController::class, 'file'])->name('documents.approval.files.show');
     Route::get('documents/inbox/{document}/files/{file}/preview', [DocumentApprovalController::class, 'preview'])->name('documents.approval.files.preview');
-    Route::view('documents/create', 'document-management.create.index')->name('documents.create');
+    Route::get('documents/create', [DocumentController::class, 'index'])->name('documents.create');
+    Route::get('documents/create/drafts', [DocumentController::class, 'drafts'])->name('documents.create.drafts');
+    Route::get('documents/create/{level}/drafts/{document}', [DocumentController::class, 'editDraft'])
+        ->whereIn('level', array_keys(config('document-levels')))
+        ->name('documents.create.drafts.edit');
     Route::get('documents/create/{level}', [DocumentController::class, 'create'])
         ->whereIn('level', array_keys(config('document-levels')))
         ->name('documents.create.level');
