@@ -93,7 +93,7 @@
                                 <x-ui.status-badge label="Obsolete" tone="red" />
                             </td>
                             <td class="px-2 py-4">
-                                <x-ui.icon-button :href="route('documents.master.show', $document)" icon="eye" label="Lihat detail" size="sm" />
+                                <x-ui.icon-button :href="route('documents.obsolete.show', $document)" icon="eye" label="Lihat detail" size="sm" />
                             </td>
                         </tr>
                     @empty

@@ -156,7 +156,7 @@ class DocumentMasterController extends Controller
             ->pluck('nama_proses_bisnis', 'id')
             ->all();
 
-        return view('document-management.master', [
+        return view('document-management.master.index', [
             'documents' => $documents,
             'totalDocuments' => $documents->count(),
             'filters' => $filters,
@@ -196,12 +196,12 @@ class DocumentMasterController extends Controller
         ]);
 
         abort_unless(
-            in_array($document->status?->nama_status, [StatusDocument::APPROVED, StatusDocument::OBSOLETE], true),
+            $document->status?->nama_status === StatusDocument::APPROVED,
             404,
         );
         abort_if($document->request_type === 'obsolete', 404);
 
-        return view('document-management.master-detail', [
+        return view('document-management.master.show', [
             'document' => $document,
             'masterDisplayNumber' => $this->masterDisplayNumber($document),
             'canRequestRevision' => $this->canRequestRevision($request, $document),
@@ -333,10 +333,7 @@ class DocumentMasterController extends Controller
         $document->loadMissing('status');
 
         abort_unless($file->t_document_id === $document->id, 404);
-        abort_unless(
-            in_array($document->status?->nama_status, [StatusDocument::APPROVED, StatusDocument::OBSOLETE], true),
-            404,
-        );
+        abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
     }
 
     private function canRequestRevision(Request $request, Document $document): bool

@@ -6,26 +6,34 @@
     <body class="min-h-screen bg-slate-50 text-slate-900">
         @php
             $user = auth()->user();
+            $canSeeMenuItem = function (array $item) use ($user): bool {
+                $permission = $item['permission'] ?? null;
+                $route = $item['route'] ?? null;
+
+                if ($permission !== null) {
+                    return $user->hasPermission($permission);
+                }
+
+                if ($route !== null) {
+                    return $user->canAccessRoute($route);
+                }
+
+                return $permission === null && $route === null;
+            };
             $menuGroups = collect(config('navigation'))
-                ->map(function (array $items) use ($user): array {
+                ->map(function (array $items) use ($canSeeMenuItem): array {
                     return collect($items)
-                        ->map(function (array $item) use ($user): ?array {
+                        ->map(function (array $item) use ($canSeeMenuItem): ?array {
                             if (isset($item['children'])) {
                                 $children = collect($item['children'])
-                                    ->filter(function (array $child) use ($user): bool {
-                                        $permission = $child['permission'] ?? null;
-
-                                        return $permission === null || $user->hasPermission($permission);
-                                    })
+                                    ->filter($canSeeMenuItem)
                                     ->values()
                                     ->all();
 
                                 return count($children) > 0 ? [...$item, 'children' => $children] : null;
                             }
 
-                            $permission = $item['permission'] ?? null;
-
-                            return $permission === null || $user->hasPermission($permission) ? $item : null;
+                            return $canSeeMenuItem($item) ? $item : null;
                         })
                         ->filter()
                         ->values()

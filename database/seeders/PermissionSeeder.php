@@ -23,6 +23,9 @@ class PermissionSeeder extends Seeder
         'documents.create.create',
         'documents.master.view',
         'documents.obsolete.view',
+        'documents.obsolete.detail',
+        'documents.obsolete.download',
+        'documents.obsolete.preview',
         'document-templates.view',
         'document-templates.download',
     ];

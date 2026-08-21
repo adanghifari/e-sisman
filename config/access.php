@@ -97,6 +97,27 @@ return [
             'action' => 'view',
         ],
         [
+            'code' => 'documents.obsolete.detail',
+            'name' => 'Lihat Detail Dokumen Obsolete',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.obsolete.show',
+            'action' => 'view',
+        ],
+        [
+            'code' => 'documents.obsolete.download',
+            'name' => 'Download File Dokumen Obsolete',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.obsolete.files.show',
+            'action' => 'download',
+        ],
+        [
+            'code' => 'documents.obsolete.preview',
+            'name' => 'Preview File Dokumen Obsolete',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.obsolete.files.preview',
+            'action' => 'preview',
+        ],
+        [
             'code' => 'documents.obsolete.create',
             'name' => 'Tambah Dokumen Obsolete',
             'module' => 'Manajemen Dokumen',
@@ -107,7 +128,7 @@ return [
             'code' => 'documents.obsolete.restore',
             'name' => 'Jadikan Master Dokumen Obsolete',
             'module' => 'Manajemen Dokumen',
-            'route' => 'documents.master.restore',
+            'route' => 'documents.obsolete.restore',
             'action' => 'restore',
         ],
         [

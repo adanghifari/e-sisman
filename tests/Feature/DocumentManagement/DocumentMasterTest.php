@@ -26,7 +26,7 @@ class DocumentMasterTest extends TestCase
 
     public function test_master_page_shows_only_approved_documents(): void
     {
-        $user = User::factory()->create();
+        $user = $this->userWithPermission('documents.master.view');
         $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
         $proposedStatus = StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
 
@@ -51,7 +51,7 @@ class DocumentMasterTest extends TestCase
 
     public function test_master_page_does_not_show_approved_obsolete_request_transaction(): void
     {
-        $user = User::factory()->create();
+        $user = $this->userWithPermission('documents.master.view');
         $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
         $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
 
@@ -81,7 +81,7 @@ class DocumentMasterTest extends TestCase
 
     public function test_master_page_groups_obsolete_revision_inside_master_document(): void
     {
-        $user = User::factory()->create();
+        $user = $this->userWithPermission('documents.master.view');
         $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
         $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
 
@@ -109,7 +109,7 @@ class DocumentMasterTest extends TestCase
 
     public function test_master_page_shows_latest_approved_revision_as_primary_row(): void
     {
-        $user = User::factory()->create();
+        $user = $this->userWithPermission('documents.master.view');
         $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
         $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
 
@@ -145,7 +145,7 @@ class DocumentMasterTest extends TestCase
 
     public function test_master_page_obsolete_dropdown_uses_master_document_number_for_revision_forms(): void
     {
-        $user = User::factory()->create();
+        $user = $this->userWithPermission('documents.master.view');
         $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
         $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
 
@@ -176,7 +176,7 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Prosedur Revisi Aktif')
             ->assertSee('PS-SMR-001')
             ->assertSee('00.01')
-            ->assertSee(route('documents.master.show', $obsoleteRevision), false);
+            ->assertSee(route('documents.obsolete.show', $obsoleteRevision), false);
 
         $this->assertStringNotContainsString(
             '<td class="px-5 py-4 font-semibold uppercase tracking-wide text-slate-700">'.PHP_EOL.'                                                                FMPS-SMR-001',
@@ -209,7 +209,7 @@ class DocumentMasterTest extends TestCase
             ->assertSee('PS-SMR-OBS')
             ->assertSee('00.02')
             ->assertSee('Obsolete')
-            ->assertSee(route('documents.master.show', $obsoleteDocument), false)
+            ->assertSee(route('documents.obsolete.show', $obsoleteDocument), false)
             ->assertDontSee('Dokumen Master Aktif')
             ->assertDontSee('PS-SMR-ACT');
     }
@@ -223,6 +223,47 @@ class DocumentMasterTest extends TestCase
             ->assertOk()
             ->assertSee('Tambah Dokumen Obsolete')
             ->assertSee(route('documents.master'), false);
+    }
+
+    public function test_user_role_can_read_obsolete_list_and_detail(): void
+    {
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        $userRole = Role::create(['nama_role' => 'User']);
+        $viewPermission = Permission::create([
+            'code' => 'documents.obsolete.view',
+            'name' => 'Lihat Dokumen Obsolete',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.obsolete',
+            'action' => 'view',
+        ]);
+        $detailPermission = Permission::create([
+            'code' => 'documents.obsolete.detail',
+            'name' => 'Lihat Detail Dokumen Obsolete',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.obsolete.show',
+            'action' => 'view',
+        ]);
+        $userRole->permissions()->sync([$viewPermission->id, $detailPermission->id]);
+        $user = User::factory()->create();
+        $document = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Dokumen Obsolete Untuk User',
+            'nomor_dokumen' => 'PS-SMR-USER-OBS',
+        ]);
+
+        $this->actingAs($user->fresh())
+            ->get(route('documents.obsolete'))
+            ->assertOk()
+            ->assertSee('Manajemen Dokumen')
+            ->assertSee('Dokumen Obsolete')
+            ->assertSee('href="'.route('documents.obsolete').'"', false)
+            ->assertSee('Dokumen Obsolete Untuk User')
+            ->assertSee(route('documents.obsolete.show', $document), false);
+
+        $this->actingAs($user->fresh())
+            ->get(route('documents.obsolete.show', $document))
+            ->assertOk()
+            ->assertSee('Detail Dokumen Obsolete')
+            ->assertSee('PS-SMR-USER-OBS');
     }
 
     public function test_obsolete_page_requires_view_permission_when_permissions_exist(): void
@@ -266,7 +307,7 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Prosedur Revisi Obsolete')
             ->assertSee('PS-SMR-001')
             ->assertSee('00.01')
-            ->assertSee(route('documents.master.show', $obsoleteRevision), false);
+            ->assertSee(route('documents.obsolete.show', $obsoleteRevision), false);
 
         $this->assertStringNotContainsString(
             '<td class="px-3 py-4 font-semibold text-slate-700">FMPS-SMR-001</td>',
@@ -276,7 +317,7 @@ class DocumentMasterTest extends TestCase
 
     public function test_approved_level_four_revision_becomes_master_and_groups_old_master_as_obsolete(): void
     {
-        $submitter = User::factory()->create();
+        $submitter = $this->userWithPermission('documents.master.view');
         $approver = User::factory()->create();
         $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
         StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
@@ -543,23 +584,29 @@ class DocumentMasterTest extends TestCase
             ->assertSee('data-obsolete-modal-open', false);
     }
 
-    public function test_obsolete_master_document_detail_is_read_only(): void
+    public function test_obsolete_document_detail_uses_obsolete_page_and_is_read_only(): void
     {
         $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
-        $user = $this->userWithoutPermission('documents.obsolete.restore');
+        $user = $this->userWithPermission('documents.obsolete.detail');
         $document = $this->createDocument($user, $obsoleteStatus, [
             'nama_dokumen' => 'Master Sudah Obsolete',
             'nomor_dokumen' => 'PS-SMR-OLD',
         ]);
 
         $this->actingAs($user)
-            ->get(route('documents.master.show', $document))
+            ->get(route('documents.obsolete.show', $document))
             ->assertOk()
+            ->assertSee('Detail Dokumen Obsolete')
+            ->assertSee('Dokumen Obsolete')
             ->assertSee('Obsolete')
             ->assertDontSee('Ajukan Revisi')
             ->assertDontSee('Pengajuan Obsolete')
             ->assertDontSee('Jadikan Master')
             ->assertDontSee('data-obsolete-modal-open', false);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.show', $document))
+            ->assertNotFound();
     }
 
     public function test_regular_user_cannot_restore_obsolete_document_as_master(): void
@@ -573,7 +620,7 @@ class DocumentMasterTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post(route('documents.master.restore', $document))
+            ->post(route('documents.obsolete.restore', $document))
             ->assertForbidden();
 
         $this->assertSame(StatusDocument::OBSOLETE, $document->refresh()->status->nama_status);
@@ -605,12 +652,12 @@ class DocumentMasterTest extends TestCase
         $documentControlAdmin = $this->userWithPermission('documents.obsolete.restore');
 
         $this->actingAs($documentControlAdmin)
-            ->get(route('documents.master.show', $selectedRevision))
+            ->get(route('documents.obsolete.show', $selectedRevision))
             ->assertOk()
             ->assertSee('Jadikan Master');
 
         $this->actingAs($documentControlAdmin)
-            ->post(route('documents.master.restore', $selectedRevision))
+            ->post(route('documents.obsolete.restore', $selectedRevision))
             ->assertRedirect(route('documents.master.show', $selectedRevision));
 
         $this->assertSame(StatusDocument::APPROVED, $selectedRevision->refresh()->status->nama_status);
@@ -669,16 +716,16 @@ class DocumentMasterTest extends TestCase
         $documentControlAdmin = $this->userWithPermission('documents.obsolete.restore');
 
         $this->actingAs($documentControlAdmin)
-            ->post(route('documents.master.restore', $olderRevision))
-            ->assertRedirect(route('documents.master.show', $olderRevision))
+            ->post(route('documents.obsolete.restore', $olderRevision))
+            ->assertRedirect(route('documents.obsolete.show', $olderRevision))
             ->assertSessionHas('restore_warning.message', 'Versi terbaru 00.03 masih menjadi master. Silakan obsolete-kan versi terbaru dulu.');
 
         $this->assertSame(StatusDocument::OBSOLETE, $olderRevision->refresh()->status->nama_status);
         $this->assertSame(StatusDocument::APPROVED, $activeMaster->refresh()->status->nama_status);
 
         $this->actingAs($documentControlAdmin)
-            ->post(route('documents.master.restore', $newerRevision))
-            ->assertRedirect(route('documents.master.show', $newerRevision))
+            ->post(route('documents.obsolete.restore', $newerRevision))
+            ->assertRedirect(route('documents.obsolete.show', $newerRevision))
             ->assertSessionHas('restore_warning.message', 'Versi 00.03 masih menjadi master. Silakan obsolete-kan versi 00.03 dulu.');
 
         $this->assertSame(StatusDocument::OBSOLETE, $newerRevision->refresh()->status->nama_status);
@@ -752,7 +799,9 @@ class DocumentMasterTest extends TestCase
                 'name' => $permissionCode,
                 'module' => 'Manajemen Dokumen',
                 'route' => match ($permissionCode) {
-                    'documents.obsolete.restore' => 'documents.master.restore',
+                    'documents.master.view' => 'documents.master',
+                    'documents.obsolete.detail' => 'documents.obsolete.show',
+                    'documents.obsolete.restore' => 'documents.obsolete.restore',
                     default => 'documents.obsolete',
                 },
                 'action' => match ($permissionCode) {
@@ -766,6 +815,45 @@ class DocumentMasterTest extends TestCase
         $user = User::factory()->create();
 
         $role->permissions()->syncWithoutDetaching([$permission->id]);
+        if (in_array($permissionCode, ['documents.obsolete.create', 'documents.obsolete.restore'], true)) {
+            $viewPermission = Permission::query()->firstOrCreate(
+                ['code' => 'documents.obsolete.view'],
+                [
+                    'name' => 'documents.obsolete.view',
+                    'module' => 'Manajemen Dokumen',
+                    'route' => 'documents.obsolete',
+                    'action' => 'view',
+                ],
+            );
+
+            $role->permissions()->syncWithoutDetaching([$viewPermission->id]);
+        }
+
+        if ($permissionCode === 'documents.obsolete.restore') {
+            $detailPermission = Permission::query()->firstOrCreate(
+                ['code' => 'documents.obsolete.detail'],
+                [
+                    'name' => 'documents.obsolete.detail',
+                    'module' => 'Manajemen Dokumen',
+                    'route' => 'documents.obsolete.show',
+                    'action' => 'view',
+                ],
+            );
+
+            $role->permissions()->syncWithoutDetaching([$detailPermission->id]);
+
+            $masterViewPermission = Permission::query()->firstOrCreate(
+                ['code' => 'documents.master.view'],
+                [
+                    'name' => 'documents.master.view',
+                    'module' => 'Manajemen Dokumen',
+                    'route' => 'documents.master',
+                    'action' => 'view',
+                ],
+            );
+
+            $role->permissions()->syncWithoutDetaching([$masterViewPermission->id]);
+        }
         $user->roles()->attach($role);
 
         return $user->refresh();
@@ -782,7 +870,9 @@ class DocumentMasterTest extends TestCase
                 'name' => $permissionCode,
                 'module' => 'Manajemen Dokumen',
                 'route' => match ($permissionCode) {
-                    'documents.obsolete.restore' => 'documents.master.restore',
+                    'documents.master.view' => 'documents.master',
+                    'documents.obsolete.detail' => 'documents.obsolete.show',
+                    'documents.obsolete.restore' => 'documents.obsolete.restore',
                     default => 'documents.obsolete',
                 },
                 'action' => match ($permissionCode) {

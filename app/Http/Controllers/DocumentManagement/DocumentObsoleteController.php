@@ -2,13 +2,20 @@
 
 namespace App\Http\Controllers\DocumentManagement;
 
+use App\Actions\Log\RecordDocumentDownload;
 use App\Http\Controllers\Controller;
 use App\Models\BusinessProcess;
 use App\Models\Document;
+use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\StatusDocument;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
+use Symfony\Component\HttpFoundation\BinaryFileResponse;
 
 class DocumentObsoleteController extends Controller
 {
@@ -85,7 +92,7 @@ class DocumentObsoleteController extends Controller
             ->pluck('nama_proses_bisnis', 'id')
             ->all();
 
-        return view('document-management.obsolete', [
+        return view('document-management.obsolete.index', [
             'documents' => $documents,
             'totalDocuments' => $documents->count(),
             'filters' => $filters,
@@ -100,5 +107,150 @@ class DocumentObsoleteController extends Controller
                 'revision_desc' => 'Revisi Tertinggi',
             ],
         ]);
+    }
+
+    public function show(Request $request, Document $document): View
+    {
+        $document->load([
+            'status',
+            'documentLevel',
+            'documentType',
+            'businessProcess',
+            'businessFunction',
+            'creator',
+            'officialPreparer',
+            'departments',
+            'files.uploader',
+            'approvals.status',
+            'approvals.approver',
+            'approvals.role',
+            'documentLevel.approvalFlows.stages',
+            'revisedFrom.status',
+        ]);
+
+        abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
+        abort_if($document->request_type === 'obsolete', 404);
+
+        return view('document-management.obsolete.show', [
+            'document' => $document,
+            'masterDisplayNumber' => $this->masterDisplayNumber($document),
+            'canRestoreMaster' => $this->canRestoreMaster($request, $document),
+            'approvalFlowStages' => $document->documentLevel
+                ?->approvalFlows
+                ->flatMap(fn ($flow) => $flow->stages)
+                ->sortBy('stage_order')
+                ->values()
+                ?? collect(),
+            'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document', 'revision_content'])->values(),
+            'attachmentFiles' => $document->files->whereIn('type_file', ['attachment', 'revision_form'])->values(),
+        ]);
+    }
+
+    public function restore(Request $request, Document $document): RedirectResponse
+    {
+        $document->loadMissing('status');
+
+        abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
+        abort_unless($this->canRestoreMaster($request, $document), 403);
+
+        $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
+        $obsoleteStatus = StatusDocument::findByName(StatusDocument::OBSOLETE);
+        $family = $document->revisionFamily();
+        $familyIds = $family->pluck('id');
+        $activeMaster = $family
+            ->first(fn (Document $revision): bool => $revision->id !== $document->id
+                && $revision->m_status_document_id === $approvedStatus->id);
+
+        if ($activeMaster !== null) {
+            return redirect()
+                ->route('documents.obsolete.show', $document)
+                ->with('restore_warning', [
+                    'title' => 'Belum Bisa Dijadikan Master',
+                    'message' => $this->restoreBlockedMessage($document, $activeMaster),
+                ]);
+        }
+
+        DB::transaction(function () use ($document, $familyIds, $approvedStatus, $obsoleteStatus): void {
+            Document::query()
+                ->whereIn('id', $familyIds)
+                ->where('id', '!=', $document->id)
+                ->where('m_status_document_id', $approvedStatus->id)
+                ->update([
+                    'm_status_document_id' => $obsoleteStatus->id,
+                ]);
+
+            $document->update([
+                'm_status_document_id' => $approvedStatus->id,
+                'approved_at' => now(),
+            ]);
+        });
+
+        return redirect()
+            ->route('documents.master.show', $document)
+            ->with('status', 'Dokumen berhasil dijadikan master.');
+    }
+
+    public function file(Request $request, Document $document, DocumentFile $file, RecordDocumentDownload $recordDocumentDownload): BinaryFileResponse
+    {
+        $this->authorizeObsoleteFileAccess($document, $file);
+
+        $path = Storage::disk('local')->path($file->path_file);
+        abort_unless(is_file($path), 404);
+
+        $recordDocumentDownload->handle($request, $document, $file);
+
+        return response()->file($path, [
+            'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
+        ]);
+    }
+
+    public function preview(Document $document, DocumentFile $file): BinaryFileResponse
+    {
+        $this->authorizeObsoleteFileAccess($document, $file);
+        abort_unless(Str::of($file->original_file_name)->lower()->endsWith('.pdf'), 415);
+
+        $path = Storage::disk('local')->path($file->path_file);
+        abort_unless(is_file($path), 404);
+
+        return response()->file($path, [
+            'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
+        ]);
+    }
+
+    private function authorizeObsoleteFileAccess(Document $document, DocumentFile $file): void
+    {
+        $document->loadMissing('status');
+
+        abort_unless($file->t_document_id === $document->id, 404);
+        abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
+    }
+
+    private function canRestoreMaster(Request $request, Document $document): bool
+    {
+        if ($document->status?->nama_status !== StatusDocument::OBSOLETE) {
+            return false;
+        }
+
+        return $request->user()?->hasPermission('documents.obsolete.restore') ?? false;
+    }
+
+    private function restoreBlockedMessage(Document $document, Document $activeMaster): string
+    {
+        $activeVersion = $activeMaster->formatted_revision;
+
+        if ($activeMaster->nomor_revisi > $document->nomor_revisi) {
+            return "Versi terbaru {$activeVersion} masih menjadi master. Silakan obsolete-kan versi terbaru dulu.";
+        }
+
+        return "Versi {$activeVersion} masih menjadi master. Silakan obsolete-kan versi {$activeVersion} dulu.";
+    }
+
+    private function masterDisplayNumber(Document $document): string
+    {
+        $rootDocument = Document::query()
+            ->whereKey($document->revisionRootId())
+            ->first();
+
+        return $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen ?: '-';
     }
 }

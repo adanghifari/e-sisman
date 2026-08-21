@@ -187,6 +187,21 @@ class User extends Authenticatable implements PasskeyUser
             return true;
         }
 
+        $configuredPermissions = collect(config('access.permissions', []))
+            ->filter(fn (array $permission): bool => ($permission['route'] ?? null) === $route);
+        $viewPermissionCodes = $configuredPermissions
+            ->filter(fn (array $permission): bool => ($permission['action'] ?? 'view') === 'view')
+            ->pluck('code');
+        $permissionCodes = $viewPermissionCodes->isNotEmpty()
+            ? $viewPermissionCodes
+            : $configuredPermissions->pluck('code');
+
+        if ($permissionCodes->isNotEmpty()) {
+            return $this->roles()
+                ->whereHas('permissions', fn ($query) => $query->whereIn('code', $permissionCodes->all()))
+                ->exists();
+        }
+
         return $this->roles()
             ->whereHas('permissions', fn ($query) => $query->where('route', $route))
             ->exists();
