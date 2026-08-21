@@ -554,11 +554,19 @@ class DocumentMasterTest extends TestCase
         $this->actingAs($submitter)
             ->get(route('documents.master.show', $masterRevision))
             ->assertOk()
+            ->assertSee('Nomor Dokumen Revisi')
+            ->assertSee('FMPS-KSA-02')
             ->assertSee('Isi Dokumen Versi Revisi')
             ->assertSee('dokumen-revisi.pdf')
             ->assertSee('Lembar Revisi')
             ->assertSee('lembar-revisi.pdf')
             ->assertDontSee('Belum ada file isi dokumen.');
+
+        $this->actingAs($submitter)
+            ->get(route('documents.approval.show', $masterRevision))
+            ->assertOk()
+            ->assertSee('Nomor Dokumen Revisi')
+            ->assertSee('FMPS-KSA-02');
 
         $this->actingAs($submitter)
             ->get(route('documents.master.show', $revision))

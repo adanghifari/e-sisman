@@ -158,6 +158,7 @@ class DocumentObsoleteController extends Controller
         return view('document-management.obsolete.show', [
             'document' => $document,
             'masterDisplayNumber' => $this->masterDisplayNumber($document),
+            'revisionRequestDisplayNumber' => $this->revisionRequestDisplayNumber($document),
             'canRestoreMaster' => $this->canRestoreMaster($request, $document),
             'approvalFlowStages' => $document->documentLevel
                 ?->approvalFlows
@@ -284,5 +285,29 @@ class DocumentObsoleteController extends Controller
             ->first();
 
         return $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen ?: '-';
+    }
+
+    private function revisionRequestDisplayNumber(Document $document): ?string
+    {
+        if ($document->revised_from === null) {
+            return null;
+        }
+
+        $revisionRequest = Document::query()
+            ->where('revised_from', $document->revised_from)
+            ->where('request_type', 'revision')
+            ->where('nomor_revisi', $document->nomor_revisi)
+            ->latest('id')
+            ->first();
+
+        if ($revisionRequest?->nomor_dokumen) {
+            return $revisionRequest->nomor_dokumen;
+        }
+
+        $masterDisplayNumber = $this->masterDisplayNumber($document);
+
+        return $document->nomor_dokumen !== $masterDisplayNumber
+            ? $document->nomor_dokumen
+            : null;
     }
 }

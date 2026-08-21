@@ -200,6 +200,7 @@ class DocumentMasterController extends Controller
         return view('document-management.master.show', [
             'document' => $document,
             'masterDisplayNumber' => $this->masterDisplayNumber($document),
+            'revisionRequestDisplayNumber' => $this->revisionRequestDisplayNumber($document),
             'canRequestRevision' => $this->canRequestRevision($request, $document),
             'canRequestObsolete' => $this->canRequestObsolete($request, $document),
             'canRestoreMaster' => $this->canRestoreMaster($request, $document),
@@ -396,6 +397,30 @@ class DocumentMasterController extends Controller
             ->first();
 
         return $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen ?: '-';
+    }
+
+    private function revisionRequestDisplayNumber(Document $document): ?string
+    {
+        if ($document->revised_from === null) {
+            return null;
+        }
+
+        $revisionRequest = Document::query()
+            ->where('revised_from', $document->revised_from)
+            ->where('request_type', 'revision')
+            ->where('nomor_revisi', $document->nomor_revisi)
+            ->latest('id')
+            ->first();
+
+        if ($revisionRequest?->nomor_dokumen) {
+            return $revisionRequest->nomor_dokumen;
+        }
+
+        $masterDisplayNumber = $this->masterDisplayNumber($document);
+
+        return $document->nomor_dokumen !== $masterDisplayNumber
+            ? $document->nomor_dokumen
+            : null;
     }
 
     private function revisionFormNumber(Document $document): string

@@ -5,6 +5,7 @@
     index-label="Dokumen Master"
     :document="$document"
     :master-display-number="$masterDisplayNumber"
+    :revision-request-display-number="$revisionRequestDisplayNumber"
     :stamp-label="$document->status?->nama_status === \App\Models\StatusDocument::OBSOLETE ? 'Obsolete' : 'Master'"
     :stamp-tone="$document->status?->nama_status === \App\Models\StatusDocument::OBSOLETE ? 'red' : 'sky'"
     file-route-prefix="documents.master"

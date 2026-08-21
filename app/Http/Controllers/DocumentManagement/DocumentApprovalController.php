@@ -58,6 +58,7 @@ class DocumentApprovalController extends Controller
         return view('document-management.approval-detail', [
             'document' => $document,
             'masterDisplayNumber' => $this->masterDisplayNumber($document),
+            'revisionRequestDisplayNumber' => $this->revisionRequestDisplayNumber($document),
             'activeApproval' => $this->activeApproval($request, $document),
             'approvalFlowStages' => $this->approvalFlowStages($document),
             'approvalFlowDocumentLevel' => $this->approvalFlowDocumentLevel($document),
@@ -402,6 +403,34 @@ class DocumentApprovalController extends Controller
             ?: $document->revisedFrom?->nomor_dokumen
             ?: $document->nomor_dokumen
             ?: '-';
+    }
+
+    private function revisionRequestDisplayNumber(Document $document): ?string
+    {
+        if ($document->revised_from === null) {
+            return null;
+        }
+
+        if ($document->request_type === 'revision') {
+            return $document->nomor_dokumen ?: null;
+        }
+
+        $revisionRequest = Document::query()
+            ->where('revised_from', $document->revised_from)
+            ->where('request_type', 'revision')
+            ->where('nomor_revisi', $document->nomor_revisi)
+            ->latest('id')
+            ->first();
+
+        if ($revisionRequest?->nomor_dokumen) {
+            return $revisionRequest->nomor_dokumen;
+        }
+
+        $masterDisplayNumber = $this->masterDisplayNumber($document);
+
+        return $document->nomor_dokumen !== $masterDisplayNumber
+            ? $document->nomor_dokumen
+            : null;
     }
 
     private function isDocumentAssignmentLocked(Document $document): bool
