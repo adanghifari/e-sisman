@@ -10,6 +10,7 @@ use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Collection;
 
 class DocumentInboxController extends Controller
@@ -370,9 +371,9 @@ class DocumentInboxController extends Controller
 
     private function approvalRow(Document $document, ?Approval $approval, bool $canAssign = false, ?User $user = null): array
     {
-        $assignedAt = $approval?->assigned_at;
-        $respondedAt = $approval?->responded_at;
-        $submittedAt = $document->submitted_at ?? $document->created_at;
+        $assignedAt = $this->asDateTime($approval?->assigned_at);
+        $respondedAt = $this->asDateTime($approval?->responded_at);
+        $submittedAt = $this->asDateTime($document->submitted_at ?? $document->created_at);
         $isRejectedCorrection = $document->status?->nama_status === StatusDocument::REJECTED && $approval === null;
         $isPendingRevisionOwnerTask = $user !== null && $this->isPendingRevisionOwnerTask($document, $user) && $approval === null && ! $canAssign;
         $isAssignedMonitorTask = $user !== null && $approval !== null && $this->isAssignedMonitorApproval($approval, $user);
@@ -494,7 +495,7 @@ class DocumentInboxController extends Controller
         }
 
         $row = $this->approvalRow($document, null);
-        $submittedAt = $document->submitted_at ?? $document->created_at;
+        $submittedAt = $this->asDateTime($document->submitted_at ?? $document->created_at);
 
         $row['stage'] = match (true) {
             $document->user_id === $user->id && $document->revised_from !== null => 'Pengajuan Revisi',
@@ -513,14 +514,32 @@ class DocumentInboxController extends Controller
     private function assignedHistoryRow(Document $document, Approval $approval): array
     {
         $row = $this->approvalRow($document, null);
+        $assignedAt = $this->asDateTime($approval->assigned_at);
 
         $row['stage'] = 'Assign Approver';
         $row['waiting_for'] = $approval->approver?->name ?? '-';
-        $row['updated_at'] = $approval->assigned_at?->translatedFormat('d M Y H:i') ?? '-';
-        $row['updated_at_sort'] = $approval->assigned_at?->timestamp ?? 0;
+        $row['updated_at'] = $assignedAt?->translatedFormat('d M Y H:i') ?? '-';
+        $row['updated_at_sort'] = $assignedAt?->timestamp ?? 0;
         $row['action'] = 'Lihat';
 
         return $row;
+    }
+
+    private function asDateTime(mixed $value): ?Carbon
+    {
+        if ($value === null || $value === '') {
+            return null;
+        }
+
+        if ($value instanceof Carbon) {
+            return $value;
+        }
+
+        if ($value instanceof \DateTimeInterface) {
+            return Carbon::instance($value);
+        }
+
+        return Carbon::parse($value);
     }
 
     private function documentTypeLabel(Document $document): string

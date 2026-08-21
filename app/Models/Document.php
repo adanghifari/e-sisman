@@ -41,6 +41,7 @@ class Document extends Model
     {
         return [
             'nomor_revisi' => 'integer',
+            'created_at' => 'datetime',
             'tanggal_terbit' => 'date',
             'submitted_at' => 'datetime',
             'approved_at' => 'datetime',
