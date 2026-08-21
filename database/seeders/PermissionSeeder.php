@@ -20,6 +20,8 @@ class PermissionSeeder extends Seeder
         'documents.approval.download',
         'documents.approval.preview',
         'documents.create.view',
+        'documents.create.drafts',
+        'documents.create.drafts.edit',
         'documents.create.create',
         'documents.master.view',
         'documents.master.detail',

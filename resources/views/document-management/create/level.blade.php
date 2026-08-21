@@ -1,7 +1,18 @@
 <x-layouts::app :title="__('Tambah Dokumen')">
     @php
+        $draft ??= null;
         $revisionSource ??= null;
-        $levelKey = request()->route('level');
+        $isEditingDraft = $draft !== null;
+        $draftFilesByType = $draft?->files?->groupBy('type_file') ?? collect();
+        $existingFilePayload = fn (string $type) => $draftFilesByType
+            ->get($type, collect())
+            ->map(fn ($file) => [
+                'id' => $file->id,
+                'name' => $file->original_file_name,
+                'size' => $file->file_size,
+            ])
+            ->values();
+        $levelKey ??= request()->route('level') ?? $draft?->documentLevel?->kode;
         $level = config("document-levels.{$levelKey}");
         $levelNumbers = [
             'level-1' => 'I',
@@ -98,6 +109,12 @@
                 'label' => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department,
             ])
             ->values();
+        $formatBusinessProcess = fn ($businessProcess) => $businessProcess
+            ? (($businessProcess->kode ? $businessProcess->kode.' - ' : '').$businessProcess->nama_proses_bisnis)
+            : '-';
+        $formatBusinessFunction = fn ($businessFunction) => $businessFunction
+            ? (($businessFunction->kode ? $businessFunction->kode.' - ' : '').$businessFunction->nama_proses_fungsi)
+            : '-';
         $revisionDocumentSuffix = null;
         $revisionDocumentNumberSegments = [];
         if ($revisionSourceMaster?->nomor_dokumen) {
@@ -124,13 +141,20 @@
                     ->orWhere('revised_from', $revisionRootDocumentId))
                 ->max('nomor_revisi')
             : null;
-        $selectedBusinessProcessId = old('m_proses_bisnis_id', $revisionSource?->m_proses_bisnis_id);
-        $selectedBusinessFunctionId = old('m_proses_fungsi_id', $revisionSource?->m_proses_fungsi_id);
-        $selectedReferenceId = old('reference', $revisionSource?->reference);
-        $selectedDepartmentIds = old('department_ids', collect($revisionSource?->departments ?? [])->pluck('id')->all());
-        $nextRevisionValue = $revisionSource
+        $documentNumberSuffixDefault = $draft?->nomor_dokumen
+            ? \Illuminate\Support\Str::afterLast($draft->nomor_dokumen, '-')
+            : $revisionDocumentSuffix;
+        $selectedBusinessProcessId = old('m_proses_bisnis_id', $draft?->m_proses_bisnis_id ?? $revisionSource?->m_proses_bisnis_id);
+        $selectedBusinessFunctionId = old('m_proses_fungsi_id', $draft?->m_proses_fungsi_id ?? $revisionSource?->m_proses_fungsi_id);
+        $selectedReferenceId = old('reference', $draft?->reference ?? $revisionSource?->reference);
+        $selectedDepartmentIds = old('department_ids', $draft
+            ? $draft->departments->pluck('id')->all()
+            : collect($revisionSource?->departments ?? [])->pluck('id')->all());
+        $nextRevisionValue = $draft
+            ? $draft->formatted_revision
+            : ($revisionSource
             ? '00.'.str_pad((string) (($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1), 2, '0', STR_PAD_LEFT)
-            : '00.00';
+            : '00.00');
         $selectedBusinessProcess = $businessProcesses->firstWhere('id', (int) $selectedBusinessProcessId);
         $documentNumberProcessCode = $selectedBusinessProcess?->kode ?: 'SMR';
         $documentNumberSegments = match ($levelKey) {
@@ -168,6 +192,9 @@
         @if ($levelKey === 'level-1')
             <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
                 @csrf
+                @if ($draft)
+                    <input type="hidden" name="draft_id" value="{{ $draft->id }}">
+                @endif
                 @if ($revisionSource)
                     <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
                 @endif
@@ -184,7 +211,7 @@
                                 <input
                                     type="text"
                                     name="nama_dokumen"
-                                    value="{{ old('nama_dokumen', $revisionSource?->nama_dokumen) }}"
+                                    value="{{ old('nama_dokumen', $draft?->nama_dokumen ?? $revisionSource?->nama_dokumen) }}"
                                     placeholder="Masukan nama dokumen"
                                     required
                                     @class([
@@ -213,7 +240,8 @@
                                 hint="Format PDF."
                                 :max-files="1"
                                 :max-file-size-kb="10240"
-                                required
+                                :required="$draftFilesByType->get('imported_document', collect())->isEmpty()"
+                                :existing-files="$existingFilePayload('imported_document')"
                             />
                             @error('imported_document')
                                 <span class="-mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -226,7 +254,7 @@
                                     rows="5"
                                     placeholder="Tambahkan catatan dokumen"
                                     class="w-full resize-none rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                                >{{ old('catatan_revisi') }}</textarea>
+                                >{{ old('catatan_revisi', $draft?->catatan_revisi) }}</textarea>
                                 @error('catatan_revisi')
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                 @enderror
@@ -246,7 +274,7 @@
                             <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4">
                                 <input type="text" value="{{ $documentNumberPrefix }}" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
                                 <span class="text-lg font-semibold text-slate-500">-</span>
-                                <input type="text" name="nomor_dokumen_suffix" value="{{ old('nomor_dokumen_suffix', $revisionDocumentSuffix) }}" required class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                <input type="text" name="nomor_dokumen_suffix" value="{{ old('nomor_dokumen_suffix', $documentNumberSuffixDefault) }}" required class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                             </div>
                             @error('nomor_dokumen_suffix')
                                 <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -258,7 +286,7 @@
                             <input
                                 type="text"
                                 name="nomor_revisi"
-                                value="{{ old('nomor_revisi', $revisionSource ? $nextRevisionValue : null) }}"
+                                value="{{ old('nomor_revisi', $draft?->formatted_revision ?? ($revisionSource ? $nextRevisionValue : null)) }}"
                                 @readonly($revisionSource)
                                 class="h-14 w-full rounded-lg border {{ $revisionSource ? 'border-slate-200 bg-slate-50 text-slate-600' : 'border-slate-300 bg-white text-slate-700 focus:border-sky-400 focus:ring-2 focus:ring-sky-100' }} px-4 text-base font-semibold outline-none transition"
                             >
@@ -270,7 +298,7 @@
                         <x-ui.date-input
                             label="Tanggal Terbit"
                             name="tanggal_terbit"
-                            :value="old('tanggal_terbit')"
+                            :value="old('tanggal_terbit', $draft?->tanggal_terbit?->format('Y-m-d'))"
                         />
                     </div>
 
@@ -284,6 +312,9 @@
         @else
             <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]" data-document-create-form data-max-total-file-size-kb="25600">
                 @csrf
+                @if ($draft)
+                    <input type="hidden" name="draft_id" value="{{ $draft->id }}">
+                @endif
                 @if ($revisionSource)
                     <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
                 @endif
@@ -328,11 +359,11 @@
                                 </div>
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                     <dt class="text-sm font-semibold text-slate-500">Proses Bisnis</dt>
-                                    <dd class="text-sm font-bold text-slate-900">{{ $revisionSource->businessProcess?->nama_proses_bisnis ?: '-' }}</dd>
+                                    <dd class="text-sm font-bold text-slate-900">{{ $formatBusinessProcess($revisionSource->businessProcess) }}</dd>
                                 </div>
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                     <dt class="text-sm font-semibold text-slate-500">Proses / Fungsi</dt>
-                                    <dd class="text-sm font-bold text-slate-900">{{ $revisionSource->businessFunction?->nama_proses_fungsi ?: '-' }}</dd>
+                                    <dd class="text-sm font-bold text-slate-900">{{ $formatBusinessFunction($revisionSource->businessFunction) }}</dd>
                                 </div>
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                     <dt class="text-sm font-semibold text-slate-500">Department Terkait</dt>
@@ -356,7 +387,7 @@
                                     <input
                                         type="text"
                                         name="nama_dokumen"
-                                        value="{{ old('nama_dokumen') }}"
+                                        value="{{ old('nama_dokumen', $draft?->nama_dokumen) }}"
                                         placeholder="Masukan nama dokumen"
                                         required
                                         @class([
@@ -380,9 +411,9 @@
                                             <option
                                                 value="{{ $businessProcess->id }}"
                                                 data-process-code="{{ $businessProcess->kode }}"
-                                                @selected((string) old('m_proses_bisnis_id') === (string) $businessProcess->id)
+                                                @selected((string) $selectedBusinessProcessId === (string) $businessProcess->id)
                                             >
-                                                {{ $businessProcess->nama_proses_bisnis }}
+                                                {{ $formatBusinessProcess($businessProcess) }}
                                             </option>
                                         @endforeach
                                     </select>
@@ -396,8 +427,8 @@
                                     <select name="m_proses_fungsi_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                                         <option value="">-Pilih-</option>
                                         @foreach ($businessFunctions as $businessFunction)
-                                            <option value="{{ $businessFunction->id }}" @selected((string) old('m_proses_fungsi_id') === (string) $businessFunction->id)>
-                                                {{ $businessFunction->nama_proses_fungsi }}
+                                            <option value="{{ $businessFunction->id }}" @selected((string) $selectedBusinessFunctionId === (string) $businessFunction->id)>
+                                                {{ $formatBusinessFunction($businessFunction) }}
                                             </option>
                                         @endforeach
                                     </select>
@@ -410,6 +441,7 @@
                                     label="Department Terkait"
                                     name="department_ids"
                                     :options="$departmentOptions"
+                                    :selected="$selectedDepartmentIds"
                                     selected-placeholder="Tambah Department"
                                     required
                                     class="md:col-span-1"
@@ -425,7 +457,7 @@
                                                     value="{{ $procedureReference->id }}"
                                                     data-business-process-id="{{ $procedureReference->m_proses_bisnis_id }}"
                                                     data-business-function-id="{{ $procedureReference->m_proses_fungsi_id }}"
-                                                    @selected((string) old('reference') === (string) $procedureReference->id)
+                                                    @selected((string) $selectedReferenceId === (string) $procedureReference->id)
                                                 >
                                                     {{ $procedureReference->procedure_reference_number ?: $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }}
                                                 </option>
@@ -440,7 +472,11 @@
                         @endif
                     </x-documents.form-section>
 
-                    <x-documents.official-preparer :label="$ownerLabel" :users="$assignableUsers" />
+                    <x-documents.official-preparer
+                        :label="$ownerLabel"
+                        :users="$assignableUsers"
+                        :selected-user="$draft?->officialPreparer"
+                    />
 
                     <x-documents.form-section :title="$levelKey === 'level-4' ? 'Dokumen Revisi' : 'Isi Dokumen'" icon="cloud-arrow-up">
                         <div class="space-y-6 px-6 py-6">
@@ -463,7 +499,8 @@
                                         hint="Upload dokumen utama yang sudah direvisi. Format PDF, maksimal 10 MB."
                                         :max-files="1"
                                         :max-file-size-kb="10240"
-                                        :required="old('submit_action') === 'submit'"
+                                        :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content', collect())->isEmpty()"
+                                        :existing-files="$existingFilePayload('revision_content')"
                                     />
 
                                     @error('revision_content')
@@ -483,7 +520,8 @@
                                         hint="Upload form/lembar revisi yang menjelaskan perubahan. Format PDF, maksimal 10 MB."
                                         :max-files="1"
                                         :max-file-size-kb="10240"
-                                        :required="old('submit_action') === 'submit'"
+                                        :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_form', collect())->isEmpty()"
+                                        :existing-files="$existingFilePayload('revision_form')"
                                     />
 
                                     @error('revision_form')
@@ -503,7 +541,8 @@
                                         hint="Format PDF."
                                         :max-files="1"
                                         :max-file-size-kb="10240"
-                                        required
+                                        :required="$draftFilesByType->get('filled_template', collect())->isEmpty()"
+                                        :existing-files="$existingFilePayload('filled_template')"
                                     />
 
                                     @error('filled_template')
@@ -525,6 +564,7 @@
                                     multiple
                                     :max-files="10"
                                     :max-file-size-kb="10240"
+                                    :existing-files="$existingFilePayload('attachment')"
                                 />
 
                                 @error('attachments')
@@ -548,7 +588,7 @@
                             <x-documents.document-number-input
                                 :prefix="$documentNumberPrefix"
                                 :segments="$documentNumberSegments"
-                                :default-value="$revisionDocumentSuffix"
+                                :default-value="$documentNumberSuffixDefault"
                             />
 
                             <label class="block">
@@ -583,7 +623,7 @@
                         </div>
 
                         <div class="grid gap-3 border-t border-dashed border-slate-200 px-6 py-5 sm:grid-cols-2">
-                            <button type="submit" name="submit_action" value="draft" class="inline-flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:bg-slate-50">
+                            <button type="submit" name="submit_action" value="draft" formnovalidate class="inline-flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:bg-slate-50">
                                 Simpan Draft
                             </button>
                             <button type="submit" name="submit_action" value="submit" class="inline-flex h-12 items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
@@ -651,6 +691,10 @@
 
                             return;
                         }
+                    }
+
+                    if (event.submitter?.name === 'submit_action' && event.submitter.value === 'draft') {
+                        return;
                     }
 
                     const emptyPicker = Array.from(form.querySelectorAll('[data-user-search-select]'))

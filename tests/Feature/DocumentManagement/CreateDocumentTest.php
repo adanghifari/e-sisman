@@ -44,6 +44,20 @@ class CreateDocumentTest extends TestCase
                 'action' => 'create',
             ],
             [
+                'code' => 'documents.create.drafts',
+                'name' => 'Lihat Draft Dokumen Saya',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.create.drafts',
+                'action' => 'view',
+            ],
+            [
+                'code' => 'documents.create.drafts.edit',
+                'name' => 'Edit Draft Dokumen Saya',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.create.drafts.edit',
+                'action' => 'view',
+            ],
+            [
                 'code' => 'documents.master.view',
                 'name' => 'Lihat Dokumen Master',
                 'module' => 'Manajemen Dokumen',
@@ -194,12 +208,22 @@ class CreateDocumentTest extends TestCase
             'name' => 'Level Two User',
             'email' => 'level-two@example.com',
         ]);
+        BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
 
         $this->actingAs($user)
             ->get(route('documents.create.level', 'level-2'))
             ->assertOk()
             ->assertSee('Tambah Dokumen Level II')
             ->assertSee('Nama Dokumen')
+            ->assertSee('SMR - Sistem Manajemen Risiko')
+            ->assertSee('OPS - Operasional')
             ->assertDontSee('Level Dokumen:')
             ->assertSee('Penyusun Pemilik Proses')
             ->assertSee('Template Dokumen yang Sudah Diisi')
@@ -262,7 +286,7 @@ class CreateDocumentTest extends TestCase
                 'catatan_revisi' => 'Dokumen awal.',
                 'imported_document' => UploadedFile::fake()->create('manual.pdf', 24, 'application/pdf'),
             ])
-            ->assertRedirect(route('documents.create.level', 'level-1'));
+            ->assertRedirect(route('documents.create.drafts'));
 
         $document = Document::query()->firstOrFail();
 
@@ -310,7 +334,7 @@ class CreateDocumentTest extends TestCase
                 'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
                 'submit_action' => 'draft',
             ])
-            ->assertRedirect(route('documents.create.level', 'level-2'));
+            ->assertRedirect(route('documents.create.drafts'));
 
         $document = Document::query()->firstOrFail();
 
@@ -319,6 +343,293 @@ class CreateDocumentTest extends TestCase
         $this->assertSame($user->id, $document->official_preparer_id);
         $this->assertSame('PS-SMR-002', $document->nomor_dokumen);
         $this->assertTrue($document->departments()->whereKey($department->id)->exists());
+    }
+
+    public function test_user_can_list_and_continue_own_draft(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $otherUser = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+
+        $draftStatus = StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        DocumentType::create(['nama_types' => 'Prosedur']);
+        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+
+        $draft = Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $draftStatus->id,
+            'm_document_types_id' => DocumentType::query()->where('nama_types', 'Prosedur')->value('id'),
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Draft Prosedur Saya',
+            'nomor_dokumen' => 'PS-SMR-010',
+            'nomor_revisi' => 0,
+            'created_at' => now(),
+        ]);
+        $draft->departments()->sync([$department->id]);
+        $draft->files()->create([
+            'type_file' => 'filled_template',
+            'path_file' => 'documents/1/template.pdf',
+            'uploaded_by' => $user->id,
+            'updated_at' => now(),
+            'original_file_name' => 'template.pdf',
+            'stored_file_name' => 'template.pdf',
+            'file_size' => 1024,
+        ]);
+
+        Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $draftStatus->id,
+            'm_document_types_id' => DocumentType::query()->where('nama_types', 'Prosedur')->value('id'),
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $otherUser->id,
+            'nama_dokumen' => 'Draft User Lain',
+            'nomor_dokumen' => 'PS-SMR-011',
+            'nomor_revisi' => 0,
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.create'))
+            ->assertOk()
+            ->assertSee('Draft Saya')
+            ->assertSee('1');
+
+        $this->actingAs($user)
+            ->get(route('documents.create.drafts'))
+            ->assertOk()
+            ->assertSee('Draft Prosedur Saya')
+            ->assertDontSee('Draft User Lain');
+
+        $this->actingAs($user)
+            ->get(route('documents.create.drafts.edit', $draft))
+            ->assertOk()
+            ->assertSee('Draft Prosedur Saya')
+            ->assertSee('010')
+            ->assertSee('template.pdf')
+            ->assertSee('data-existing-file-item', false)
+            ->assertSee('Tanpa perwakilan');
+    }
+
+    public function test_saving_existing_draft_updates_same_document(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+
+        $draftStatus = StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        $documentType = DocumentType::create(['nama_types' => 'Prosedur']);
+        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+
+        $draft = Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $draftStatus->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Nama Lama',
+            'nomor_dokumen' => 'PS-SMR-010',
+            'nomor_revisi' => 0,
+            'created_at' => now(),
+        ]);
+        $draft->departments()->sync([$department->id]);
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-2'), [
+                'draft_id' => $draft->id,
+                'nama_dokumen' => 'Nama Baru Draft',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'nomor_dokumen_suffix' => '012',
+                'filled_template' => UploadedFile::fake()->create('template-baru.pdf', 24, 'application/pdf'),
+                'submit_action' => 'draft',
+            ])
+            ->assertRedirect(route('documents.create.drafts'));
+
+        $this->assertSame(1, Document::query()->count());
+
+        $draft->refresh();
+        $this->assertSame('Nama Baru Draft', $draft->nama_dokumen);
+        $this->assertSame('PS-SMR-012', $draft->nomor_dokumen);
+        $this->assertSame(StatusDocument::DRAFT, $draft->status->nama_status);
+        $this->assertTrue($draft->files()->where('original_file_name', 'template-baru.pdf')->exists());
+    }
+
+    public function test_saving_existing_draft_can_remove_saved_file(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+
+        $draftStatus = StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        $documentType = DocumentType::create(['nama_types' => 'Prosedur']);
+        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+
+        $draft = Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $draftStatus->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Draft Dengan File',
+            'nomor_dokumen' => 'PS-SMR-015',
+            'nomor_revisi' => 0,
+            'created_at' => now(),
+        ]);
+        $draft->departments()->sync([$department->id]);
+
+        Storage::disk('local')->put('documents/'.$draft->id.'/template.pdf', 'dummy');
+        $file = $draft->files()->create([
+            'type_file' => 'filled_template',
+            'path_file' => 'documents/'.$draft->id.'/template.pdf',
+            'uploaded_by' => $user->id,
+            'updated_at' => now(),
+            'original_file_name' => 'template.pdf',
+            'stored_file_name' => 'template.pdf',
+            'file_size' => 1024,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-2'), [
+                'draft_id' => $draft->id,
+                'nama_dokumen' => 'Draft Dengan File',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'nomor_dokumen_suffix' => '015',
+                'remove_existing_files' => [$file->id],
+                'submit_action' => 'draft',
+            ])
+            ->assertRedirect(route('documents.create.drafts'));
+
+        $this->assertDatabaseMissing('t_document_files', [
+            'id' => $file->id,
+        ]);
+        Storage::disk('local')->assertMissing('documents/'.$draft->id.'/template.pdf');
+    }
+
+    public function test_existing_draft_can_be_submitted_without_reuploading_saved_main_file(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+
+        $draftStatus = StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::APPROVED,
+            'nama_status' => 'Disetujui',
+        ]);
+        $documentType = DocumentType::create(['nama_types' => 'Prosedur']);
+        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+
+        $draft = Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $draftStatus->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Draft Siap Submit',
+            'nomor_dokumen' => 'PS-SMR-014',
+            'nomor_revisi' => 0,
+            'created_at' => now(),
+        ]);
+        $draft->departments()->sync([$department->id]);
+        $draft->files()->create([
+            'type_file' => 'filled_template',
+            'path_file' => 'documents/'.$draft->id.'/template.pdf',
+            'uploaded_by' => $user->id,
+            'updated_at' => now(),
+            'original_file_name' => 'template.pdf',
+            'stored_file_name' => 'template.pdf',
+            'file_size' => 1024,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-2'), [
+                'draft_id' => $draft->id,
+                'nama_dokumen' => 'Draft Siap Submit',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'nomor_dokumen_suffix' => '014',
+                'submit_action' => 'submit',
+            ])
+            ->assertRedirect(route('documents.create'));
+
+        $this->assertSame(1, Document::query()->count());
+
+        $draft->refresh();
+        $this->assertSame(StatusDocument::PROPOSED, $draft->status->nama_status);
+        $this->assertNotNull($draft->submitted_at);
+        $this->assertTrue($draft->approvals()
+            ->where('user_id', $user->id)
+            ->where('stages', 'TTD Penyusun Resmi')
+            ->exists());
     }
 
     public function test_submitted_document_records_official_preparer_signature_without_stage_assignment(): void
@@ -512,7 +823,6 @@ class CreateDocumentTest extends TestCase
             ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
             ->assertOk()
             ->assertSee('Dokumen Level IV: Form Prosedur')
-            ->assertSee('Ajukan Revisi')
             ->assertSee('Dokumen Revisi')
             ->assertSee('1. Isi Dokumen Versi Revisi')
             ->assertSee('2. Lembar Revisi')
@@ -537,7 +847,7 @@ class CreateDocumentTest extends TestCase
                 'nomor_dokumen_suffix' => '999',
                 'submit_action' => 'draft',
             ])
-            ->assertRedirect(route('documents.create.level', ['level-4', 'revised_from' => $source->id]));
+            ->assertRedirect(route('documents.create.drafts'));
 
         $draftRevision = Document::query()
             ->where('nama_dokumen', 'Prosedur Revisi Master Updated')
@@ -776,7 +1086,7 @@ class CreateDocumentTest extends TestCase
                 'nomor_dokumen_suffix' => '999',
                 'submit_action' => 'draft',
             ])
-            ->assertRedirect(route('documents.create.level', ['level-4', 'revised_from' => $source->id]));
+            ->assertRedirect(route('documents.create.drafts'));
 
         $revision = Document::query()
             ->where('nama_dokumen', 'Instruksi Kerja Revisi Master Updated')
@@ -839,7 +1149,7 @@ class CreateDocumentTest extends TestCase
                 'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
                 'submit_action' => 'draft',
             ])
-            ->assertRedirect(route('documents.create.level', 'level-3'));
+            ->assertRedirect(route('documents.create.drafts'));
 
         $document = Document::query()
             ->where('nama_dokumen', 'Instruksi Kerja Pengujian')
@@ -854,6 +1164,66 @@ class CreateDocumentTest extends TestCase
         $this->assertTrue($document->departments()->whereKey($secondDepartment->id)->exists());
     }
 
+    public function test_level_three_draft_defaults_official_preparer_and_keeps_uploaded_file(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        DocumentType::create(['nama_types' => 'Instruksi Kerja']);
+        $procedureType = DocumentType::create(['nama_types' => 'Prosedur']);
+        $procedureLevel = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+
+        $procedure = Document::create([
+            'm_document_level_id' => $procedureLevel->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $procedureType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Prosedur Acuan',
+            'nomor_dokumen' => 'PS-SMR-001',
+            'nomor_revisi' => 0,
+            'approved_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-3'), [
+                'nama_dokumen' => 'Draft IK Dengan File',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'reference' => $procedure->id,
+                'department_ids' => [$department->id],
+                'nomor_dokumen_suffix' => '020',
+                'filled_template' => UploadedFile::fake()->create('template-draft.pdf', 24, 'application/pdf'),
+                'submit_action' => 'draft',
+            ])
+            ->assertRedirect(route('documents.create.drafts'));
+
+        $document = Document::query()
+            ->where('nama_dokumen', 'Draft IK Dengan File')
+            ->firstOrFail();
+
+        $this->assertSame($user->id, $document->official_preparer_id);
+        $this->assertTrue($document->files()
+            ->where('type_file', 'filled_template')
+            ->where('original_file_name', 'template-draft.pdf')
+            ->exists());
+    }
+
     public function test_required_fields_are_validated(): void
     {
         $user = User::factory()->create();
@@ -862,7 +1232,7 @@ class CreateDocumentTest extends TestCase
         $this->actingAs($user)
             ->from(route('documents.create.level', 'level-3'))
             ->post(route('documents.store', 'level-3'), [
-                'submit_action' => 'draft',
+                'submit_action' => 'submit',
             ])
             ->assertRedirect(route('documents.create.level', 'level-3'))
             ->assertSessionHasErrors([
@@ -875,6 +1245,35 @@ class CreateDocumentTest extends TestCase
                 'nomor_dokumen_suffix',
                 'filled_template',
             ]);
+    }
+
+    public function test_level_three_empty_draft_can_be_saved(): void
+    {
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        DocumentType::create(['nama_types' => 'Instruksi Kerja']);
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-3'), [
+                'submit_action' => 'draft',
+            ])
+            ->assertRedirect(route('documents.create.drafts'));
+
+        $document = Document::query()->firstOrFail();
+
+        $this->assertSame('Draft tanpa judul', $document->nama_dokumen);
+        $this->assertSame($businessProcess->id, $document->m_proses_bisnis_id);
+        $this->assertSame($businessFunction->id, $document->m_proses_fungsi_id);
+        $this->assertSame($user->id, $document->official_preparer_id);
+        $this->assertNull($document->nomor_dokumen);
     }
 
     public function test_level_three_reference_must_match_selected_process_and_function(): void
@@ -927,7 +1326,7 @@ class CreateDocumentTest extends TestCase
                 'official_preparer_id' => $user->id,
                 'nomor_dokumen_suffix' => '001',
                 'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
-                'submit_action' => 'draft',
+                'submit_action' => 'submit',
             ])
             ->assertRedirect(route('documents.create.level', 'level-3'))
             ->assertSessionHasErrors(['reference']);

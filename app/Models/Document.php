@@ -24,6 +24,7 @@ use Illuminate\Support\Collection;
     'nomor_dokumen',
     'nomor_revisi',
     'catatan_revisi',
+    'created_at',
     'tanggal_terbit',
     'submitted_at',
     'approved_at',

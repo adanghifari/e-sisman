@@ -76,6 +76,20 @@ return [
             'action' => 'view',
         ],
         [
+            'code' => 'documents.create.drafts',
+            'name' => 'Lihat Draft Dokumen Saya',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.create.drafts',
+            'action' => 'view',
+        ],
+        [
+            'code' => 'documents.create.drafts.edit',
+            'name' => 'Edit Draft Dokumen Saya',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.create.drafts.edit',
+            'action' => 'view',
+        ],
+        [
             'code' => 'documents.create.create',
             'name' => 'Submit Tambah Dokumen',
             'module' => 'Manajemen Dokumen',
