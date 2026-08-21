@@ -41,7 +41,12 @@ class DocumentObsoleteController extends Controller
                 'departments',
                 'revisedFrom',
             ])
-            ->where('m_status_document_id', $obsoleteStatusId);
+            ->where('m_status_document_id', $obsoleteStatusId)
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('request_type')
+                    ->orWhere('request_type', '!=', 'obsolete');
+            });
 
         if ($filters['search'] !== '') {
             $search = $filters['search'];
@@ -159,7 +164,8 @@ class DocumentObsoleteController extends Controller
         $familyIds = $family->pluck('id');
         $activeMaster = $family
             ->first(fn (Document $revision): bool => $revision->id !== $document->id
-                && $revision->m_status_document_id === $approvedStatus->id);
+                && $revision->m_status_document_id === $approvedStatus->id
+                && $revision->request_type !== 'obsolete');
 
         if ($activeMaster !== null) {
             return redirect()

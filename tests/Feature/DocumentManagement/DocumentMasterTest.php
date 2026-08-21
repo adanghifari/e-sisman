@@ -214,6 +214,31 @@ class DocumentMasterTest extends TestCase
             ->assertDontSee('PS-SMR-ACT');
     }
 
+    public function test_obsolete_page_does_not_show_obsolete_request_transaction(): void
+    {
+        $user = $this->userWithPermission('documents.obsolete.view');
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+
+        $masterDocument = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Dokumen Obsolete Asli',
+            'nomor_dokumen' => 'PS-SMR-OBS-REAL',
+        ]);
+        $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Transaksi Obsolete Approved',
+            'nomor_dokumen' => 'FMPS-SMR-OBS-REQ',
+            'nomor_revisi' => 1,
+            'revised_from' => $masterDocument->id,
+            'request_type' => 'obsolete',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.obsolete'))
+            ->assertOk()
+            ->assertSee('Dokumen Obsolete Asli')
+            ->assertDontSee('Transaksi Obsolete Approved')
+            ->assertDontSee('FMPS-SMR-OBS-REQ');
+    }
+
     public function test_obsolete_page_shows_add_button_for_user_with_create_permission(): void
     {
         $user = $this->userWithPermission('documents.obsolete.create');
@@ -678,6 +703,51 @@ class DocumentMasterTest extends TestCase
         $this->assertStringNotContainsString('00.05', $response->getContent());
         $this->assertStringNotContainsString(route('documents.master.show', $revisions->firstWhere('nomor_revisi', 4)), $response->getContent());
         $this->assertStringNotContainsString(route('documents.master.show', $revisions->firstWhere('nomor_revisi', 5)), $response->getContent());
+    }
+
+    public function test_approved_obsolete_request_transaction_does_not_block_restore_as_master(): void
+    {
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $owner = User::factory()->create();
+
+        $rootDocument = $this->createDocument($owner, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Restore Dengan Request',
+            'nomor_dokumen' => 'PS-SMR-REQ',
+            'nomor_revisi' => 0,
+            'approved_at' => now()->subDays(3),
+        ]);
+
+        $selectedRevision = $this->createDocument($owner, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Restore Dengan Request Revisi',
+            'nomor_dokumen' => 'FMPS-SMR-REQ',
+            'nomor_revisi' => 1,
+            'revised_from' => $rootDocument->id,
+            'approved_at' => now()->subDays(2),
+        ]);
+
+        $this->createDocument($owner, $approvedStatus, [
+            'nama_dokumen' => 'Request Obsolete Approved',
+            'nomor_dokumen' => 'FMPS-SMR-REQ',
+            'nomor_revisi' => 2,
+            'revised_from' => $rootDocument->id,
+            'request_type' => 'obsolete',
+            'approved_at' => now()->subDay(),
+        ]);
+
+        $documentControlAdmin = $this->userWithPermission('documents.obsolete.restore');
+
+        $this->actingAs($documentControlAdmin)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertDontSee('Request Obsolete Approved');
+
+        $this->actingAs($documentControlAdmin)
+            ->post(route('documents.obsolete.restore', $selectedRevision))
+            ->assertRedirect(route('documents.master.show', $selectedRevision))
+            ->assertSessionMissing('restore_warning');
+
+        $this->assertSame(StatusDocument::APPROVED, $selectedRevision->refresh()->status->nama_status);
     }
 
     public function test_obsolete_revision_restore_is_blocked_when_same_family_still_has_active_master(): void

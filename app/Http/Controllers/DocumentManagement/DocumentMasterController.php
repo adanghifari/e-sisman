@@ -270,7 +270,8 @@ class DocumentMasterController extends Controller
         $familyIds = $family->pluck('id');
         $activeMaster = $family
             ->first(fn (Document $revision): bool => $revision->id !== $document->id
-                && $revision->m_status_document_id === $approvedStatus->id);
+                && $revision->m_status_document_id === $approvedStatus->id
+                && $revision->request_type !== 'obsolete');
 
         if ($activeMaster !== null) {
             return redirect()
