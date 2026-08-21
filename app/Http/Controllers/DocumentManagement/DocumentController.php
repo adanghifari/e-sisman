@@ -53,8 +53,12 @@ class DocumentController extends Controller
         ]);
     }
 
-    public function editDraft(Request $request, string $level,  $document): View
+    public function editDraft(Request $request, string $level, mixed $document): View
     {
+        $document = $document instanceof Document
+            ? $document
+            : Document::query()->findOrFail($document);
+
         $this->authorizeDraftAccess($request, $document);
         $document->loadMissing(['status', 'documentLevel', 'departments', 'files', 'officialPreparer', 'revisedFrom.status', 'revisedFrom.documentLevel', 'revisedFrom.businessProcess', 'revisedFrom.businessFunction', 'revisedFrom.departments', 'revisedFrom.referenceDocument']);
 
@@ -391,17 +395,29 @@ class DocumentController extends Controller
         }
 
         return Document::query()
-            ->with(['documentLevel', 'revisedFrom.documentLevel'])
+            ->with(['documentLevel'])
             ->where('m_status_document_id', $approvedStatusId)
             ->where(function ($query) use ($procedureLevelId): void {
                 $query
                     ->where('m_document_level_id', $procedureLevelId)
-                    ->orWhereHas('revisedFrom', fn ($query) => $query->where('m_document_level_id', $procedureLevelId));
+                    ->orWhereNotNull('revised_from');
             })
             ->when($businessProcessId, fn ($query) => $query->where('m_proses_bisnis_id', $businessProcessId))
             ->when($businessFunctionId, fn ($query) => $query->where('m_proses_fungsi_id', $businessFunctionId))
             ->get()
-            ->groupBy(fn (Document $document): int => $document->revisionRootId())
+            ->map(function (Document $document): Document {
+                $rootDocument = $this->revisionRootDocument($document);
+
+                $document->setRelation('procedureReferenceRoot', $rootDocument);
+
+                return $document;
+            })
+            ->filter(fn (Document $document): bool => $document
+                ->getRelation('procedureReferenceRoot')
+                ?->m_document_level_id === $procedureLevelId)
+            ->groupBy(fn (Document $document): int => $document
+                ->getRelation('procedureReferenceRoot')
+                ->id)
             ->map(fn (Collection $family): Document => $family
                 ->sortByDesc(fn (Document $document): string => sprintf(
                     '%010d-%010d-%010d',
@@ -411,9 +427,8 @@ class DocumentController extends Controller
                 ))
                 ->first())
             ->map(function (Document $document): Document {
-                $displayNumber = $document->documentLevel?->kode === 'level-4'
-                    ? ($document->revisedFrom?->nomor_dokumen ?: $document->nomor_dokumen)
-                    : $document->nomor_dokumen;
+                $rootDocument = $document->getRelation('procedureReferenceRoot');
+                $displayNumber = $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen;
 
                 $document->setAttribute('procedure_reference_number', $displayNumber);
 
@@ -421,6 +436,25 @@ class DocumentController extends Controller
             })
             ->sortBy('procedure_reference_number')
             ->values();
+    }
+
+    private function revisionRootDocument(Document $document): Document
+    {
+        $root = $document;
+
+        while ($root->revised_from !== null) {
+            $parent = Document::query()
+                ->select(['id', 'm_document_level_id', 'revised_from', 'nomor_dokumen'])
+                ->find($root->revised_from);
+
+            if ($parent === null) {
+                break;
+            }
+
+            $root = $parent;
+        }
+
+        return $root;
     }
 
     protected function defaultDocumentContext(): array
