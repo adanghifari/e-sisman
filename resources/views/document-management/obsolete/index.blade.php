@@ -42,11 +42,12 @@
 
         <x-ui.panel
             title="Daftar Dokumen Obsolete"
-            description="Menampilkan {{ $documents->count() }} dokumen dari total {{ $totalDocuments }} dokumen obsolete."
+            description="Menampilkan {{ $documents->count() }} grup dari total {{ $totalDocuments }} dokumen obsolete."
             :padded="false"
         >
             <x-ui.scrollable-table max-height="620px" min-width="100%" :horizontal="false" class="table-fixed text-base">
                 <colgroup>
+                    <col class="w-[4%]">
                     <col class="w-[30%]">
                     <col class="w-[14%]">
                     <col class="w-[8%]">
@@ -58,6 +59,7 @@
 
                 <thead class="bg-slate-50 text-xs uppercase text-slate-500">
                     <tr>
+                        <th class="sticky top-0 z-10 bg-slate-50 px-2 py-3 font-semibold"></th>
                         <th class="sticky top-0 z-10 bg-slate-50 px-3 py-3 font-semibold">Nama Dokumen</th>
                         <th class="sticky top-0 z-10 bg-slate-50 px-3 py-3 font-semibold">Nomor Dokumen</th>
                         <th class="sticky top-0 z-10 bg-slate-50 px-3 py-3 font-semibold">Revisi</th>
@@ -68,17 +70,32 @@
                     </tr>
                 </thead>
 
-                <tbody class="divide-y divide-slate-100">
-                    @forelse ($documents as $document)
-                        @php
-                            $publishedAt = $document->tanggal_terbit ?? $document->approved_at;
-                            $processLabel = collect([
-                                $document->businessProcess?->nama_proses_bisnis,
-                                $document->businessFunction?->nama_proses_fungsi,
-                            ])->filter()->implode(' / ');
-                        @endphp
+                @forelse ($documents as $document)
+                    @php
+                        $childDocuments = $document->getRelation('obsoleteChildDocuments');
+                        $hasChildDocuments = $childDocuments->isNotEmpty();
+                        $rowKey = 'obsolete-document-'.$document->id;
+                        $publishedAt = $document->tanggal_terbit ?? $document->approved_at;
+                        $processLabel = collect([
+                            $document->businessProcess?->nama_proses_bisnis,
+                            $document->businessFunction?->nama_proses_fungsi,
+                        ])->filter()->implode(' / ');
+                    @endphp
 
+                    <tbody class="is-row-group border-b border-slate-100">
                         <tr class="hover:bg-slate-50/70">
+                            <td class="px-1 py-4">
+                                @if ($hasChildDocuments)
+                                    <x-ui.icon-button
+                                        icon="chevron-right"
+                                        label="Tampilkan riwayat versi obsolete"
+                                        variant="ghost"
+                                        size="sm"
+                                        data-table-row-toggle="{{ $rowKey }}"
+                                        aria-expanded="false"
+                                    />
+                                @endif
+                            </td>
                             <td class="px-3 py-4">
                                 <p class="font-semibold uppercase tracking-wide text-slate-800">{{ $document->nama_dokumen }}</p>
                                 <p class="mt-1 text-xs font-medium text-slate-500">
@@ -96,14 +113,70 @@
                                 <x-ui.icon-button :href="route('documents.obsolete.show', $document)" icon="eye" label="Lihat detail" size="sm" />
                             </td>
                         </tr>
-                    @empty
+
+                        @if ($hasChildDocuments)
+                            <tr class="is-child-row hidden bg-slate-50/40" data-table-row-target="{{ $rowKey }}">
+                                <td colspan="8" class="px-0 py-0">
+                                    <div class="relative py-3 pl-14 pr-5">
+                                        <span class="absolute left-6 top-0 h-1/2 border-l border-slate-300"></span>
+                                        <span class="absolute left-6 top-1/2 w-8 border-t border-slate-300"></span>
+
+                                        <div class="overflow-hidden rounded-xl border border-slate-200 bg-white shadow-sm shadow-slate-100/70">
+                                            <table class="w-full table-fixed text-sm">
+                                                <colgroup>
+                                                    <col class="w-[26%]">
+                                                    <col class="w-[16%]">
+                                                    <col class="w-[11%]">
+                                                    <col class="w-[18%]">
+                                                    <col class="w-[17%]">
+                                                    <col class="w-[12%]">
+                                                </colgroup>
+                                                <thead class="bg-slate-50 text-xs uppercase text-slate-500">
+                                                    <tr>
+                                                        <th class="px-5 py-3 text-left font-semibold">Nama Dokumen</th>
+                                                        <th class="px-5 py-3 text-left font-semibold">Nomor Dokumen</th>
+                                                        <th class="px-5 py-3 text-left font-semibold">Revisi</th>
+                                                        <th class="px-5 py-3 text-left font-semibold">Tgl Terbit</th>
+                                                        <th class="px-5 py-3 text-left font-semibold">Stamp</th>
+                                                        <th class="px-5 py-3 text-left font-semibold">Aksi</th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody class="divide-y divide-slate-100">
+                                                    @foreach ($childDocuments as $child)
+                                                        @php
+                                                            $childPublishedAt = $child->tanggal_terbit ?? $child->approved_at;
+                                                        @endphp
+
+                                                        <tr>
+                                                            <td class="px-5 py-4 font-semibold uppercase tracking-wide text-slate-700">{{ $child->nama_dokumen }}</td>
+                                                            <td class="px-5 py-4 font-semibold text-slate-700">{{ $child->obsolete_display_number ?: $child->nomor_dokumen ?: '-' }}</td>
+                                                            <td class="px-5 py-4 text-slate-600">{{ $child->formatted_revision }}</td>
+                                                            <td class="px-5 py-4 text-slate-600">{{ $childPublishedAt?->format('d/m/Y') ?: '-' }}</td>
+                                                            <td class="px-5 py-4">
+                                                                <x-ui.status-badge label="Obsolete" tone="red" />
+                                                            </td>
+                                                            <td class="px-5 py-4">
+                                                                <x-ui.icon-button :href="route('documents.obsolete.show', $child)" icon="eye" label="Lihat detail obsolete" size="sm" />
+                                                            </td>
+                                                        </tr>
+                                                    @endforeach
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                </td>
+                            </tr>
+                        @endif
+                    </tbody>
+                @empty
+                    <tbody>
                         <tr>
-                            <td colspan="7" class="px-5 py-10 text-center text-sm text-slate-500">
+                            <td colspan="8" class="px-5 py-10 text-center text-sm text-slate-500">
                                 Tidak ada dokumen obsolete yang cocok dengan filter.
                             </td>
                         </tr>
-                    @endforelse
-                </tbody>
+                    </tbody>
+                @endforelse
             </x-ui.scrollable-table>
         </x-ui.panel>
     </div>

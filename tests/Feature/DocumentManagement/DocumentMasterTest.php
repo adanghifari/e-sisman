@@ -239,6 +239,57 @@ class DocumentMasterTest extends TestCase
             ->assertDontSee('FMPS-SMR-OBS-REQ');
     }
 
+    public function test_obsolete_page_groups_versions_under_latest_obsolete_revision(): void
+    {
+        $user = $this->userWithPermission('documents.obsolete.view');
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+
+        $rootDocument = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Obsolete Group',
+            'nomor_dokumen' => 'PS-SMR-OBS-GRP',
+            'nomor_revisi' => 0,
+            'approved_at' => now()->subDays(3),
+        ]);
+        $firstRevision = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Obsolete Group Revisi 1',
+            'nomor_dokumen' => 'FMPS-SMR-OBS-GRP',
+            'nomor_revisi' => 1,
+            'revised_from' => $rootDocument->id,
+            'approved_at' => now()->subDays(2),
+        ]);
+        $latestRevision = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Obsolete Group Revisi 2',
+            'nomor_dokumen' => 'FMPS-SMR-OBS-GRP',
+            'nomor_revisi' => 2,
+            'revised_from' => $rootDocument->id,
+            'approved_at' => now()->subDay(),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->get(route('documents.obsolete'))
+            ->assertOk()
+            ->assertSee('Tampilkan riwayat versi obsolete')
+            ->assertSee('Prosedur Obsolete Group Revisi 2')
+            ->assertSee('00.02')
+            ->assertSee('Prosedur Obsolete Group Revisi 1')
+            ->assertSee('00.01')
+            ->assertSee('00.00')
+            ->assertSee(route('documents.obsolete.show', $latestRevision), false)
+            ->assertSee(route('documents.obsolete.show', $firstRevision), false)
+            ->assertSee(route('documents.obsolete.show', $rootDocument), false);
+
+        $content = $response->getContent();
+
+        $this->assertLessThan(
+            strpos($content, route('documents.obsolete.show', $firstRevision)),
+            strpos($content, route('documents.obsolete.show', $latestRevision)),
+        );
+        $this->assertLessThan(
+            strpos($content, route('documents.obsolete.show', $rootDocument)),
+            strpos($content, route('documents.obsolete.show', $firstRevision)),
+        );
+    }
+
     public function test_obsolete_page_shows_add_button_for_user_with_create_permission(): void
     {
         $user = $this->userWithPermission('documents.obsolete.create');

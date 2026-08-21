@@ -78,14 +78,37 @@ class DocumentObsoleteController extends Controller
             default => $query->orderByDesc('approved_at')->orderByDesc('tanggal_terbit')->orderByDesc('id'),
         };
 
-        $documents = $query->get();
-        $documents->each(function (Document $document): void {
+        $obsoleteDocuments = $query->get();
+        $obsoleteDocuments->each(function (Document $document): void {
             $rootDocument = $document->revised_from !== null
                 ? Document::query()->whereKey($document->revisionRootId())->first()
                 : null;
 
             $document->setAttribute('obsolete_display_number', $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen);
         });
+        $documents = $obsoleteDocuments
+            ->groupBy(fn (Document $document): int => $document->revisionRootId())
+            ->map(function ($family): Document {
+                $sortedFamily = $family
+                    ->sortByDesc(fn (Document $document): string => sprintf(
+                        '%010d-%010d-%010d',
+                        $document->nomor_revisi,
+                        $document->approved_at?->timestamp ?? 0,
+                        $document->id,
+                    ))
+                    ->values();
+                $latestDocument = $sortedFamily->first();
+
+                $latestDocument->setRelation(
+                    'obsoleteChildDocuments',
+                    $sortedFamily
+                        ->where('id', '!=', $latestDocument->id)
+                        ->values(),
+                );
+
+                return $latestDocument;
+            })
+            ->values();
 
         $typeOptions = ['' => 'Semua Level'] + DocumentLevel::query()
             ->orderBy('id')
@@ -99,7 +122,7 @@ class DocumentObsoleteController extends Controller
 
         return view('document-management.obsolete.index', [
             'documents' => $documents,
-            'totalDocuments' => $documents->count(),
+            'totalDocuments' => $obsoleteDocuments->count(),
             'filters' => $filters,
             'typeOptions' => $typeOptions,
             'processOptions' => $processOptions,
