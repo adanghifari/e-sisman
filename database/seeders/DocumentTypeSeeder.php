@@ -12,7 +12,7 @@ class DocumentTypeSeeder extends Seeder
      */
     public function run(): void
     {
-        foreach (['Prosedur', 'IK', 'Form', 'Manual', 'Pedoman'] as $nama_types) {
+        foreach (['Prosedur', 'IK', 'Form', 'Manual', 'Pedoman', 'Revisi'] as $nama_types) {
             DB::table('m_document_types')->updateOrInsert(
                 ['nama_types' => $nama_types],
                 ['nama_types' => $nama_types],

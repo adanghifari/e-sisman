@@ -47,7 +47,7 @@ return new class extends Migration
             $table->foreignId('t_document_id')->constrained('t_document')->restrictOnDelete();
             $table->foreignId('m_approval_status_id')->constrained('m_approval_status')->restrictOnDelete();
             $table->foreignId('user_id')->constrained('users')->restrictOnDelete();
-            $table->foreignId('role_id')->constrained('roles')->restrictOnDelete();
+            $table->foreignId('role_id')->nullable()->constrained('roles')->restrictOnDelete();
             $table->foreignId('assigned_by')->constrained('users')->restrictOnDelete();
             $table->timestamp('assigned_at');
             $table->timestamp('responded_at')->nullable();

@@ -526,7 +526,7 @@
                 display: inline-flex;
                 align-items: center;
                 justify-content: center;
-                height: 34px;
+                height: 10px;
                 margin-top: 2px;
                 overflow: visible;
             }
@@ -534,9 +534,9 @@
             .esisman-lockup img {
                 display: block;
                 width: auto;
-                height: 98px;
+                height: 20px;
                 object-fit: contain;
-                transform: translateY(4px);
+                transform: translateY(0);
             }
 
             .slide-dots {

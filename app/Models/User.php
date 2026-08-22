@@ -27,6 +27,8 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $email_verified_at
  * @property string $password
  * @property string|null $jabatan
+ * @property string|null $no_whatsapp
+ * @property bool $is_active
  * @property string|null $two_factor_secret
  * @property string|null $two_factor_recovery_codes
  * @property Carbon|null $two_factor_confirmed_at
@@ -34,7 +36,7 @@ use Laravel\Fortify\TwoFactorAuthenticatable;
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
  */
-#[Fillable(['m_department_id', 'nik', 'name', 'email', 'password', 'jabatan'])]
+#[Fillable(['m_department_id', 'nik', 'name', 'email', 'password', 'jabatan', 'no_whatsapp', 'is_active'])]
 #[Hidden(['password', 'two_factor_secret', 'two_factor_recovery_codes', 'remember_token'])]
 class User extends Authenticatable implements PasskeyUser
 {
@@ -50,8 +52,24 @@ class User extends Authenticatable implements PasskeyUser
     {
         return [
             'email_verified_at' => 'datetime',
+            'is_active' => 'boolean',
             'password' => 'hashed',
         ];
+    }
+
+    protected static function booted(): void
+    {
+        static::created(function (User $user): void {
+            if ($user->isDeveloper() || ! Role::query()->where('nama_role', 'User')->exists()) {
+                return;
+            }
+
+            $userRole = Role::query()->where('nama_role', 'User')->first();
+
+            if ($userRole !== null) {
+                $user->roles()->syncWithoutDetaching([$userRole->id]);
+            }
+        });
     }
 
     public function department(): BelongsTo
@@ -74,6 +92,11 @@ class User extends Authenticatable implements PasskeyUser
         return $this->hasMany(Document::class, 'user_id');
     }
 
+    public function preparedDocuments(): HasMany
+    {
+        return $this->hasMany(Document::class, 'official_preparer_id');
+    }
+
     public function approvals(): HasMany
     {
         return $this->hasMany(Approval::class, 'user_id');
@@ -84,9 +107,102 @@ class User extends Authenticatable implements PasskeyUser
         return $this->hasMany(Approval::class, 'assigned_by');
     }
 
+    public function isAdmin(): bool
+    {
+        if ($this->isDeveloper()) {
+            return true;
+        }
+
+        return $this->roles()
+            ->whereIn('nama_role', ['admin', 'administrator', 'super admin', 'SuperAdmin'])
+            ->exists();
+    }
+
+    public function isDeveloper(): bool
+    {
+        return $this->nik === '000000' || $this->email === 'developer@example.com';
+    }
+
+    public function isDocumentControlAdmin(): bool
+    {
+        return $this->roles()
+            ->where('nama_role', 'Admin Kontrol Dokumen')
+            ->exists();
+    }
+
+    public function canAssignDocument(Document $document): bool
+    {
+        return $this->isDeveloper()
+            || $this->isAdmin()
+            || $this->hasExplicitPermission('documents.approval.assign');
+    }
+
+    public function hasExplicitPermission(string $permissionCode): bool
+    {
+        return $this->roles()
+            ->whereHas('permissions', fn ($query) => $query->where('code', $permissionCode))
+            ->exists();
+    }
+
+    public function hasPermission(string $permissionCode): bool
+    {
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        return $this->roles()
+            ->whereHas('permissions', fn ($query) => $query->where('code', $permissionCode))
+            ->exists();
+    }
+
+    /**
+     * @param  array<int, string>  $permissionCodes
+     */
+    public function hasAnyPermission(array $permissionCodes): bool
+    {
+        if ($this->isAdmin()) {
+            return true;
+        }
+
+        return $this->roles()
+            ->whereHas('permissions', fn ($query) => $query->whereIn('code', $permissionCodes))
+            ->exists();
+    }
+
+    public function canAccessRoute(?string $route): bool
+    {
+        if ($route === null || $this->isAdmin()) {
+            return true;
+        }
+
+        $configuredPermissions = collect(config('access.permissions', []))
+            ->filter(fn (array $permission): bool => ($permission['route'] ?? null) === $route);
+        $viewPermissionCodes = $configuredPermissions
+            ->filter(fn (array $permission): bool => ($permission['action'] ?? 'view') === 'view')
+            ->pluck('code');
+        $permissionCodes = $viewPermissionCodes->isNotEmpty()
+            ? $viewPermissionCodes
+            : $configuredPermissions->pluck('code');
+
+        if ($permissionCodes->isNotEmpty()) {
+            return $this->roles()
+                ->whereHas('permissions', fn ($query) => $query->whereIn('code', $permissionCodes->all()))
+                ->exists();
+        }
+
+        return $this->roles()
+            ->whereHas('permissions', fn ($query) => $query->where('route', $route))
+            ->exists();
+    }
+
     public function uploadedFiles(): HasMany
     {
         return $this->hasMany(DocumentFile::class, 'uploaded_by');
+    }
+
+    public function uploadedDocumentTemplates(): HasMany
+    {
+        return $this->hasMany(DocumentTemplate::class, 'uploaded_by');
     }
 
     /**

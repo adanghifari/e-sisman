@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'type_file',
     'path_file',
     'uploaded_by',
+    'updated_at',
     'original_file_name',
     'stored_file_name',
     'source_file_id',
