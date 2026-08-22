@@ -1184,17 +1184,79 @@ class DocumentInboxTest extends TestCase
         ]);
 
         $this->actingAs($documentControlAdmin)
+            ->from(route('documents.approval.show', $document))
             ->post(route('documents.approval.assign', $document), [
                 'stage_approvers' => [
                     $stage->id => [$newApprover->id],
                 ],
             ])
-            ->assertForbidden();
+            ->assertRedirect(route('documents.approval.show', $document))
+            ->assertSessionHasErrors(['stage_approvers']);
 
         $this->assertFalse(Approval::query()
             ->where('t_document_id', $document->id)
             ->where('user_id', $newApprover->id)
             ->exists());
+    }
+
+    public function test_resaving_same_assignment_does_not_advance_completed_revision_again(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create();
+        $approver = User::factory()->create();
+        $approvedDocumentStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::OBSOLETE]);
+        $source = $this->createDocument($submitter, [
+            'm_status_document_id' => $approvedDocumentStatus->id,
+            'nama_dokumen' => 'Master Revisi Save Ulang',
+            'nomor_dokumen' => 'PS-SMR-SAVE',
+            'nomor_revisi' => 0,
+            'approved_at' => now()->subDay(),
+        ]);
+        $proposedDocumentStatus = StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail();
+        $revision = Document::create([
+            'm_document_level_id' => $source->m_document_level_id,
+            'm_status_document_id' => $proposedDocumentStatus->id,
+            'm_document_types_id' => $source->m_document_types_id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $source->official_preparer_id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Revision Save Ulang',
+            'nomor_dokumen' => 'PS-SMR-SAVE',
+            'nomor_lembar_revisi' => 'FMPS-SMR-SAVE-01',
+            'nomor_revisi' => 1,
+        ]);
+        $revision->departments()->sync($source->departments()->pluck('departments.id')->all());
+        $documentControlAdmin = $this->documentControlAdmin($source->departments()->firstOrFail());
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $revision->m_document_level_id,
+            'nama_flow' => 'Flow Revision Save Ulang',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+        $this->createApproval($revision, $approver, ApprovalStatus::APPROVED, [
+            'stages' => $stage->display_label,
+            'responded_at' => now(),
+        ]);
+
+        $this->actingAs($documentControlAdmin)
+            ->post(route('documents.approval.assign', $revision), [
+                'stage_approvers' => [
+                    $stage->id => [$approver->id],
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $revision))
+            ->assertSessionHas('status', 'Tidak ada perubahan approver.');
+
+        $this->assertSame(StatusDocument::PROPOSED, $revision->refresh()->status->nama_status);
+        $this->assertSame(StatusDocument::APPROVED, $source->refresh()->status->nama_status);
     }
 
     public function test_next_stage_is_activated_after_current_stage_is_fully_approved(): void

@@ -153,7 +153,15 @@ class DocumentApprovalController extends Controller
 
     public function assign(Request $request, Document $document): RedirectResponse
     {
-        abort_unless($this->canManageApproverAssignment($request, $document), 403);
+        $document->refresh();
+
+        if ($this->isDocumentAssignmentLocked($document)) {
+            return $this->assignmentErrorRedirect($document, [
+                'stage_approvers' => 'Transaksi approval sudah selesai sehingga approver tidak bisa diubah.',
+            ]);
+        }
+
+        abort_unless($request->user()->isDeveloper() || $request->user()->canAssignDocument($document), 403);
 
         $stages = $this->approvalFlowStages($document);
 
@@ -189,6 +197,12 @@ class DocumentApprovalController extends Controller
 
         if ($approvedStageError !== null) {
             return $this->assignmentErrorRedirect($document, $approvedStageError);
+        }
+
+        if (! $this->assignmentDiffers($request, $document, $stages)) {
+            return redirect()
+                ->route('documents.approval.show', $document)
+                ->with('status', 'Tidak ada perubahan approver.');
         }
 
         foreach ($stages as $stage) {
@@ -501,6 +515,28 @@ class DocumentApprovalController extends Controller
         }
 
         return null;
+    }
+
+    private function assignmentDiffers(Request $request, Document $document, Collection $stages): bool
+    {
+        foreach ($stages as $stage) {
+            $stageLabel = $stage->display_label ?: 'Approval';
+            $currentUserIds = Approval::query()
+                ->where('t_document_id', $document->id)
+                ->where('stages', $stageLabel)
+                ->pluck('user_id')
+                ->sort()
+                ->values();
+            $requestedUserIds = $this->stageApproverIds($request, $document, $stage)
+                ->sort()
+                ->values();
+
+            if ($currentUserIds->all() !== $requestedUserIds->all()) {
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private function advanceApprovalFlow(Document $document): void
