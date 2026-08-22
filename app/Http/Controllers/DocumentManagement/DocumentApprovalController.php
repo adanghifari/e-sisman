@@ -276,12 +276,12 @@ class DocumentApprovalController extends Controller
     public function file(Request $request, Document $document, DocumentFile $file, RecordDocumentDownload $recordDocumentDownload): BinaryFileResponse
     {
         $this->authorizeDocumentAccess($request, $document);
-        abort_unless($file->t_document_id === $document->id, 404);
+        $downloadDocument = $this->authorizedFileDocument($document, $file);
 
         $path = Storage::disk('local')->path($file->path_file);
         abort_unless(is_file($path), 404);
 
-        $recordDocumentDownload->handle($request, $document, $file);
+        $recordDocumentDownload->handle($request, $downloadDocument, $file);
 
         return response()->file($path, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
@@ -291,7 +291,7 @@ class DocumentApprovalController extends Controller
     public function preview(Request $request, Document $document, DocumentFile $file): BinaryFileResponse
     {
         $this->authorizeDocumentAccess($request, $document);
-        abort_unless($file->t_document_id === $document->id, 404);
+        $this->authorizedFileDocument($document, $file);
         abort_unless(Str::of($file->original_file_name)->lower()->endsWith('.pdf'), 415);
 
         $sourcePath = Storage::disk('local')->path($file->path_file);
@@ -300,6 +300,19 @@ class DocumentApprovalController extends Controller
         return response()->file($sourcePath, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
         ]);
+    }
+
+    private function authorizedFileDocument(Document $document, DocumentFile $file): Document
+    {
+        if ($file->t_document_id === $document->id) {
+            return $document;
+        }
+
+        if ($document->request_type === 'obsolete' && $file->t_document_id === $document->revised_from) {
+            return $document->revisedFrom ?: Document::query()->findOrFail($document->revised_from);
+        }
+
+        abort(404);
     }
 
     private function authorizeDocumentAccess(Request $request, Document $document): void

@@ -1574,6 +1574,7 @@ class DocumentInboxTest extends TestCase
     public function test_approved_obsolete_request_obsoletes_source_master_document(): void
     {
         $this->ensureApprovalStatuses();
+        Storage::fake('local');
 
         $submitter = User::factory()->create(['name' => 'Pengaju Awal Master']);
         $obsoleteRequester = User::factory()->create(['name' => 'Pengaju Obsolete Dokumen']);
@@ -1599,6 +1600,8 @@ class DocumentInboxTest extends TestCase
             'stored_file_name' => 'master-obsolete.pdf',
             'file_size' => 24000,
         ]);
+        Storage::disk('local')->put("documents/{$source->id}/master-obsolete.pdf", '%PDF-1.4 obsolete source');
+        $sourceFile = $source->files()->firstOrFail();
 
         $request = Document::create([
             'm_document_level_id' => $source->m_document_level_id,
@@ -1653,7 +1656,9 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Dokumen sudah tidak digunakan lagi.')
             ->assertSee('Dokumen yang Akan Diobsoletekan')
             ->assertSee('master-obsolete.pdf')
-            ->assertSee(route('documents.master.files.show', [$source, $source->files()->firstOrFail()]), false)
+            ->assertSee(route('documents.approval.files.show', [$request, $sourceFile]), false)
+            ->assertSee(route('documents.approval.files.preview', [$request, $sourceFile]), false)
+            ->assertDontSee(route('documents.master.files.show', [$source, $sourceFile]), false)
             ->assertDontSee('Detail Dokumen Level IV')
             ->assertDontSee('Belum ada file isi dokumen.');
 
@@ -1669,7 +1674,12 @@ class DocumentInboxTest extends TestCase
             ->assertOk()
             ->assertSee('Riwayat Dokumen')
             ->assertSee('Dokumen diobsoletekan lewat pengajuan FMPS-SMR-OBSOLETE')
-            ->assertSee('Obsolete');
+            ->assertSee('Obsolete')
+            ->assertSee(route('documents.approval.files.preview', [$request, $sourceFile]), false);
+
+        $this->actingAs($approver)
+            ->get(route('documents.approval.files.preview', [$request, $sourceFile]))
+            ->assertOk();
 
         $this->actingAs($approver)
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
