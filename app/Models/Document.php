@@ -22,6 +22,7 @@ use Illuminate\Support\Collection;
     'request_type',
     'nama_dokumen',
     'nomor_dokumen',
+    'nomor_lembar_revisi',
     'nomor_revisi',
     'catatan_revisi',
     'created_at',

@@ -306,10 +306,10 @@
                             <input type="text" value="{{ $masterDisplayNumber }}" readonly class="{{ $readonlyInput }}">
                         </label>
 
-                        @if ($document->revised_from)
+                        @if ($document->nomor_lembar_revisi)
                             <label class="block">
-                                <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen Revisi</span>
-                                <input type="text" value="{{ $document->nomor_dokumen ?: '-' }}" readonly class="{{ $readonlyInput }}">
+                                <span class="mb-2 block text-base font-medium text-slate-500">Nomor Lembar Revisi</span>
+                                <input type="text" value="{{ $document->nomor_lembar_revisi }}" readonly class="{{ $readonlyInput }}">
                             </label>
                         @endif
 

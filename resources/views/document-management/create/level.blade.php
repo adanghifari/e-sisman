@@ -133,13 +133,8 @@
         $documentNumberPrefix = $revisionSource
             ? ($levelKey === 'level-4' ? $levelFourPrefix : ($revisionPrefixes[$levelKey] ?? 'FM'.$documentPrefixes[$levelKey]))
             : $documentPrefixes[$levelKey];
-        $revisionRootDocumentId = $revisionSource?->revised_from ?: $revisionSource?->id;
-        $latestRevisionNumber = $revisionRootDocumentId
-            ? (int) \App\Models\Document::query()
-                ->where(fn ($query) => $query
-                    ->whereKey($revisionRootDocumentId)
-                    ->orWhere('revised_from', $revisionRootDocumentId))
-                ->max('nomor_revisi')
+        $latestRevisionNumber = $revisionSource
+            ? (int) $revisionSource->revisionFamily()->max('nomor_revisi')
             : null;
         $documentNumberSuffixDefault = $draft?->nomor_dokumen
             ? \Illuminate\Support\Str::afterLast($draft->nomor_dokumen, '-')
@@ -586,6 +581,7 @@
 
                         <div class="space-y-5 px-6 py-6">
                             <x-documents.document-number-input
+                                :label="$revisionSource ? 'Nomor Lembar Revisi' : 'Nomor Dokumen'"
                                 :prefix="$documentNumberPrefix"
                                 :segments="$documentNumberSegments"
                                 :default-value="$documentNumberSuffixDefault"

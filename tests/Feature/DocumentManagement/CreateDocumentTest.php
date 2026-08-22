@@ -997,7 +997,8 @@ class CreateDocumentTest extends TestCase
             ->firstOrFail();
 
         $this->assertSame($source->id, $revision->revised_from);
-        $this->assertSame('FMPS-SMR-010', $revision->nomor_dokumen);
+        $this->assertSame('PS-SMR-010', $revision->nomor_dokumen);
+        $this->assertSame('FMPS-SMR-010-01', $revision->nomor_lembar_revisi);
         $this->assertSame('level-4', $revision->documentLevel->kode);
         $this->assertSame('Form', $revision->documentType->nama_types);
         $this->assertSame(1, $revision->nomor_revisi);
@@ -1030,7 +1031,7 @@ class CreateDocumentTest extends TestCase
             ->assertOk()
             ->assertSee('Prosedur Revisi Master Updated')
             ->assertSee('Pengajuan Revisi')
-            ->assertSee('FMPS-SMR-010')
+            ->assertSee('FMPS-SMR-010-01')
             ->assertSee(StatusDocument::PROPOSED);
 
         $documentControlRole = Role::query()->firstOrCreate(['nama_role' => 'Admin Kontrol Dokumen']);
@@ -1085,6 +1086,7 @@ class CreateDocumentTest extends TestCase
             ->assertDontSee('Prosedur Revisi Master Updated');
 
         $this->actingAs($submitter)
+            ->from(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
             ->post(route('documents.store', 'level-4'), [
                 'revised_from' => $source->id,
                 'nama_dokumen' => 'Prosedur Revisi Master Kedua',
@@ -1097,15 +1099,12 @@ class CreateDocumentTest extends TestCase
                 'revision_form' => UploadedFile::fake()->create('lembar-revisi-2.pdf', 24, 'application/pdf'),
                 'submit_action' => 'submit',
             ])
-            ->assertRedirect(route('documents.create'));
+            ->assertRedirect(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
+            ->assertSessionHasErrors(['revised_from']);
 
-        $secondRevision = Document::query()
+        $this->assertFalse(Document::query()
             ->where('nama_dokumen', 'Prosedur Revisi Master Kedua')
-            ->firstOrFail();
-
-        $this->assertSame($source->id, $secondRevision->revised_from);
-        $this->assertSame('FMPS-SMR-010', $secondRevision->nomor_dokumen);
-        $this->assertSame(2, $secondRevision->nomor_revisi);
+            ->exists());
     }
 
     public function test_obsolete_document_cannot_be_used_as_revision_source(): void
@@ -1145,6 +1144,87 @@ class CreateDocumentTest extends TestCase
         $this->actingAs($user)
             ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
             ->assertNotFound();
+    }
+
+    public function test_active_revision_request_blocks_new_revision_creation(): void
+    {
+        Storage::fake('local');
+
+        [$source, $submitter, $officialPreparer] = $this->revisionCreationFixture();
+        $proposedStatus = StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail();
+        $formLevel = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $formType = DocumentType::query()->where('nama_types', 'Form')->firstOrFail();
+
+        Document::create([
+            'm_document_level_id' => $formLevel->id,
+            'm_status_document_id' => $proposedStatus->id,
+            'm_document_types_id' => $formType->id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $officialPreparer->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Prosedur Revisi Aktif',
+            'nomor_dokumen' => 'PS-SMR-010',
+            'nomor_lembar_revisi' => 'FMPS-SMR-010-02',
+            'nomor_revisi' => 2,
+            'submitted_at' => now(),
+        ]);
+
+        $this->actingAs($submitter)
+            ->from(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
+            ->post(route('documents.store', 'level-4'), $this->revisionSubmitPayload($source, $officialPreparer, [
+                'nama_dokumen' => 'Prosedur Revisi Baru',
+            ]))
+            ->assertRedirect(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
+            ->assertSessionHasErrors(['revised_from']);
+
+        $this->assertFalse(Document::query()
+            ->where('nama_dokumen', 'Prosedur Revisi Baru')
+            ->exists());
+    }
+
+    public function test_revision_number_generation_uses_latest_family_state_inside_transaction(): void
+    {
+        Storage::fake('local');
+
+        [$source, $submitter, $officialPreparer] = $this->revisionCreationFixture();
+        $rejectedStatus = StatusDocument::query()->where('nama_status', StatusDocument::REJECTED)->firstOrFail();
+        $formLevel = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $formType = DocumentType::query()->where('nama_types', 'Form')->firstOrFail();
+
+        Document::create([
+            'm_document_level_id' => $formLevel->id,
+            'm_status_document_id' => $rejectedStatus->id,
+            'm_document_types_id' => $formType->id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $officialPreparer->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Prosedur Revisi Ditolak',
+            'nomor_dokumen' => 'PS-SMR-010',
+            'nomor_lembar_revisi' => 'FMPS-SMR-010-01',
+            'nomor_revisi' => 1,
+            'rejected_at' => now(),
+        ]);
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-4'), $this->revisionSubmitPayload($source, $officialPreparer, [
+                'nama_dokumen' => 'Prosedur Revisi Setelah Ditolak',
+            ]))
+            ->assertRedirect(route('documents.create'));
+
+        $revision = Document::query()
+            ->where('nama_dokumen', 'Prosedur Revisi Setelah Ditolak')
+            ->firstOrFail();
+
+        $this->assertSame(2, $revision->nomor_revisi);
+        $this->assertSame('00.02', $revision->formatted_revision);
+        $this->assertSame('PS-SMR-010', $revision->nomor_dokumen);
+        $this->assertSame('FMPS-SMR-010-02', $revision->nomor_lembar_revisi);
     }
 
     public function test_level_four_revision_from_work_instruction_uses_fmik_document_number(): void
@@ -1211,7 +1291,8 @@ class CreateDocumentTest extends TestCase
             ->where('nama_dokumen', 'Instruksi Kerja Revisi Master Updated')
             ->firstOrFail();
 
-        $this->assertSame('FMIK-MRI-01-04', $revision->nomor_dokumen);
+        $this->assertSame('IK-MRI-01-04', $revision->nomor_dokumen);
+        $this->assertSame('FMIK-MRI-01-04-01', $revision->nomor_lembar_revisi);
     }
 
     public function test_level_three_document_can_be_saved_as_draft(): void
@@ -1577,5 +1658,69 @@ class CreateDocumentTest extends TestCase
             ])
             ->assertRedirect(route('documents.create.level', 'level-3'))
             ->assertSessionHasErrors(['attachments.0']);
+    }
+
+    private function revisionCreationFixture(): array
+    {
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $submitter = User::factory()->create(['m_department_id' => $department->id]);
+        $officialPreparer = User::factory()->create();
+        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::PROPOSED]);
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::REJECTED]);
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::CANCELLED]);
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::OBSOLETE]);
+        ApprovalStatus::query()->firstOrCreate([
+            'kode_status' => ApprovalStatus::APPROVED,
+        ], [
+            'nama_status' => 'Disetujui',
+        ]);
+        DocumentType::query()->firstOrCreate(['nama_types' => 'Prosedur']);
+        DocumentType::query()->firstOrCreate(['nama_types' => 'Form']);
+        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+
+        $source = Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => DocumentType::query()->where('nama_types', 'Prosedur')->firstOrFail()->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'nama_dokumen' => 'Prosedur Revisi Master',
+            'nomor_dokumen' => 'PS-SMR-010',
+            'nomor_revisi' => 0,
+            'approved_at' => now(),
+        ]);
+        $source->departments()->sync([$department->id]);
+
+        return [$source, $submitter, $officialPreparer];
+    }
+
+    private function revisionSubmitPayload(Document $source, User $officialPreparer, array $overrides = []): array
+    {
+        return array_merge([
+            'revised_from' => $source->id,
+            'nama_dokumen' => 'Prosedur Revisi Baru',
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'department_ids' => $source->departments()->pluck('departments.id')->all(),
+            'official_preparer_id' => $officialPreparer->id,
+            'nomor_dokumen_suffix' => '999',
+            'revision_content' => UploadedFile::fake()->create('dokumen-revisi.pdf', 24, 'application/pdf'),
+            'revision_form' => UploadedFile::fake()->create('lembar-revisi.pdf', 24, 'application/pdf'),
+            'submit_action' => 'submit',
+        ], $overrides);
     }
 }

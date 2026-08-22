@@ -22,6 +22,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 class DocumentApprovalController extends Controller
 {
@@ -543,6 +544,12 @@ class DocumentApprovalController extends Controller
 
         $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
 
+        if ($document->revised_from !== null && $document->request_type !== 'obsolete') {
+            $this->finalizeRevisionApproval($document, $approvedStatus);
+
+            return;
+        }
+
         $document->update([
             'm_status_document_id' => $approvedStatus->id,
             'approved_at' => now(),
@@ -557,35 +564,105 @@ class DocumentApprovalController extends Controller
             return;
         }
 
-        $this->promoteRevisionRequestToMaster($document);
         $document->refresh();
-        $this->obsoletePreviousApprovedRevisions($document, $approvedStatus);
     }
 
-    private function promoteRevisionRequestToMaster(Document $document): void
+    private function finalizeRevisionApproval(Document $document, StatusDocument $approvedStatus): void
     {
-        if ($document->request_type !== 'revision' || $document->revised_from === null) {
+        if ($document->revised_from === null || $document->request_type === 'obsolete') {
             return;
         }
 
-        $source = Document::query()
-            ->select([
-                'id',
-                'm_document_level_id',
-                'm_document_types_id',
-                'reference',
+        $obsoleteStatus = StatusDocument::findByName(StatusDocument::OBSOLETE);
+        $terminalStatusIds = StatusDocument::query()
+            ->whereIn('nama_status', [
+                StatusDocument::APPROVED,
+                StatusDocument::OBSOLETE,
+                StatusDocument::REJECTED,
+                StatusDocument::CANCELLED,
             ])
-            ->find($document->revised_from);
+            ->pluck('id')
+            ->all();
+        $familyIds = $document->revisionFamily()->pluck('id')->all();
+        $lockedFamily = Document::query()
+            ->whereIn('id', $familyIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+        $lockedDocument = $lockedFamily->firstWhere('id', $document->id);
+        $source = $lockedDocument !== null
+            ? $lockedFamily->firstWhere('id', $lockedDocument->revised_from)
+            : null;
 
-        if ($source === null) {
-            return;
+        if ($lockedDocument === null || $source === null) {
+            throw new ConflictHttpException('Pengajuan revisi sudah tidak valid.');
         }
 
-        $document->update([
+        if (in_array($lockedDocument->m_status_document_id, $terminalStatusIds, true)) {
+            throw new ConflictHttpException('Pengajuan revisi sudah diproses sebelumnya.');
+        }
+
+        if ($source->m_status_document_id !== $approvedStatus->id) {
+            throw new ConflictHttpException('Master sumber sudah berubah. Muat ulang halaman sebelum melanjutkan approval.');
+        }
+
+        $conflictingMaster = $lockedFamily
+            ->first(fn (Document $revision): bool => $revision->id !== $source->id
+                && $revision->id !== $lockedDocument->id
+                && $revision->m_status_document_id === $approvedStatus->id
+                && $revision->request_type !== 'obsolete');
+
+        if ($conflictingMaster !== null) {
+            throw new ConflictHttpException('Family dokumen sudah memiliki master aktif lain.');
+        }
+
+        $lockedDocument->update([
             'm_document_level_id' => $source->m_document_level_id,
             'm_document_types_id' => $source->m_document_types_id,
             'reference' => $source->reference,
+            'nomor_dokumen' => $source->nomor_dokumen,
+            'nomor_lembar_revisi' => $lockedDocument->nomor_lembar_revisi
+                ?: $this->revisionFormNumber($source, (int) $lockedDocument->nomor_revisi),
+            'm_status_document_id' => $approvedStatus->id,
+            'approved_at' => now(),
+            'rejected_at' => null,
         ]);
+
+        Document::query()
+            ->whereIn('id', $lockedFamily->pluck('id'))
+            ->where('id', '!=', $lockedDocument->id)
+            ->where('m_status_document_id', $approvedStatus->id)
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('request_type')
+                    ->orWhere('request_type', '!=', 'obsolete');
+            })
+            ->update([
+                'm_status_document_id' => $obsoleteStatus->id,
+            ]);
+    }
+
+    private function revisionFormNumber(Document $source, int $revision): string
+    {
+        $prefix = match ($source->documentLevel?->kode) {
+            'level-1' => 'FMSM',
+            'level-2' => 'FMPS',
+            'level-3' => 'FMIK',
+            default => 'FM',
+        };
+        $segments = collect(explode('-', (string) $source->nomor_dokumen))
+            ->filter()
+            ->values();
+
+        if ($segments->isNotEmpty()) {
+            $segments->shift();
+        }
+
+        return collect([$prefix])
+            ->merge($segments)
+            ->push(str_pad((string) $revision, 2, '0', STR_PAD_LEFT))
+            ->filter()
+            ->implode('-');
     }
 
     private function obsoleteSourceMasterDocument(Document $document): void

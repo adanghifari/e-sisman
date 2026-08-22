@@ -556,8 +556,8 @@ class DocumentInboxController extends Controller
             return null;
         }
 
-        if ($document->documentLevel?->kode === 'level-4' && str_starts_with((string) $document->nomor_dokumen, 'FM')) {
-            return $document->nomor_dokumen;
+        if (filled($document->nomor_lembar_revisi)) {
+            return $document->nomor_lembar_revisi;
         }
 
         $source = $document->revisedFrom;
@@ -582,6 +582,7 @@ class DocumentInboxController extends Controller
 
         return collect([$prefix])
             ->merge($segments)
+            ->push(str_pad((string) $document->nomor_revisi, 2, '0', STR_PAD_LEFT))
             ->filter()
             ->implode('-');
     }

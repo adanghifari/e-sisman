@@ -68,10 +68,10 @@
                             <dt class="text-sm font-semibold text-slate-500">Nomor Dokumen</dt>
                             <dd class="text-sm font-bold text-slate-900">{{ $masterDisplayNumber }}</dd>
                         </div>
-                        @if ($document->revised_from)
+                        @if ($document->nomor_lembar_revisi)
                             <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
-                                <dt class="text-sm font-semibold text-slate-500">Nomor Dokumen Revisi</dt>
-                                <dd class="text-sm font-bold text-slate-900">{{ $document->nomor_dokumen ?: '-' }}</dd>
+                                <dt class="text-sm font-semibold text-slate-500">Nomor Lembar Revisi</dt>
+                                <dd class="text-sm font-bold text-slate-900">{{ $document->nomor_lembar_revisi }}</dd>
                             </div>
                         @endif
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
@@ -183,10 +183,10 @@
                             <input type="text" value="{{ $masterDisplayNumber }}" readonly class="{{ $readonlyInput }}">
                         </label>
 
-                        @if ($document->revised_from)
+                        @if ($document->nomor_lembar_revisi)
                             <label class="block">
-                                <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen Revisi</span>
-                                <input type="text" value="{{ $document->nomor_dokumen ?: '-' }}" readonly class="{{ $readonlyInput }}">
+                                <span class="mb-2 block text-base font-medium text-slate-500">Nomor Lembar Revisi</span>
+                                <input type="text" value="{{ $document->nomor_lembar_revisi }}" readonly class="{{ $readonlyInput }}">
                             </label>
                         @endif
 

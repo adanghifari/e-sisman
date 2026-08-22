@@ -2,6 +2,7 @@
     'prefix',
     'segments' => [],
     'defaultValue' => null,
+    'label' => 'Nomor Dokumen',
 ])
 
 @php
@@ -12,7 +13,7 @@
 @endphp
 
 <div>
-    <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen</span>
+    <span class="mb-2 block text-base font-medium text-slate-500">{{ $label }}</span>
 
     <div class="grid items-center gap-3" style="grid-template-columns: {{ $gridTemplateColumns }};">
         <input type="text" value="{{ $prefix }}" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">

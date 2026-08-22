@@ -475,8 +475,11 @@ class DocumentInboxTest extends TestCase
             'user_id' => $submitter->id,
             'official_preparer_id' => $submitter->id,
             'nama_dokumen' => 'Dokumen Revisi Baru',
-            'nomor_dokumen' => 'FMIK-SMR-PARENT',
+            'nomor_dokumen' => 'IK-SMR-PARENT',
+            'nomor_lembar_revisi' => 'FMIK-SMR-PARENT-01',
             'revised_from' => $parent->id,
+            'request_type' => 'revision',
+            'nomor_revisi' => 1,
             'submitted_at' => now(),
         ]);
         $document->departments()->sync($parent->departments()->pluck('departments.id')->all());
@@ -497,7 +500,7 @@ class DocumentInboxTest extends TestCase
             ->assertOk()
             ->assertSee('Dokumen Revisi Baru')
             ->assertSee('Pengajuan Revisi')
-            ->assertSee('FMIK-SMR-PARENT')
+            ->assertSee('FMIK-SMR-PARENT-01')
             ->assertSee(StatusDocument::PROPOSED);
     }
 
@@ -550,6 +553,7 @@ class DocumentInboxTest extends TestCase
             'request_type' => 'revision',
             'nama_dokumen' => 'Instruksi Kerja Revisi',
             'nomor_dokumen' => 'IK-MRI-01-04',
+            'nomor_lembar_revisi' => 'FMIK-MRI-01-04-01',
             'nomor_revisi' => 1,
             'submitted_at' => now()->subHour(),
             'approved_at' => now(),
@@ -560,7 +564,7 @@ class DocumentInboxTest extends TestCase
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
             ->assertOk()
             ->assertSee('Instruksi Kerja Revisi')
-            ->assertSee('FMIK-MRI-01-04');
+            ->assertSee('FMIK-MRI-01-04-01');
     }
 
     public function test_responded_approver_can_open_document_detail_from_processed_history(): void
@@ -605,7 +609,8 @@ class DocumentInboxTest extends TestCase
             'user_id' => $submitter->id,
             'official_preparer_id' => $submitter->id,
             'nama_dokumen' => 'Prosedur Revisi Detail',
-            'nomor_dokumen' => 'FMPS-SMR-OLD',
+            'nomor_dokumen' => 'PS-SMR-OLD',
+            'nomor_lembar_revisi' => 'FMPS-SMR-OLD-01',
             'nomor_revisi' => 1,
             'revised_from' => $source->id,
             'request_type' => 'revision',
@@ -620,15 +625,15 @@ class DocumentInboxTest extends TestCase
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
             ->assertOk()
             ->assertSee('Prosedur Revisi Detail')
-            ->assertSee('FMPS-SMR-OLD');
+            ->assertSee('FMPS-SMR-OLD-01');
 
         $this->actingAs($approver)
             ->get(route('documents.approval.show', $revision))
             ->assertOk()
             ->assertSee('Nomor Dokumen')
             ->assertSee('PS-SMR-OLD')
-            ->assertSee('Nomor Dokumen Revisi')
-            ->assertSee('FMPS-SMR-OLD');
+            ->assertSee('Nomor Lembar Revisi')
+            ->assertSee('FMPS-SMR-OLD-01');
     }
 
     public function test_developer_does_not_see_processed_history_for_other_users_without_processing_it(): void
@@ -1503,6 +1508,67 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Riwayat Dokumen')
             ->assertSee('Otomatis obsolete saat revisi 00.01 menjadi master')
             ->assertSee('Obsolete');
+    }
+
+    public function test_stale_revision_final_approval_is_blocked_when_source_master_has_changed(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create();
+        $approver = User::factory()->create();
+        $source = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Instruksi Lama Stale',
+            'nomor_dokumen' => 'IK-SMR-STALE',
+        ]);
+        $approvedDocumentStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        $obsoleteDocumentStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::OBSOLETE]);
+        $source->update([
+            'm_status_document_id' => $obsoleteDocumentStatus->id,
+            'approved_at' => now()->subDays(2),
+        ]);
+
+        Document::create([
+            'm_document_level_id' => $source->m_document_level_id,
+            'm_status_document_id' => $approvedDocumentStatus->id,
+            'm_document_types_id' => $source->m_document_types_id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Instruksi Revisi Sudah Aktif',
+            'nomor_dokumen' => 'IK-SMR-STALE',
+            'nomor_lembar_revisi' => 'FMIK-SMR-STALE-01',
+            'nomor_revisi' => 1,
+            'approved_at' => now()->subDay(),
+        ]);
+
+        $staleRevision = Document::create([
+            'm_document_level_id' => $source->m_document_level_id,
+            'm_status_document_id' => StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail()->id,
+            'm_document_types_id' => $source->m_document_types_id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $submitter->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Instruksi Revisi Stale',
+            'nomor_dokumen' => 'IK-SMR-STALE',
+            'nomor_lembar_revisi' => 'FMIK-SMR-STALE-02',
+            'nomor_revisi' => 2,
+            'submitted_at' => now(),
+        ]);
+        $staleRevision->departments()->sync($source->departments()->pluck('departments.id')->all());
+
+        $this->createApproval($staleRevision, $approver, ApprovalStatus::PENDING);
+
+        $this->actingAs($approver)
+            ->post(route('documents.approval.approve', $staleRevision))
+            ->assertStatus(409);
+
+        $this->assertSame(StatusDocument::PROPOSED, $staleRevision->refresh()->status->nama_status);
     }
 
     public function test_approved_obsolete_request_obsoletes_source_master_document(): void
