@@ -9,6 +9,7 @@ use App\Models\Document;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\StatusDocument;
+use App\Support\DocumentHistory;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\Request;
@@ -171,6 +172,7 @@ class DocumentObsoleteController extends Controller
                 ?? collect(),
             'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document', 'revision_content'])->values(),
             'attachmentFiles' => $document->files->whereIn('type_file', ['attachment', 'revision_form'])->values(),
+            'documentHistory' => app(DocumentHistory::class)->forDocument($document),
         ]);
     }
 

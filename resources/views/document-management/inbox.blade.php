@@ -76,7 +76,14 @@
                     <tbody class="divide-y divide-slate-100">
                         @forelse ($filteredMyTasks as $document)
                             <tr class="hover:bg-slate-50/70">
-                                <td class="px-5 py-4 font-semibold text-slate-800">{{ $document['number'] }}</td>
+                                <td class="px-5 py-4">
+                                    <div class="font-semibold text-slate-800">{{ $document['number'] }}</div>
+                                    @if ($document['number_badge_label'] ?? null)
+                                        <div class="mt-2">
+                                            <x-ui.status-badge :label="$document['number_badge_label']" :tone="$document['number_badge_tone'] ?? 'red'" />
+                                        </div>
+                                    @endif
+                                </td>
                                 <td class="px-5 py-4 text-slate-700">{{ $document['name'] }}</td>
                                 <td class="px-5 py-4">
                                     @if (($document['type_tone'] ?? null) === 'red')
@@ -138,7 +145,14 @@
                     <tbody class="divide-y divide-slate-100">
                         @forelse ($filteredMyProcessedHistory as $document)
                             <tr class="hover:bg-slate-50/70">
-                                <td class="px-5 py-4 font-semibold text-slate-800">{{ $document['number'] }}</td>
+                                <td class="px-5 py-4">
+                                    <div class="font-semibold text-slate-800">{{ $document['number'] }}</div>
+                                    @if ($document['number_badge_label'] ?? null)
+                                        <div class="mt-2">
+                                            <x-ui.status-badge :label="$document['number_badge_label']" :tone="$document['number_badge_tone'] ?? 'red'" />
+                                        </div>
+                                    @endif
+                                </td>
                                 <td class="px-5 py-4 text-slate-700">{{ $document['name'] }}</td>
                                 <td class="px-5 py-4">
                                     @if (($document['type_tone'] ?? null) === 'red')

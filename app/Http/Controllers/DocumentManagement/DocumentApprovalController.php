@@ -12,6 +12,7 @@ use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
 use App\Models\StatusDocument;
+use App\Support\DocumentHistory;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -21,6 +22,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 class DocumentApprovalController extends Controller
 {
@@ -73,6 +75,7 @@ class DocumentApprovalController extends Controller
             ])->values(),
             'obsoleteSourceContentFiles' => $obsoleteSourceContentFiles,
             'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
+            'documentHistory' => app(DocumentHistory::class)->forDocument($document),
         ]);
     }
 
@@ -150,7 +153,15 @@ class DocumentApprovalController extends Controller
 
     public function assign(Request $request, Document $document): RedirectResponse
     {
-        abort_unless($this->canManageApproverAssignment($request, $document), 403);
+        $document->refresh();
+
+        if ($this->isDocumentAssignmentLocked($document)) {
+            return $this->assignmentErrorRedirect($document, [
+                'stage_approvers' => 'Transaksi approval sudah selesai sehingga approver tidak bisa diubah.',
+            ]);
+        }
+
+        abort_unless($request->user()->isDeveloper() || $request->user()->canAssignDocument($document), 403);
 
         $stages = $this->approvalFlowStages($document);
 
@@ -186,6 +197,12 @@ class DocumentApprovalController extends Controller
 
         if ($approvedStageError !== null) {
             return $this->assignmentErrorRedirect($document, $approvedStageError);
+        }
+
+        if (! $this->assignmentDiffers($request, $document, $stages)) {
+            return redirect()
+                ->route('documents.approval.show', $document)
+                ->with('status', 'Tidak ada perubahan approver.');
         }
 
         foreach ($stages as $stage) {
@@ -273,12 +290,12 @@ class DocumentApprovalController extends Controller
     public function file(Request $request, Document $document, DocumentFile $file, RecordDocumentDownload $recordDocumentDownload): BinaryFileResponse
     {
         $this->authorizeDocumentAccess($request, $document);
-        abort_unless($file->t_document_id === $document->id, 404);
+        $downloadDocument = $this->authorizedFileDocument($document, $file);
 
         $path = Storage::disk('local')->path($file->path_file);
         abort_unless(is_file($path), 404);
 
-        $recordDocumentDownload->handle($request, $document, $file);
+        $recordDocumentDownload->handle($request, $downloadDocument, $file);
 
         return response()->file($path, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
@@ -288,7 +305,7 @@ class DocumentApprovalController extends Controller
     public function preview(Request $request, Document $document, DocumentFile $file): BinaryFileResponse
     {
         $this->authorizeDocumentAccess($request, $document);
-        abort_unless($file->t_document_id === $document->id, 404);
+        $this->authorizedFileDocument($document, $file);
         abort_unless(Str::of($file->original_file_name)->lower()->endsWith('.pdf'), 415);
 
         $sourcePath = Storage::disk('local')->path($file->path_file);
@@ -297,6 +314,19 @@ class DocumentApprovalController extends Controller
         return response()->file($sourcePath, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
         ]);
+    }
+
+    private function authorizedFileDocument(Document $document, DocumentFile $file): Document
+    {
+        if ($file->t_document_id === $document->id) {
+            return $document;
+        }
+
+        if ($document->request_type === 'obsolete' && $file->t_document_id === $document->revised_from) {
+            return $document->revisedFrom ?: Document::query()->findOrFail($document->revised_from);
+        }
+
+        abort(404);
     }
 
     private function authorizeDocumentAccess(Request $request, Document $document): void
@@ -487,6 +517,28 @@ class DocumentApprovalController extends Controller
         return null;
     }
 
+    private function assignmentDiffers(Request $request, Document $document, Collection $stages): bool
+    {
+        foreach ($stages as $stage) {
+            $stageLabel = $stage->display_label ?: 'Approval';
+            $currentUserIds = Approval::query()
+                ->where('t_document_id', $document->id)
+                ->where('stages', $stageLabel)
+                ->pluck('user_id')
+                ->sort()
+                ->values();
+            $requestedUserIds = $this->stageApproverIds($request, $document, $stage)
+                ->sort()
+                ->values();
+
+            if ($currentUserIds->all() !== $requestedUserIds->all()) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private function advanceApprovalFlow(Document $document): void
     {
         if ($this->activateNextStageIfCurrentStageComplete($document)) {
@@ -541,6 +593,12 @@ class DocumentApprovalController extends Controller
 
         $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
 
+        if ($document->revised_from !== null && $document->request_type !== 'obsolete') {
+            $this->finalizeRevisionApproval($document, $approvedStatus);
+
+            return;
+        }
+
         $document->update([
             'm_status_document_id' => $approvedStatus->id,
             'approved_at' => now(),
@@ -555,35 +613,105 @@ class DocumentApprovalController extends Controller
             return;
         }
 
-        $this->promoteRevisionRequestToMaster($document);
         $document->refresh();
-        $this->obsoletePreviousApprovedRevisions($document, $approvedStatus);
     }
 
-    private function promoteRevisionRequestToMaster(Document $document): void
+    private function finalizeRevisionApproval(Document $document, StatusDocument $approvedStatus): void
     {
-        if ($document->request_type !== 'revision' || $document->revised_from === null) {
+        if ($document->revised_from === null || $document->request_type === 'obsolete') {
             return;
         }
 
-        $source = Document::query()
-            ->select([
-                'id',
-                'm_document_level_id',
-                'm_document_types_id',
-                'reference',
+        $obsoleteStatus = StatusDocument::findByName(StatusDocument::OBSOLETE);
+        $terminalStatusIds = StatusDocument::query()
+            ->whereIn('nama_status', [
+                StatusDocument::APPROVED,
+                StatusDocument::OBSOLETE,
+                StatusDocument::REJECTED,
+                StatusDocument::CANCELLED,
             ])
-            ->find($document->revised_from);
+            ->pluck('id')
+            ->all();
+        $familyIds = $document->revisionFamily()->pluck('id')->all();
+        $lockedFamily = Document::query()
+            ->whereIn('id', $familyIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+        $lockedDocument = $lockedFamily->firstWhere('id', $document->id);
+        $source = $lockedDocument !== null
+            ? $lockedFamily->firstWhere('id', $lockedDocument->revised_from)
+            : null;
 
-        if ($source === null) {
-            return;
+        if ($lockedDocument === null || $source === null) {
+            throw new ConflictHttpException('Pengajuan revisi sudah tidak valid.');
         }
 
-        $document->update([
+        if (in_array($lockedDocument->m_status_document_id, $terminalStatusIds, true)) {
+            throw new ConflictHttpException('Pengajuan revisi sudah diproses sebelumnya.');
+        }
+
+        if ($source->m_status_document_id !== $approvedStatus->id) {
+            throw new ConflictHttpException('Master sumber sudah berubah. Muat ulang halaman sebelum melanjutkan approval.');
+        }
+
+        $conflictingMaster = $lockedFamily
+            ->first(fn (Document $revision): bool => $revision->id !== $source->id
+                && $revision->id !== $lockedDocument->id
+                && $revision->m_status_document_id === $approvedStatus->id
+                && $revision->request_type !== 'obsolete');
+
+        if ($conflictingMaster !== null) {
+            throw new ConflictHttpException('Family dokumen sudah memiliki master aktif lain.');
+        }
+
+        $lockedDocument->update([
             'm_document_level_id' => $source->m_document_level_id,
             'm_document_types_id' => $source->m_document_types_id,
             'reference' => $source->reference,
+            'nomor_dokumen' => $source->nomor_dokumen,
+            'nomor_lembar_revisi' => $lockedDocument->nomor_lembar_revisi
+                ?: $this->revisionFormNumber($source, (int) $lockedDocument->nomor_revisi),
+            'm_status_document_id' => $approvedStatus->id,
+            'approved_at' => now(),
+            'rejected_at' => null,
         ]);
+
+        Document::query()
+            ->whereIn('id', $lockedFamily->pluck('id'))
+            ->where('id', '!=', $lockedDocument->id)
+            ->where('m_status_document_id', $approvedStatus->id)
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('request_type')
+                    ->orWhere('request_type', '!=', 'obsolete');
+            })
+            ->update([
+                'm_status_document_id' => $obsoleteStatus->id,
+            ]);
+    }
+
+    private function revisionFormNumber(Document $source, int $revision): string
+    {
+        $prefix = match ($source->documentLevel?->kode) {
+            'level-1' => 'FMSM',
+            'level-2' => 'FMPS',
+            'level-3' => 'FMIK',
+            default => 'FM',
+        };
+        $segments = collect(explode('-', (string) $source->nomor_dokumen))
+            ->filter()
+            ->values();
+
+        if ($segments->isNotEmpty()) {
+            $segments->shift();
+        }
+
+        return collect([$prefix])
+            ->merge($segments)
+            ->push(str_pad((string) $revision, 2, '0', STR_PAD_LEFT))
+            ->filter()
+            ->implode('-');
     }
 
     private function obsoleteSourceMasterDocument(Document $document): void

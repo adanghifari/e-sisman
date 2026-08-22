@@ -479,7 +479,8 @@ class DocumentMasterTest extends TestCase
         $this->assertSame(StatusDocument::OBSOLETE, $source->status->nama_status);
         $this->assertSame($source->m_document_level_id, $revision->m_document_level_id);
         $this->assertSame($source->m_document_types_id, $revision->m_document_types_id);
-        $this->assertSame('FMPS-KSA-02', $revision->nomor_dokumen);
+        $this->assertSame('PS-KSA-02', $revision->nomor_dokumen);
+        $this->assertSame('FMPS-KSA-02-01', $revision->nomor_lembar_revisi);
         $this->assertSame(1, $revision->nomor_revisi);
 
         $this->actingAs($submitter)
@@ -587,7 +588,8 @@ class DocumentMasterTest extends TestCase
         ]);
         $revision = $this->createDocument($viewer, $approvedStatus, [
             'nama_dokumen' => 'Instruksi Revisi Aktif',
-            'nomor_dokumen' => 'FMIK-SMR-010',
+            'nomor_dokumen' => 'IK-SMR-010',
+            'nomor_lembar_revisi' => 'FMIK-SMR-010-01',
             'nomor_revisi' => 1,
             'revised_from' => $source->id,
             'reference' => $referenceDocument->id,
@@ -598,16 +600,18 @@ class DocumentMasterTest extends TestCase
             ->assertOk()
             ->assertSee('Nomor Dokumen')
             ->assertSee('IK-SMR-010')
-            ->assertSee('Nomor Dokumen Revisi')
-            ->assertSee('FMIK-SMR-010')
+            ->assertSee('Nomor Lembar Revisi')
+            ->assertSee('FMIK-SMR-010-01')
             ->assertSee('00.01')
+            ->assertSee('Riwayat Dokumen')
+            ->assertSee('Dokumen dibuat')
+            ->assertSee('Dokumen diajukan')
             ->assertDontSee('Dokumen Acuan')
             ->assertDontSee('Revisi Dari')
-            ->assertDontSee('PS-SMR-REF - Dokumen Acuan Lama')
-            ->assertDontSee('IK-SMR-010 - Revisi 00.00');
+            ->assertDontSee('PS-SMR-REF - Dokumen Acuan Lama');
 
         $this->assertLessThan(
-            strpos($response->getContent(), 'Nomor Dokumen Revisi'),
+            strpos($response->getContent(), 'Nomor Lembar Revisi'),
             strpos($response->getContent(), 'Nomor Dokumen'),
         );
     }
@@ -692,6 +696,9 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Detail Dokumen Obsolete')
             ->assertSee('Dokumen Obsolete')
             ->assertSee('Obsolete')
+            ->assertSee('Riwayat Dokumen')
+            ->assertSee('Dokumen dibuat')
+            ->assertSee('Dokumen diajukan')
             ->assertDontSee('Ajukan Revisi')
             ->assertDontSee('Pengajuan Obsolete')
             ->assertDontSee('Jadikan Master')

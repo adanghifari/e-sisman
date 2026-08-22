@@ -106,6 +106,7 @@ class DocumentInboxController extends Controller
                     $document['number'],
                     $document['name'],
                     $document['type'],
+                    $document['number_badge_label'] ?? '',
                     $document['stage'],
                     $document['waiting_for'],
                     $document['status'],
@@ -134,7 +135,6 @@ class DocumentInboxController extends Controller
         $assignedMonitorApprovalScope = $this->assignedMonitorApprovalScope($request);
         $assignedMonitorDocumentScope = $this->assignedMonitorDocumentScope($request);
         $assignableDocumentScope = $this->assignableDocumentScope($request);
-        $rejectedCorrectionScope = $this->rejectedCorrectionScope($request);
 
         $query = Document::query()
             ->withExists([
@@ -149,6 +149,7 @@ class DocumentInboxController extends Controller
                 'status',
                 'departments',
                 'revisedFrom.documentLevel',
+                'revisedFrom.documentType',
                 'approvals' => function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
                     $query->where(function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
                         $query
@@ -159,7 +160,7 @@ class DocumentInboxController extends Controller
                 },
             ]);
 
-        $query->where(function ($query) use ($approvalScope, $assignedMonitorDocumentScope, $assignableDocumentScope, $rejectedCorrectionScope): void {
+        $query->where(function ($query) use ($approvalScope, $assignedMonitorDocumentScope, $assignableDocumentScope): void {
             $query->whereHas('approvals', $approvalScope);
             $query->orWhere($assignedMonitorDocumentScope);
 
@@ -167,16 +168,10 @@ class DocumentInboxController extends Controller
                 $query
                     ->orWhere($assignableDocumentScope);
             }
-
-            $query->orWhere($rejectedCorrectionScope);
         });
 
         return $query->get()
             ->filter(function (Document $document) use ($request): bool {
-                if ($document->status?->nama_status === StatusDocument::REJECTED) {
-                    return true;
-                }
-
                 return $this->isAssignedMonitorTask($document, $request->user())
                     || $document->approvals->first() !== null
                     || ! $document->has_flow_approvals;
@@ -204,6 +199,7 @@ class DocumentInboxController extends Controller
                 'status',
                 'departments',
                 'revisedFrom.documentLevel',
+                'revisedFrom.documentType',
                 'approvals' => function ($query) use ($approvalScope, $assignedApprovalScope): void {
                     $query->where(function ($query) use ($approvalScope, $assignedApprovalScope): void {
                         $query->where($approvalScope)
@@ -220,12 +216,8 @@ class DocumentInboxController extends Controller
                     $query
                         ->orWhere(function ($query) use ($user): void {
                             $query
-                                ->whereDoesntHave('status', fn ($query) => $query->where('nama_status', StatusDocument::REJECTED))
-                                ->where(function ($query) use ($user): void {
-                                    $query
-                                        ->where('user_id', $user->id)
-                                        ->orWhere('official_preparer_id', $user->id);
-                                });
+                                ->where('user_id', $user->id)
+                                ->orWhere('official_preparer_id', $user->id);
                         });
                 }
             })
@@ -324,19 +316,6 @@ class DocumentInboxController extends Controller
         };
     }
 
-    private function rejectedCorrectionScope(Request $request): callable
-    {
-        return function ($query) use ($request): void {
-            $query
-                ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::REJECTED))
-                ->where(function ($query) use ($request): void {
-                    $query
-                        ->where('user_id', $request->user()->id)
-                        ->orWhere('official_preparer_id', $request->user()->id);
-                });
-        };
-    }
-
     private function pendingRevisionOwnerScope(Request $request): callable
     {
         return function ($query) use ($request): void {
@@ -374,7 +353,6 @@ class DocumentInboxController extends Controller
         $assignedAt = $this->asDateTime($approval?->assigned_at);
         $respondedAt = $this->asDateTime($approval?->responded_at);
         $submittedAt = $this->asDateTime($document->submitted_at ?? $document->created_at);
-        $isRejectedCorrection = $document->status?->nama_status === StatusDocument::REJECTED && $approval === null;
         $isPendingRevisionOwnerTask = $user !== null && $this->isPendingRevisionOwnerTask($document, $user) && $approval === null && ! $canAssign;
         $isAssignedMonitorTask = $user !== null && $approval !== null && $this->isAssignedMonitorApproval($approval, $user);
         $statusCode = $approval?->status?->kode_status
@@ -386,10 +364,11 @@ class DocumentInboxController extends Controller
             'id' => $document->id,
             'detail_url' => route('documents.approval.show', $document),
             'number' => $this->documentDisplayNumber($document),
+            'number_badge_label' => $document->request_type === 'obsolete' ? 'Pengajuan Obsolete' : null,
+            'number_badge_tone' => $document->request_type === 'obsolete' ? 'red' : null,
             'name' => $document->nama_dokumen ?? '-',
             'type' => $this->documentTypeLabel($document),
             'stage' => match (true) {
-                $isRejectedCorrection => 'Perbaikan Pengajuan',
                 $isPendingRevisionOwnerTask => 'Pengajuan Revisi',
                 default => $approval?->stages ?: ($canAssign ? 'Belum assign approver' : 'Approval'),
             },
@@ -408,7 +387,6 @@ class DocumentInboxController extends Controller
             'status' => $approval?->status?->nama_status ?? $document->status?->nama_status ?? $statusCode,
             'tone' => $this->approvalTone($statusCode),
             'action' => match (true) {
-                $isRejectedCorrection => 'Perlu Perbaikan',
                 $isAssignedMonitorTask => $this->waitingActionLabel($approval),
                 $approval !== null => $this->waitingActionLabel($approval),
                 $isPendingRevisionOwnerTask => 'Lihat',
@@ -544,6 +522,15 @@ class DocumentInboxController extends Controller
 
     private function documentTypeLabel(Document $document): string
     {
+        if ($document->request_type === 'obsolete') {
+            return $this->documentTypeName($this->rootDocument($document) ?: $document->revisedFrom ?: $document);
+        }
+
+        return $this->documentTypeName($document);
+    }
+
+    private function documentTypeName(Document $document): string
+    {
         return match ($document->documentType?->nama_types) {
             'IK' => 'Instruksi Kerja',
             default => $document->documentType?->nama_types ?? '-',
@@ -552,6 +539,12 @@ class DocumentInboxController extends Controller
 
     private function documentDisplayNumber(Document $document): string
     {
+        if ($document->request_type === 'obsolete') {
+            return $this->rootDocumentNumber($document)
+                ?? $document->nomor_dokumen
+                ?? '-';
+        }
+
         return $this->revisionRequestNumber($document)
             ?? $document->nomor_dokumen
             ?? '-';
@@ -559,12 +552,12 @@ class DocumentInboxController extends Controller
 
     private function revisionRequestNumber(Document $document): ?string
     {
-        if (! in_array($document->request_type, ['revision', 'obsolete'], true) || $document->revised_from === null) {
+        if ($document->request_type !== 'revision' || $document->revised_from === null) {
             return null;
         }
 
-        if ($document->documentLevel?->kode === 'level-4' && str_starts_with((string) $document->nomor_dokumen, 'FM')) {
-            return $document->nomor_dokumen;
+        if (filled($document->nomor_lembar_revisi)) {
+            return $document->nomor_lembar_revisi;
         }
 
         $source = $document->revisedFrom;
@@ -589,8 +582,26 @@ class DocumentInboxController extends Controller
 
         return collect([$prefix])
             ->merge($segments)
+            ->push(str_pad((string) $document->nomor_revisi, 2, '0', STR_PAD_LEFT))
             ->filter()
             ->implode('-');
+    }
+
+    private function rootDocumentNumber(Document $document): ?string
+    {
+        return $this->rootDocument($document)?->nomor_dokumen;
+    }
+
+    private function rootDocument(Document $document): ?Document
+    {
+        if ($document->revised_from === null) {
+            return null;
+        }
+
+        return Document::query()
+            ->select(['id', 'm_document_types_id', 'nomor_dokumen', 'revised_from'])
+            ->with('documentType')
+            ->find($document->revisionRootId());
     }
 
     private function approvalTone(string $statusCode): string

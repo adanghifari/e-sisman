@@ -90,6 +90,13 @@ return [
             'action' => 'view',
         ],
         [
+            'code' => 'documents.create.drafts.delete',
+            'name' => 'Hapus Draft Dokumen Saya',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.create.drafts.destroy',
+            'action' => 'delete',
+        ],
+        [
             'code' => 'documents.create.create',
             'name' => 'Submit Tambah Dokumen',
             'module' => 'Manajemen Dokumen',

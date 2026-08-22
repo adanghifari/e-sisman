@@ -10,8 +10,6 @@
         $isLevelOne = $levelKey === 'level-1';
         $statusCode = $activeApproval?->status?->kode_status ?? $document->status?->nama_status ?? '-';
         $statusLabel = $activeApproval?->status?->nama_status ?? $document->status?->nama_status ?? '-';
-        $canCorrectRejectedSubmission = $document->status?->nama_status === \App\Models\StatusDocument::REJECTED
-            && in_array(auth()->id(), [$document->user_id, $document->official_preparer_id], true);
         $isObsoleteRequest = $document->request_type === 'obsolete';
         $ownerLabel = $isObsoleteRequest ? 'Pengaju Awal Dokumen' : ($isLevelOne ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses');
         $contentSectionTitle = match (true) {
@@ -185,13 +183,13 @@
                                             <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                             <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                         </div>
-                                        <a href="{{ route('documents.master.files.show', [$document->revisedFrom, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                        <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                             Buka
                                         </a>
                                     </div>
 
                                     <iframe
-                                        src="{{ route('documents.master.files.preview', [$document->revisedFrom, $file]) }}#view=FitH&navpanes=0"
+                                        src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
                                         class="min-h-[760px] w-full bg-white xl:h-[82vh]"
                                     ></iframe>
                                 </section>
@@ -308,10 +306,10 @@
                             <input type="text" value="{{ $masterDisplayNumber }}" readonly class="{{ $readonlyInput }}">
                         </label>
 
-                        @if ($document->revised_from)
+                        @if ($document->nomor_lembar_revisi)
                             <label class="block">
-                                <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen Revisi</span>
-                                <input type="text" value="{{ $document->nomor_dokumen ?: '-' }}" readonly class="{{ $readonlyInput }}">
+                                <span class="mb-2 block text-base font-medium text-slate-500">Nomor Lembar Revisi</span>
+                                <input type="text" value="{{ $document->nomor_lembar_revisi }}" readonly class="{{ $readonlyInput }}">
                             </label>
                         @endif
 
@@ -339,19 +337,6 @@
                         </div>
                     </div>
                 </section>
-
-                @if ($canCorrectRejectedSubmission)
-                    <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                        <div class="grid gap-3 px-6 py-5 sm:grid-cols-2">
-                            <a href="{{ route('documents.inbox', ['tab' => 'needs-process']) }}" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
-                                Batal
-                            </a>
-                            <button type="button" class="inline-flex h-11 items-center justify-center rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">
-                                Perbaiki Pengajuan
-                            </button>
-                        </div>
-                    </section>
-                @endif
 
                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <div class="border-b border-slate-100 px-6 py-5">
@@ -426,6 +411,8 @@
                         @endforelse
                     </div>
                 </section>
+
+                <x-documents.history-section :document-history="$documentHistory" />
 
                 @if ($activeApproval)
                     <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -514,6 +501,7 @@
                                                 'status' => $approval->status?->kode_status,
                                                 'locked' => true,
                                             ])
+                                            ->toBase()
                                             ->merge(
                                                 $assignableUsers
                                                     ->whereIn('id', $oldApproverIds->diff($respondedApprovals->pluck('user_id')))
@@ -532,6 +520,7 @@
                                                 'status' => $approval->status?->kode_status,
                                                 'locked' => $approval->responded_at !== null,
                                             ])
+                                            ->toBase()
                                             ->filter(fn ($item) => $item['user'])
                                             ->values();
                                 @endphp

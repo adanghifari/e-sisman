@@ -133,13 +133,8 @@
         $documentNumberPrefix = $revisionSource
             ? ($levelKey === 'level-4' ? $levelFourPrefix : ($revisionPrefixes[$levelKey] ?? 'FM'.$documentPrefixes[$levelKey]))
             : $documentPrefixes[$levelKey];
-        $revisionRootDocumentId = $revisionSource?->revised_from ?: $revisionSource?->id;
-        $latestRevisionNumber = $revisionRootDocumentId
-            ? (int) \App\Models\Document::query()
-                ->where(fn ($query) => $query
-                    ->whereKey($revisionRootDocumentId)
-                    ->orWhere('revised_from', $revisionRootDocumentId))
-                ->max('nomor_revisi')
+        $latestRevisionNumber = $revisionSource
+            ? (int) $revisionSource->revisionFamily()->max('nomor_revisi')
             : null;
         $documentNumberSuffixDefault = $draft?->nomor_dokumen
             ? \Illuminate\Support\Str::afterLast($draft->nomor_dokumen, '-')
@@ -153,13 +148,28 @@
         $nextRevisionValue = $draft
             ? $draft->formatted_revision
             : ($revisionSource
-            ? '00.'.str_pad((string) (($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1), 2, '0', STR_PAD_LEFT)
+            ? \App\Models\Document::formatRevisionNumber(($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1)
             : '00.00');
         $selectedBusinessProcess = $businessProcesses->firstWhere('id', (int) $selectedBusinessProcessId);
         $documentNumberProcessCode = $selectedBusinessProcess?->kode ?: 'SMR';
+        $selectedProcedureReference = $procedureReferences->firstWhere('id', (int) $selectedReferenceId);
+        $procedureReferenceSegments = fn ($procedure) => collect(explode('-', (string) ($procedure?->procedure_reference_number ?: $procedure?->nomor_dokumen)))
+            ->filter()
+            ->values()
+            ->skip(1)
+            ->values();
+        $selectedProcedureNumberSegments = $procedureReferenceSegments($selectedProcedureReference);
+        $procedureReferenceNumberSegments = $procedureReferences
+            ->mapWithKeys(fn ($procedure) => [
+                $procedure->id => $procedureReferenceSegments($procedure)->all(),
+            ])
+            ->all();
         $documentNumberSegments = match ($levelKey) {
             'level-2' => [['value' => $documentNumberProcessCode, 'target' => 'business-process']],
-            'level-3' => ['XXX', 'YY'],
+            'level-3' => [
+                ['value' => $selectedProcedureNumberSegments->get(0, 'XXX'), 'target' => 'procedure-reference-0'],
+                ['value' => $selectedProcedureNumberSegments->get(1, 'YY'), 'target' => 'procedure-reference-1'],
+            ],
             'level-4' => $revisionDocumentNumberSegments,
             default => [],
         };
@@ -586,6 +596,7 @@
 
                         <div class="space-y-5 px-6 py-6">
                             <x-documents.document-number-input
+                                :label="$revisionSource ? 'Nomor Lembar Revisi' : 'Nomor Dokumen'"
                                 :prefix="$documentNumberPrefix"
                                 :segments="$documentNumberSegments"
                                 :default-value="$documentNumberSuffixDefault"
@@ -640,6 +651,7 @@
         <script>
             (() => {
                 const documentNumberSuggestions = @json($documentNumberSuggestions);
+                const procedureReferenceNumberSegments = @json($procedureReferenceNumberSegments);
 
                 document.addEventListener('click', (event) => {
                     const button = event.target.closest('[data-document-upload-trigger]');
@@ -771,6 +783,22 @@
                     if (!selectedReferenceStillValid) {
                         referenceSelect.value = '';
                     }
+
+                    syncProcedureReferenceNumberSegments(form);
+                };
+
+                const syncProcedureReferenceNumberSegments = (form) => {
+                    const referenceSelect = form.querySelector('select[name="reference"]');
+
+                    if (!referenceSelect) {
+                        return;
+                    }
+
+                    const segments = procedureReferenceNumberSegments[referenceSelect.value] || ['XXX', 'YY'];
+
+                    form.querySelectorAll('[data-document-number-segment^="procedure-reference-"]').forEach((input, index) => {
+                        input.value = segments[index] || (index === 0 ? 'XXX' : 'YY');
+                    });
                 };
 
                 const syncDocumentNumberSuggestion = (form) => {
@@ -819,6 +847,19 @@
                     if (form) {
                         syncProcedureReferenceOptions(form);
                         syncDocumentNumberSuggestion(form);
+                        syncProcedureReferenceNumberSegments(form);
+                    }
+                });
+
+                document.addEventListener('change', (event) => {
+                    if (!event.target.closest('select[name="reference"]')) {
+                        return;
+                    }
+
+                    const form = event.target.closest('form');
+
+                    if (form) {
+                        syncProcedureReferenceNumberSegments(form);
                     }
                 });
             })();

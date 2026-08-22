@@ -18,6 +18,7 @@ use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 
 class DocumentController extends Controller
 {
@@ -78,6 +79,29 @@ class DocumentController extends Controller
         ]);
     }
 
+    public function destroyDraft(Request $request, mixed $document): RedirectResponse
+    {
+        $document = $document instanceof Document
+            ? $document
+            : Document::query()->with(['status', 'files'])->findOrFail($document);
+
+        $this->authorizeDraftAccess($request, $document);
+
+        DB::transaction(function () use ($document): void {
+            $document->files->each(function ($file): void {
+                Storage::disk('local')->delete($file->path_file);
+                $file->delete();
+            });
+
+            $document->departments()->detach();
+            $document->delete();
+        });
+
+        return redirect()
+            ->route('documents.create.drafts')
+            ->with('status', 'Draft berhasil dihapus.');
+    }
+
     public function store(Request $request, string $level): RedirectResponse
     {
         $draft = $this->draftForRequest($request);
@@ -127,12 +151,13 @@ class DocumentController extends Controller
             $validated['official_preparer_id'] = $validated['official_preparer_id'] ?? $request->user()->id;
         }
 
-        $documentNumber = $revisionSource !== null
-            ? $this->buildRevisionDocumentNumber($revisionSource, $documentLevel)
-            : $this->buildDocumentNumber($documentLevel, $validated);
         $documentRevision = $revisionSource !== null
-            ? $this->nextRevisionNumber($revisionSource)
+            ? null
             : $this->normalizeRevision($validated['nomor_revisi'] ?? null);
+        $documentNumber = $revisionSource !== null
+            ? null
+            : $this->buildDocumentNumber($documentLevel, $validated);
+        $revisionFormNumber = null;
 
         if (
             $revisionSource === null
@@ -157,24 +182,76 @@ class DocumentController extends Controller
 
         $savedDocument = null;
 
-        DB::transaction(function () use ($request, $validated, $documentNumber, $documentRevision, $documentLevel, $documentType, $status, $level, $revisionSource, $draft, &$savedDocument): void {
-            $submittedAt = $validated['submit_action'] === 'submit' ? now() : null;
+        DB::transaction(function () use ($request, $validated, $documentNumber, $revisionFormNumber, $documentRevision, $documentLevel, $documentType, $status, $level, $revisionSource, $draft, &$savedDocument): void {
+            $lockedRevisionSource = null;
+            $documentAttributes = $validated;
+            $currentDocumentNumber = $documentNumber;
+            $currentRevisionFormNumber = $revisionFormNumber;
+            $currentDocumentRevision = $documentRevision;
+
+            if ($revisionSource !== null) {
+                $lockedRevisionSource = Document::query()
+                    ->whereKey($revisionSource->id)
+                    ->lockForUpdate()
+                    ->firstOrFail();
+                $lockedRevisionSource->load([
+                    'status',
+                    'documentLevel',
+                    'businessProcess',
+                    'businessFunction',
+                    'departments',
+                    'referenceDocument',
+                    'revisedFrom.documentLevel',
+                ]);
+
+                if ($lockedRevisionSource->status?->nama_status !== StatusDocument::APPROVED) {
+                    throw ValidationException::withMessages([
+                        'revised_from' => 'Master sumber sudah berubah. Muat ulang halaman sebelum membuat revisi.',
+                    ]);
+                }
+
+                if (! $this->userCanRequestRevision($request, $lockedRevisionSource)) {
+                    abort(403);
+                }
+
+                if ($draft === null && $this->hasActiveRevisionRequest($lockedRevisionSource)) {
+                    throw ValidationException::withMessages([
+                        'revised_from' => 'Dokumen ini masih memiliki pengajuan revisi aktif. Selesaikan atau batalkan revisi tersebut terlebih dahulu.',
+                    ]);
+                }
+
+                $currentDocumentRevision = $draft !== null && $draft->revised_from !== null
+                    ? (int) $draft->nomor_revisi
+                    : $this->nextRevisionNumber($lockedRevisionSource);
+                $currentDocumentNumber = $this->revisionSourceMasterNumber($lockedRevisionSource);
+                $currentRevisionFormNumber = $draft?->nomor_lembar_revisi
+                    ?: $this->buildRevisionFormNumber($lockedRevisionSource, (int) $currentDocumentRevision);
+
+                $documentAttributes['m_proses_bisnis_id'] = $lockedRevisionSource->m_proses_bisnis_id;
+                $documentAttributes['m_proses_fungsi_id'] = $lockedRevisionSource->m_proses_fungsi_id;
+                $documentAttributes['department_ids'] = $lockedRevisionSource->departments->pluck('id')->all();
+                $documentAttributes['reference'] = $lockedRevisionSource->reference;
+                $documentAttributes['nama_dokumen'] = $documentAttributes['nama_dokumen'] ?? $lockedRevisionSource->nama_dokumen;
+            }
+
+            $submittedAt = $documentAttributes['submit_action'] === 'submit' ? now() : null;
             $attributes = [
                 'm_document_level_id' => $documentLevel->id,
                 'm_status_document_id' => $status->id,
                 'm_document_types_id' => $documentType->id,
-                'm_proses_bisnis_id' => $validated['m_proses_bisnis_id'],
-                'm_proses_fungsi_id' => $validated['m_proses_fungsi_id'],
+                'm_proses_bisnis_id' => $documentAttributes['m_proses_bisnis_id'],
+                'm_proses_fungsi_id' => $documentAttributes['m_proses_fungsi_id'],
                 'user_id' => $request->user()->id,
-                'official_preparer_id' => $validated['official_preparer_id'] ?? null,
-                'reference' => $level === 'level-3' ? ($validated['reference'] ?? null) : null,
-                'revised_from' => $revisionSource?->id,
+                'official_preparer_id' => $documentAttributes['official_preparer_id'] ?? null,
+                'reference' => $level === 'level-3' ? ($documentAttributes['reference'] ?? null) : null,
+                'revised_from' => $lockedRevisionSource?->id,
                 'request_type' => $revisionSource !== null ? 'revision' : null,
-                'nama_dokumen' => $validated['nama_dokumen'],
-                'nomor_dokumen' => $documentNumber,
-                'nomor_revisi' => $documentRevision,
-                'catatan_revisi' => $validated['catatan_revisi'] ?? null,
-                'tanggal_terbit' => $validated['tanggal_terbit'] ?? null,
+                'nama_dokumen' => $documentAttributes['nama_dokumen'],
+                'nomor_dokumen' => $currentDocumentNumber,
+                'nomor_lembar_revisi' => $currentRevisionFormNumber,
+                'nomor_revisi' => $currentDocumentRevision,
+                'catatan_revisi' => $documentAttributes['catatan_revisi'] ?? null,
+                'tanggal_terbit' => $documentAttributes['tanggal_terbit'] ?? null,
                 'submitted_at' => $submittedAt ?? $draft?->submitted_at,
             ];
 
@@ -187,9 +264,9 @@ class DocumentController extends Controller
                 $document->update($attributes);
             }
 
-            $document->departments()->sync($validated['department_ids'] ?? []);
+            $document->departments()->sync($documentAttributes['department_ids'] ?? []);
 
-            $this->removeExistingDocumentFiles($document, $validated['remove_existing_files'] ?? []);
+            $this->removeExistingDocumentFiles($document, $documentAttributes['remove_existing_files'] ?? []);
 
             if ($request->hasFile('imported_document')) {
                 $this->replaceSingleDocumentFile($document, 'imported_document');
@@ -528,6 +605,11 @@ class DocumentController extends Controller
             $segments[] = Str::upper(trim($suffix));
         } elseif ($documentLevel->kode === 'level-4') {
             $segments[] = Str::upper(trim($suffix));
+        } elseif ($documentLevel->kode === 'level-3') {
+            $segments = collect([$documentLevel->prefix])
+                ->merge($this->procedureNumberSegments((int) ($validated['reference'] ?? 0)))
+                ->push(Str::upper(trim($suffix)))
+                ->all();
         } else {
             $segments[] = 'XXX';
             $segments[] = 'YY';
@@ -539,19 +621,28 @@ class DocumentController extends Controller
             ->implode('-');
     }
 
-    protected function buildRevisionDocumentNumber(Document $source, DocumentLevel $documentLevel): string
+    private function procedureNumberSegments(int $referenceId): Collection
+    {
+        $procedureNumber = Document::query()
+            ->whereKey($referenceId)
+            ->value('nomor_dokumen');
+
+        return collect(explode('-', (string) $procedureNumber))
+            ->filter()
+            ->values()
+            ->skip(1)
+            ->map(fn (string $segment): string => Str::upper(trim($segment)))
+            ->values();
+    }
+
+    protected function buildRevisionFormNumber(Document $source, int $revision): string
     {
         $sourceLevelKey = $this->effectiveRevisionSourceLevelKey($source);
-        $revisionPrefix = match ($documentLevel->kode) {
+        $revisionPrefix = match ($sourceLevelKey) {
+            'level-1' => 'FMSM',
             'level-2' => 'FMPS',
             'level-3' => 'FMIK',
-            'level-4' => match ($sourceLevelKey) {
-                'level-2' => 'FMPS',
-                'level-3' => 'FMIK',
-                'level-1' => 'FMSM',
-                default => 'FM',
-            },
-            default => 'FM'.$documentLevel->prefix,
+            default => 'FM',
         };
         $sourceSegments = collect(explode('-', (string) $this->revisionSourceMasterNumber($source)))
             ->filter()
@@ -563,6 +654,7 @@ class DocumentController extends Controller
 
         return collect([$revisionPrefix])
             ->merge($sourceSegments)
+            ->push(str_pad((string) $revision, 2, '0', STR_PAD_LEFT))
             ->filter()
             ->implode('-');
     }
@@ -591,15 +683,29 @@ class DocumentController extends Controller
 
     protected function nextRevisionNumber(Document $source): int
     {
-        $rootDocumentId = $source->revised_from ?: $source->id;
+        return ((int) $source->revisionFamily()->max('nomor_revisi')) + 1;
+    }
 
-        return ((int) Document::query()
-            ->where(function ($query) use ($rootDocumentId): void {
+    private function hasActiveRevisionRequest(Document $source): bool
+    {
+        $terminalStatusNames = [
+            StatusDocument::APPROVED,
+            StatusDocument::OBSOLETE,
+            StatusDocument::REJECTED,
+            StatusDocument::CANCELLED,
+        ];
+        $familyIds = $source->revisionFamily()->pluck('id');
+
+        return Document::query()
+            ->whereIn('id', $familyIds)
+            ->whereNotNull('revised_from')
+            ->where(function ($query): void {
                 $query
-                    ->whereKey($rootDocumentId)
-                    ->orWhere('revised_from', $rootDocumentId);
+                    ->whereNull('request_type')
+                    ->orWhere('request_type', 'revision');
             })
-            ->max('nomor_revisi')) + 1;
+            ->whereHas('status', fn ($query) => $query->whereNotIn('nama_status', $terminalStatusNames))
+            ->exists();
     }
 
     protected function normalizeRevision(?string $revision): int
@@ -608,7 +714,11 @@ class DocumentController extends Controller
             return 0;
         }
 
-        return (int) preg_replace('/\D+/', '', Str::before($revision, '.'));
+        $parts = explode('.', $revision, 2);
+        $major = (int) preg_replace('/\D+/', '', $parts[0] ?? '0');
+        $minor = (int) preg_replace('/\D+/', '', $parts[1] ?? '0');
+
+        return ($major * 100) + $minor;
     }
 
     protected function storeDocumentFile(Document $document, mixed $file, string $type, int $uploadedBy): void

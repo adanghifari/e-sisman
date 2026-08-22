@@ -52,9 +52,50 @@
                                     {{ $draft->created_at ? \Illuminate\Support\Carbon::parse($draft->created_at)->translatedFormat('d M Y H:i:s') : '-' }}
                                 </td>
                                 <td class="px-5 py-4 text-right">
-                                    <a href="{{ route('documents.create.drafts.edit', $draft) }}" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700" wire:navigate>
-                                        Lanjutkan
-                                    </a>
+                                    <div class="flex justify-end gap-2">
+                                        <a href="{{ route('documents.create.drafts.edit', $draft) }}" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700" wire:navigate>
+                                            Lanjutkan
+                                        </a>
+                                        <button
+                                            type="button"
+                                            class="inline-flex h-9 items-center justify-center rounded-lg border border-red-200 bg-white px-3 text-xs font-bold text-red-600 transition hover:bg-red-50"
+                                            data-draft-delete-open="{{ $draft->id }}"
+                                        >
+                                            Hapus
+                                        </button>
+                                    </div>
+
+                                    <div class="hidden" data-draft-delete-modal="{{ $draft->id }}">
+                                        <x-ui.modal
+                                            title="Hapus Draft"
+                                            :description="'Draft '.($draft->nama_dokumen ?: 'tanpa judul').' akan dihapus permanen.'"
+                                            max-width="md"
+                                        >
+                                            <div class="space-y-4 px-6 py-5 text-left">
+                                                <p class="text-sm leading-6 text-slate-700">
+                                                    Yakin ingin menghapus draft ini? File yang sudah diunggah di draft juga akan ikut dihapus dan tidak bisa dikembalikan.
+                                                </p>
+                                                <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3">
+                                                    <p class="text-sm font-semibold text-slate-900">{{ $draft->nama_dokumen ?: 'Draft tanpa judul' }}</p>
+                                                    <p class="mt-1 text-xs font-medium text-slate-500">{{ $draft->nomor_dokumen ?: '-' }}</p>
+                                                </div>
+                                            </div>
+
+                                            <div class="flex justify-end gap-2 border-t border-slate-100 px-6 py-4">
+                                                <x-ui.action-button type="button" variant="secondary" data-draft-delete-close>
+                                                    Batal
+                                                </x-ui.action-button>
+
+                                                <form method="POST" action="{{ route('documents.create.drafts.destroy', $draft) }}">
+                                                    @csrf
+                                                    @method('DELETE')
+                                                    <button type="submit" class="inline-flex h-10 items-center justify-center rounded-lg bg-red-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-red-700">
+                                                        Hapus Draft
+                                                    </button>
+                                                </form>
+                                            </div>
+                                        </x-ui.modal>
+                                    </div>
                                 </td>
                             </tr>
                         @empty
@@ -70,4 +111,50 @@
             </div>
         </section>
     </div>
+
+    @once
+        <script>
+            (() => {
+                const closeModal = (modal) => {
+                    modal?.classList.add('hidden');
+                };
+
+                document.addEventListener('click', (event) => {
+                    const openButton = event.target.closest('[data-draft-delete-open]');
+
+                    if (openButton) {
+                        document
+                            .querySelector(`[data-draft-delete-modal="${openButton.dataset.draftDeleteOpen}"]`)
+                            ?.classList.remove('hidden');
+
+                        return;
+                    }
+
+                    const closeButton = event.target.closest('[data-draft-delete-close]');
+
+                    if (closeButton) {
+                        closeModal(closeButton.closest('[data-draft-delete-modal]'));
+
+                        return;
+                    }
+
+                    const overlay = event.target.closest('.app-modal-overlay');
+
+                    if (overlay && event.target === overlay) {
+                        closeModal(overlay.closest('[data-draft-delete-modal]'));
+                    }
+                });
+
+                document.addEventListener('keydown', (event) => {
+                    if (event.key !== 'Escape') {
+                        return;
+                    }
+
+                    document
+                        .querySelectorAll('[data-draft-delete-modal]:not(.hidden)')
+                        .forEach((modal) => closeModal(modal));
+                });
+            })();
+        </script>
+    @endonce
 </x-layouts::app>

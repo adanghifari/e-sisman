@@ -2,6 +2,7 @@
 
 namespace App\Queries\Log;
 
+use App\Models\Document;
 use App\Models\DocumentDownloadLog;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Support\Carbon;
@@ -99,6 +100,6 @@ class DocumentDownloadActivityQuery
 
     private function formatRevision(int $revision): string
     {
-        return '00.'.str_pad((string) $revision, 2, '0', STR_PAD_LEFT);
+        return Document::formatRevisionNumber($revision);
     }
 }
