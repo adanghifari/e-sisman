@@ -10,8 +10,6 @@
         $isLevelOne = $levelKey === 'level-1';
         $statusCode = $activeApproval?->status?->kode_status ?? $document->status?->nama_status ?? '-';
         $statusLabel = $activeApproval?->status?->nama_status ?? $document->status?->nama_status ?? '-';
-        $canCorrectRejectedSubmission = $document->status?->nama_status === \App\Models\StatusDocument::REJECTED
-            && in_array(auth()->id(), [$document->user_id, $document->official_preparer_id], true);
         $isObsoleteRequest = $document->request_type === 'obsolete';
         $ownerLabel = $isObsoleteRequest ? 'Pengaju Awal Dokumen' : ($isLevelOne ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses');
         $contentSectionTitle = match (true) {
@@ -340,19 +338,6 @@
                     </div>
                 </section>
 
-                @if ($canCorrectRejectedSubmission)
-                    <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                        <div class="grid gap-3 px-6 py-5 sm:grid-cols-2">
-                            <a href="{{ route('documents.inbox', ['tab' => 'needs-process']) }}" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
-                                Batal
-                            </a>
-                            <button type="button" class="inline-flex h-11 items-center justify-center rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">
-                                Perbaiki Pengajuan
-                            </button>
-                        </div>
-                    </section>
-                @endif
-
                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <div class="border-b border-slate-100 px-6 py-5">
                         <h3 class="text-sm font-bold text-slate-900">Riwayat Approver</h3>
@@ -426,6 +411,8 @@
                         @endforelse
                     </div>
                 </section>
+
+                <x-documents.history-section :document-history="$documentHistory" />
 
                 @if ($activeApproval)
                     <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">

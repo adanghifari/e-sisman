@@ -124,13 +124,13 @@ class DocumentInboxTest extends TestCase
             ->assertDontSee('PS-SMR-456');
     }
 
-    public function test_rejected_document_is_shown_in_submitter_needs_process_tab_for_correction(): void
+    public function test_rejected_document_is_shown_in_submitter_processed_history_only(): void
     {
         $submitter = User::factory()->create(['name' => 'Pengaju Rejected']);
         $rejectedStatus = StatusDocument::create(['nama_status' => StatusDocument::REJECTED]);
         $document = $this->createDocument($submitter, [
             'm_status_document_id' => $rejectedStatus->id,
-            'nama_dokumen' => 'Dokumen Perlu Diperbaiki',
+            'nama_dokumen' => 'Dokumen Ditolak Final',
             'nomor_dokumen' => 'PS-SMR-REJECTED',
             'rejected_at' => now(),
         ]);
@@ -138,35 +138,32 @@ class DocumentInboxTest extends TestCase
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'needs-process']))
             ->assertOk()
-            ->assertSee('Dokumen Perlu Diperbaiki')
-            ->assertSee('PS-SMR-REJECTED')
-            ->assertSee('Perbaikan Pengajuan')
-            ->assertSee('Perlu Perbaikan')
-            ->assertSee(StatusDocument::REJECTED);
+            ->assertDontSee('Dokumen Ditolak Final')
+            ->assertDontSee('PS-SMR-REJECTED');
 
         $this->actingAs($submitter)
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
             ->assertOk()
-            ->assertDontSee('Dokumen Perlu Diperbaiki')
-            ->assertDontSee('PS-SMR-REJECTED');
+            ->assertSee('Dokumen Ditolak Final')
+            ->assertSee('PS-SMR-REJECTED')
+            ->assertSee(StatusDocument::REJECTED);
     }
 
-    public function test_rejected_document_detail_shows_correction_button_for_related_user(): void
+    public function test_rejected_document_detail_does_not_show_correction_button(): void
     {
         $submitter = User::factory()->create();
         $rejectedStatus = StatusDocument::create(['nama_status' => StatusDocument::REJECTED]);
         $document = $this->createDocument($submitter, [
             'm_status_document_id' => $rejectedStatus->id,
-            'nama_dokumen' => 'Detail Rejected Bisa Diperbaiki',
+            'nama_dokumen' => 'Detail Rejected Final',
             'rejected_at' => now(),
         ]);
 
         $this->actingAs($submitter)
             ->get(route('documents.approval.show', $document))
             ->assertOk()
-            ->assertSee('Detail Rejected Bisa Diperbaiki')
-            ->assertSee('Perbaiki Pengajuan')
-            ->assertSee('Batal');
+            ->assertSee('Detail Rejected Final')
+            ->assertDontSee('Perbaiki Pengajuan');
     }
 
     public function test_developer_can_see_pending_approvals_for_all_users(): void
@@ -760,6 +757,12 @@ class DocumentInboxTest extends TestCase
             ->assertSee('PS-SMR-DETAIL')
             ->assertSee('Isi Dokumen')
             ->assertSee('Lampiran')
+            ->assertSee('Riwayat Dokumen')
+            ->assertSee('Dibuat')
+            ->assertSee('Diajukan')
+            ->assertSee('Disetujui')
+            ->assertSee('Ditolak')
+            ->assertSee('Dibatalkan')
             ->assertSee('Approve')
             ->assertSee('Tolak')
             ->assertDontSee('Assign Approver')
@@ -1493,6 +1496,13 @@ class DocumentInboxTest extends TestCase
 
         $this->assertSame(StatusDocument::APPROVED, $revision->refresh()->status->nama_status);
         $this->assertSame(StatusDocument::OBSOLETE, $source->refresh()->status->nama_status);
+
+        $this->actingAs($approver)
+            ->get(route('documents.approval.show', $revision))
+            ->assertOk()
+            ->assertSee('Riwayat Dokumen')
+            ->assertSee('Otomatis obsolete saat revisi 00.01 menjadi master')
+            ->assertSee('Obsolete');
     }
 
     public function test_approved_obsolete_request_obsoletes_source_master_document(): void
@@ -1587,6 +1597,13 @@ class DocumentInboxTest extends TestCase
 
         $this->assertSame(StatusDocument::APPROVED, $request->refresh()->status->nama_status);
         $this->assertSame(StatusDocument::OBSOLETE, $source->refresh()->status->nama_status);
+
+        $this->actingAs($approver)
+            ->get(route('documents.approval.show', $request))
+            ->assertOk()
+            ->assertSee('Riwayat Dokumen')
+            ->assertSee('Dokumen diobsoletekan lewat pengajuan FMPS-SMR-OBSOLETE')
+            ->assertSee('Obsolete');
 
         $this->actingAs($approver)
             ->get(route('documents.inbox', ['tab' => 'processed-history']))

@@ -601,10 +601,12 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Nomor Dokumen Revisi')
             ->assertSee('FMIK-SMR-010')
             ->assertSee('00.01')
+            ->assertSee('Riwayat Dokumen')
+            ->assertSee('Dokumen dibuat')
+            ->assertSee('Dokumen diajukan')
             ->assertDontSee('Dokumen Acuan')
             ->assertDontSee('Revisi Dari')
-            ->assertDontSee('PS-SMR-REF - Dokumen Acuan Lama')
-            ->assertDontSee('IK-SMR-010 - Revisi 00.00');
+            ->assertDontSee('PS-SMR-REF - Dokumen Acuan Lama');
 
         $this->assertLessThan(
             strpos($response->getContent(), 'Nomor Dokumen Revisi'),
@@ -692,6 +694,9 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Detail Dokumen Obsolete')
             ->assertSee('Dokumen Obsolete')
             ->assertSee('Obsolete')
+            ->assertSee('Riwayat Dokumen')
+            ->assertSee('Dokumen dibuat')
+            ->assertSee('Dokumen diajukan')
             ->assertDontSee('Ajukan Revisi')
             ->assertDontSee('Pengajuan Obsolete')
             ->assertDontSee('Jadikan Master')

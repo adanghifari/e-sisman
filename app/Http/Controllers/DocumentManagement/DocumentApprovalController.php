@@ -12,6 +12,7 @@ use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
 use App\Models\StatusDocument;
+use App\Support\DocumentHistory;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -73,6 +74,7 @@ class DocumentApprovalController extends Controller
             ])->values(),
             'obsoleteSourceContentFiles' => $obsoleteSourceContentFiles,
             'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
+            'documentHistory' => app(DocumentHistory::class)->forDocument($document),
         ]);
     }
 

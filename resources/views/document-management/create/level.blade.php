@@ -153,7 +153,7 @@
         $nextRevisionValue = $draft
             ? $draft->formatted_revision
             : ($revisionSource
-            ? '00.'.str_pad((string) (($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1), 2, '0', STR_PAD_LEFT)
+            ? \App\Models\Document::formatRevisionNumber(($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1)
             : '00.00');
         $selectedBusinessProcess = $businessProcesses->firstWhere('id', (int) $selectedBusinessProcessId);
         $documentNumberProcessCode = $selectedBusinessProcess?->kode ?: 'SMR';

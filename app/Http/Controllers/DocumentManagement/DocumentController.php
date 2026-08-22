@@ -153,9 +153,11 @@ class DocumentController extends Controller
         $documentNumber = $revisionSource !== null
             ? $this->buildRevisionDocumentNumber($revisionSource, $documentLevel)
             : $this->buildDocumentNumber($documentLevel, $validated);
-        $documentRevision = $revisionSource !== null
-            ? $this->nextRevisionNumber($revisionSource)
-            : $this->normalizeRevision($validated['nomor_revisi'] ?? null);
+        $documentRevision = $draft !== null && $draft->revised_from !== null
+            ? (int) $draft->nomor_revisi
+            : ($revisionSource !== null
+                ? $this->nextRevisionNumber($revisionSource)
+                : $this->normalizeRevision($validated['nomor_revisi'] ?? null));
 
         if (
             $revisionSource === null
@@ -631,7 +633,11 @@ class DocumentController extends Controller
             return 0;
         }
 
-        return (int) preg_replace('/\D+/', '', Str::before($revision, '.'));
+        $parts = explode('.', $revision, 2);
+        $major = (int) preg_replace('/\D+/', '', $parts[0] ?? '0');
+        $minor = (int) preg_replace('/\D+/', '', $parts[1] ?? '0');
+
+        return ($major * 100) + $minor;
     }
 
     protected function storeDocumentFile(Document $document, mixed $file, string $type, int $uploadedBy): void

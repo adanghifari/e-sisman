@@ -11,6 +11,7 @@
     'approvalFlowStages' => collect(),
     'contentFiles' => collect(),
     'attachmentFiles' => collect(),
+    'documentHistory' => collect(),
 ])
 
 @php
@@ -268,6 +269,8 @@
                         @endforelse
                     </div>
                 </section>
+
+                <x-documents.history-section :document-history="$documentHistory" />
             </aside>
         </div>
     </div>
