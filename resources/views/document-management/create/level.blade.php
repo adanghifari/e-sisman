@@ -152,9 +152,24 @@
             : '00.00');
         $selectedBusinessProcess = $businessProcesses->firstWhere('id', (int) $selectedBusinessProcessId);
         $documentNumberProcessCode = $selectedBusinessProcess?->kode ?: 'SMR';
+        $selectedProcedureReference = $procedureReferences->firstWhere('id', (int) $selectedReferenceId);
+        $procedureReferenceSegments = fn ($procedure) => collect(explode('-', (string) ($procedure?->procedure_reference_number ?: $procedure?->nomor_dokumen)))
+            ->filter()
+            ->values()
+            ->skip(1)
+            ->values();
+        $selectedProcedureNumberSegments = $procedureReferenceSegments($selectedProcedureReference);
+        $procedureReferenceNumberSegments = $procedureReferences
+            ->mapWithKeys(fn ($procedure) => [
+                $procedure->id => $procedureReferenceSegments($procedure)->all(),
+            ])
+            ->all();
         $documentNumberSegments = match ($levelKey) {
             'level-2' => [['value' => $documentNumberProcessCode, 'target' => 'business-process']],
-            'level-3' => ['XXX', 'YY'],
+            'level-3' => [
+                ['value' => $selectedProcedureNumberSegments->get(0, 'XXX'), 'target' => 'procedure-reference-0'],
+                ['value' => $selectedProcedureNumberSegments->get(1, 'YY'), 'target' => 'procedure-reference-1'],
+            ],
             'level-4' => $revisionDocumentNumberSegments,
             default => [],
         };
@@ -636,6 +651,7 @@
         <script>
             (() => {
                 const documentNumberSuggestions = @json($documentNumberSuggestions);
+                const procedureReferenceNumberSegments = @json($procedureReferenceNumberSegments);
 
                 document.addEventListener('click', (event) => {
                     const button = event.target.closest('[data-document-upload-trigger]');
@@ -767,6 +783,22 @@
                     if (!selectedReferenceStillValid) {
                         referenceSelect.value = '';
                     }
+
+                    syncProcedureReferenceNumberSegments(form);
+                };
+
+                const syncProcedureReferenceNumberSegments = (form) => {
+                    const referenceSelect = form.querySelector('select[name="reference"]');
+
+                    if (!referenceSelect) {
+                        return;
+                    }
+
+                    const segments = procedureReferenceNumberSegments[referenceSelect.value] || ['XXX', 'YY'];
+
+                    form.querySelectorAll('[data-document-number-segment^="procedure-reference-"]').forEach((input, index) => {
+                        input.value = segments[index] || (index === 0 ? 'XXX' : 'YY');
+                    });
                 };
 
                 const syncDocumentNumberSuggestion = (form) => {
@@ -815,6 +847,19 @@
                     if (form) {
                         syncProcedureReferenceOptions(form);
                         syncDocumentNumberSuggestion(form);
+                        syncProcedureReferenceNumberSegments(form);
+                    }
+                });
+
+                document.addEventListener('change', (event) => {
+                    if (!event.target.closest('select[name="reference"]')) {
+                        return;
+                    }
+
+                    const form = event.target.closest('form');
+
+                    if (form) {
+                        syncProcedureReferenceNumberSegments(form);
                     }
                 });
             })();

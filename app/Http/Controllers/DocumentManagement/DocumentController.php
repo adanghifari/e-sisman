@@ -605,6 +605,11 @@ class DocumentController extends Controller
             $segments[] = Str::upper(trim($suffix));
         } elseif ($documentLevel->kode === 'level-4') {
             $segments[] = Str::upper(trim($suffix));
+        } elseif ($documentLevel->kode === 'level-3') {
+            $segments = collect([$documentLevel->prefix])
+                ->merge($this->procedureNumberSegments((int) ($validated['reference'] ?? 0)))
+                ->push(Str::upper(trim($suffix)))
+                ->all();
         } else {
             $segments[] = 'XXX';
             $segments[] = 'YY';
@@ -614,6 +619,20 @@ class DocumentController extends Controller
         return collect($segments)
             ->filter()
             ->implode('-');
+    }
+
+    private function procedureNumberSegments(int $referenceId): Collection
+    {
+        $procedureNumber = Document::query()
+            ->whereKey($referenceId)
+            ->value('nomor_dokumen');
+
+        return collect(explode('-', (string) $procedureNumber))
+            ->filter()
+            ->values()
+            ->skip(1)
+            ->map(fn (string $segment): string => Str::upper(trim($segment)))
+            ->values();
     }
 
     protected function buildRevisionFormNumber(Document $source, int $revision): string

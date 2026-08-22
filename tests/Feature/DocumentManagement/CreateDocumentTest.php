@@ -1359,7 +1359,7 @@ class CreateDocumentTest extends TestCase
         $this->assertSame('Instruksi Kerja Pengujian', $document->nama_dokumen);
         $this->assertSame($user->id, $document->official_preparer_id);
         $this->assertSame($procedure->id, $document->reference);
-        $this->assertSame('IK-XXX-YY-001', $document->nomor_dokumen);
+        $this->assertSame('IK-SMR-001-001', $document->nomor_dokumen);
         $this->assertTrue($document->departments()->whereKey($department->id)->exists());
         $this->assertTrue($document->departments()->whereKey($secondDepartment->id)->exists());
     }

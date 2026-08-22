@@ -501,6 +501,7 @@
                                                 'status' => $approval->status?->kode_status,
                                                 'locked' => true,
                                             ])
+                                            ->toBase()
                                             ->merge(
                                                 $assignableUsers
                                                     ->whereIn('id', $oldApproverIds->diff($respondedApprovals->pluck('user_id')))
@@ -519,6 +520,7 @@
                                                 'status' => $approval->status?->kode_status,
                                                 'locked' => $approval->responded_at !== null,
                                             ])
+                                            ->toBase()
                                             ->filter(fn ($item) => $item['user'])
                                             ->values();
                                 @endphp
