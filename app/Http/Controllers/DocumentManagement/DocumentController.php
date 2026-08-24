@@ -208,12 +208,19 @@ class DocumentController extends Controller
                         ]);
                     }
 
-                    $currentDocumentRevision = $draft !== null && $draft->revised_from !== null
-                        ? (int) $draft->nomor_revisi
-                        : $this->nextRevisionNumber($lockedRevisionSource);
+                    $rejectedRevisionAttempt = $draft === null
+                        ? $this->latestRejectedRevisionAttempt($lockedRevisionSource)
+                        : null;
+                    $currentDocumentRevision = match (true) {
+                        $draft !== null && $draft->revised_from !== null => (int) $draft->nomor_revisi,
+                        $rejectedRevisionAttempt !== null => (int) $rejectedRevisionAttempt->nomor_revisi,
+                        default => $this->nextRevisionNumber($lockedRevisionSource),
+                    };
                     $currentDocumentNumber = $this->revisionSourceMasterNumber($lockedRevisionSource);
                     $currentRevisionFormNumber = $draft?->nomor_lembar_revisi
+                        ?: $rejectedRevisionAttempt?->nomor_lembar_revisi
                         ?: $this->buildRevisionFormNumber($lockedRevisionSource, (int) $currentDocumentRevision);
+                    $resubmittedFromId = $rejectedRevisionAttempt?->id;
 
                     $documentAttributes['m_proses_bisnis_id'] = $lockedRevisionSource->m_proses_bisnis_id;
                     $documentAttributes['m_proses_fungsi_id'] = $lockedRevisionSource->m_proses_fungsi_id;
@@ -237,7 +244,7 @@ class DocumentController extends Controller
                     'official_preparer_id' => $documentAttributes['official_preparer_id'] ?? null,
                     'reference' => $level === 'level-3' ? ($documentAttributes['reference'] ?? null) : null,
                     'revised_from' => $lockedRevisionSource?->id,
-                    'resubmitted_from' => $lockedRevisionSource === null ? $resubmittedFromId : null,
+                    'resubmitted_from' => $resubmittedFromId,
                     'request_type' => $revisionSource !== null ? 'revision' : null,
                     'nama_dokumen' => $documentAttributes['nama_dokumen'],
                     'nomor_dokumen' => $currentDocumentNumber,
@@ -775,6 +782,21 @@ class DocumentController extends Controller
     protected function nextRevisionNumber(Document $source): int
     {
         return ((int) $source->revisionFamily()->max('nomor_revisi')) + 1;
+    }
+
+    private function latestRejectedRevisionAttempt(Document $source): ?Document
+    {
+        return Document::query()
+            ->with('status')
+            ->where('revised_from', $source->id)
+            ->where('request_type', 'revision')
+            ->whereNull('approved_at')
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::REJECTED))
+            ->orderByDesc('nomor_revisi')
+            ->orderByDesc('rejected_at')
+            ->orderByDesc('id')
+            ->lockForUpdate()
+            ->first();
     }
 
     private function hasActiveRevisionRequest(Document $source): bool
