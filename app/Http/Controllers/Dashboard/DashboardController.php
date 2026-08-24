@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Dashboard;
 
+use App\Http\Controllers\Controller;
 use App\Http\Controllers\DocumentManagement\DocumentInboxController;
 use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
@@ -145,12 +146,15 @@ class DashboardController extends Controller
 
     private function masterDocumentBaseQuery()
     {
-        $approvedStatusId = StatusDocument::query()
-            ->where('nama_status', StatusDocument::APPROVED)
-            ->value('id');
+        $documentStatusIds = StatusDocument::query()
+            ->whereIn('nama_status', [
+                StatusDocument::APPROVED,
+                StatusDocument::OBSOLETE,
+            ])
+            ->pluck('id');
 
         return Document::query()
-            ->where('m_status_document_id', $approvedStatusId)
+            ->whereIn('m_status_document_id', $documentStatusIds)
             ->whereNull('request_type');
     }
 

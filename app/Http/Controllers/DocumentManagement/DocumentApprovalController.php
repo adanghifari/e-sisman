@@ -296,7 +296,12 @@ class DocumentApprovalController extends Controller
         $path = Storage::disk('local')->path($file->path_file);
         abort_unless(is_file($path), 404);
 
-        $recordDocumentDownload->handle($request, $downloadDocument, $file);
+        $recordDocumentDownload->handle($request, $downloadDocument, $file, [
+            'name' =>$downloadDocument->nama_dokumen,
+            'number' => $this->approvalDownloadNumber($document, $downloadDocument),
+            'revision'=> $downloadDocument->nomor_revisi,
+            'context' => 'approval',
+        ]);
 
         return response()->file($path, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
@@ -328,6 +333,15 @@ class DocumentApprovalController extends Controller
         }
 
         abort(404);
+    }
+
+    private function approvalDownloadNumber(Document $document, Document $downloadDocument): ?string
+    {
+        if (filled($document->nomor_lembar_revisi)) {
+            return $document->nomor_lembar_revisi;
+        }
+
+        return $downloadDocument->nomor_dokumen;
     }
 
     private function authorizeDocumentAccess(Request $request, Document $document): void
