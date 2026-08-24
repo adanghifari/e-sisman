@@ -6,60 +6,88 @@ use App\Http\Controllers\Controller;
 use App\Models\Approval;
 use App\Models\ApprovalStatus;
 use App\Models\Document;
+use App\Models\DocumentType;
 use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
+use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
-use Illuminate\Support\Collection;
 
 class DocumentInboxController extends Controller
 {
-    public function __invoke(Request $request): View
+    private const BATCH_SIZE = 15;
+
+    /**
+     * @var array<int, Document|null>
+     */
+    private array $rootDocumentCache = [];
+
+    public function __invoke(Request $request): View|JsonResponse
     {
         $filters = $this->filters($request);
-        $myTasks = $this->myTasks($request);
-        $myProcessedHistory = $this->myProcessedHistory($request);
+        $requestedTab = (string) $request->query('tab', '');
+        $activeTab = in_array($requestedTab, ['needs-process', 'processed-history'], true) ? $requestedTab : 'needs-process';
+        $activePage = $this->activePage($request, $activeTab);
+
+        if ($request->boolean('load_more')) {
+            $activeTotal = match ($activeTab) {
+                'processed-history' => $this->myProcessedHistoryQuery($request, $filters)->count(),
+                default => $this->myTasksQuery($request, $filters)->count(),
+            };
+            $activeBatch = $this->batchFor($request, $activeTab, $filters, $activePage, $activeTotal);
+
+            return response()->json([
+                'rows' => view($this->rowPartialFor($activeTab), [
+                    'documents' => $activeBatch['rows'],
+                ])->render(),
+                'next_page' => $activeBatch['has_more'] ? $activePage + 1 : null,
+                'has_more' => $activeBatch['has_more'],
+                'displayed_count' => min($activePage * self::BATCH_SIZE, $activeBatch['total']),
+                'total' => $activeBatch['total'],
+            ]);
+        }
+
+        $taskCount = $this->myTasksQuery($request, $filters)->count();
+        $processedHistoryCount = $this->myProcessedHistoryQuery($request, $filters)->count();
 
         $tabs = [
             'needs-process' => [
                 'label' => 'Perlu Saya Proses',
-                'count' => count($myTasks),
+                'count' => $taskCount,
             ],
             'processed-history' => [
                 'label' => 'Riwayat yang Saya Proses',
-                'count' => count($myProcessedHistory),
+                'count' => $processedHistoryCount,
             ],
         ];
-        $requestedTab = (string) $request->query('tab', '');
-        $activeTab = array_key_exists($requestedTab, $tabs) ? $requestedTab : 'needs-process';
-        $activeDocuments = match ($activeTab) {
-            'processed-history' => $myProcessedHistory,
-            default => $myTasks,
-        };
 
-        $filteredMyTasks = $this->filterDocuments($myTasks, $filters, 'date');
-        $filteredMyProcessedHistory = $this->filterDocuments($myProcessedHistory, $filters, 'updated_at');
+        $activeResultCount = match ($activeTab) {
+            'processed-history' => $processedHistoryCount,
+            default => $taskCount,
+        };
+        $activeBatch = $this->batchFor($request, $activeTab, $filters, $activePage, $activeResultCount);
 
         return view('document-management.inbox', [
             'tabs' => $tabs,
             'activeTab' => $activeTab,
             'filters' => $filters,
-            'typeOptions' => $this->optionsFrom($activeDocuments, 'type', 'Semua Jenis'),
-            'statusOptions' => $this->optionsFrom($activeDocuments, 'status', 'Semua Status'),
-            'stageOptions' => $this->optionsFrom($activeDocuments, 'stage', 'Semua Tahap'),
+            'typeOptions' => $this->typeOptions(),
+            'statusOptions' => $this->statusOptions(),
+            'stageOptions' => $this->stageOptions($request, $activeTab),
             'sortOptions' => [
                 'newest' => 'Terbaru',
                 'oldest' => 'Terlama',
                 'name_asc' => 'Nama A-Z',
                 'name_desc' => 'Nama Z-A',
             ],
-            'filteredMyTasks' => $filteredMyTasks,
-            'filteredMyProcessedHistory' => $filteredMyProcessedHistory,
-            'activeResultCount' => match ($activeTab) {
-                'processed-history' => $filteredMyProcessedHistory->count(),
-                default => $filteredMyTasks->count(),
-            },
+            'filteredMyTasks' => $activeTab === 'needs-process' ? $activeBatch['rows'] : collect(),
+            'filteredMyProcessedHistory' => $activeTab === 'processed-history' ? $activeBatch['rows'] : collect(),
+            'activeResultCount' => $activeResultCount,
+            'loadedResultCount' => $activeBatch['rows']->count(),
+            'hasMoreResults' => $activeBatch['has_more'],
+            'nextPage' => $activeBatch['has_more'] ? $activePage + 1 : null,
         ]);
     }
 
@@ -68,9 +96,17 @@ class DocumentInboxController extends Controller
      */
     public function dashboardCounts(Request $request): array
     {
+        $filters = [
+            'search' => '',
+            'type' => '',
+            'status' => '',
+            'stage' => '',
+            'sort' => 'newest',
+        ];
+
         return [
-            'needs_process' => count($this->myTasks($request)),
-            'processed_history' => count($this->myProcessedHistory($request)),
+            'needs_process' => $this->myTasksQuery($request, $filters)->count(),
+            'processed_history' => $this->myProcessedHistoryQuery($request, $filters)->count(),
         ];
     }
 
@@ -88,48 +124,55 @@ class DocumentInboxController extends Controller
         ];
     }
 
-    private function optionsFrom(array $documents, string $key, string $defaultLabel): array
+    private function activePage(Request $request, string $activeTab): int
     {
-        return ['' => $defaultLabel] + collect($documents)
-            ->pluck($key)
-            ->unique()
-            ->sort()
-            ->mapWithKeys(fn ($value) => [$value => $value])
-            ->all();
+        $pageKey = $activeTab === 'processed-history' ? 'history_page' : 'needs_page';
+
+        return max(1, (int) $request->query($pageKey, 1));
     }
 
-    private function filterDocuments(array $documents, array $filters, string $dateKey): Collection
+    /**
+     * @return array{rows: \Illuminate\Support\Collection<int, array<string, mixed>>, total: int, has_more: bool}
+     */
+    private function batchFor(Request $request, string $activeTab, array $filters, int $page, int $total): array
     {
-        return collect($documents)
-            ->filter(function (array $document) use ($filters): bool {
-                $haystack = strtolower(implode(' ', [
-                    $document['number'],
-                    $document['name'],
-                    $document['type'],
-                    $document['number_badge_label'] ?? '',
-                    $document['stage'],
-                    $document['waiting_for'],
-                    $document['status'],
-                    $document['owner'] ?? '',
-                    $document['department'] ?? '',
-                ]));
+        $query = match ($activeTab) {
+            'processed-history' => $this->myProcessedHistoryQuery($request, $filters),
+            default => $this->myTasksQuery($request, $filters),
+        };
+        $documents = $query
+            ->forPage($page, self::BATCH_SIZE)
+            ->get();
+        $rows = match ($activeTab) {
+            'processed-history' => $documents->map(fn (Document $document): array => $this->processedHistoryRow(
+                $document,
+                $this->processedHistoryApproval($document, $request->user()),
+                $request->user(),
+            )),
+            default => $documents->map(fn (Document $document): array => $this->approvalRow(
+                $document,
+                $this->taskApproval($document, $request->user()),
+                $request->user()->isAdmin() || $request->user()->canAssignDocument($document),
+                $request->user(),
+            )),
+        };
 
-                return ($filters['search'] === '' || str_contains($haystack, strtolower($filters['search'])))
-                    && ($filters['type'] === '' || $document['type'] === $filters['type'])
-                    && ($filters['status'] === '' || $document['status'] === $filters['status'])
-                    && ($filters['stage'] === '' || $document['stage'] === $filters['stage']);
-            })
-            ->sortBy(function (array $document) use ($filters, $dateKey): mixed {
-                return match ($filters['sort']) {
-                    'oldest', 'newest' => $document[$dateKey.'_sort'] ?? $document[$dateKey],
-                    'name_desc', 'name_asc' => $document['name'],
-                    default => $document[$dateKey.'_sort'] ?? $document[$dateKey],
-                };
-            }, SORT_NATURAL, in_array($filters['sort'], ['newest', 'name_desc'], true))
-            ->values();
+        return [
+            'rows' => $rows->values(),
+            'total' => $total,
+            'has_more' => $page * self::BATCH_SIZE < $total,
+        ];
     }
 
-    private function myTasks(Request $request): array
+    private function rowPartialFor(string $activeTab): string
+    {
+        return match ($activeTab) {
+            'processed-history' => 'document-management.partials.inbox-processed-history-rows',
+            default => 'document-management.partials.inbox-needs-process-rows',
+        };
+    }
+
+    private function myTasksQuery(Request $request, array $filters): Builder
     {
         $approvalScope = $this->approvalScope($request, processed: false);
         $assignedMonitorApprovalScope = $this->assignedMonitorApprovalScope($request);
@@ -137,98 +180,382 @@ class DocumentInboxController extends Controller
         $assignableDocumentScope = $this->assignableDocumentScope($request);
 
         $query = Document::query()
+            ->select('t_document.*')
             ->withExists([
                 'approvals as has_flow_approvals' => function ($query): void {
                     $query->where('stages', '!=', 'TTD Penyusun Resmi');
                 },
             ])
-            ->with([
-                'documentLevel',
-                'documentType',
-                'creator',
-                'status',
-                'departments',
-                'revisedFrom.documentLevel',
-                'revisedFrom.documentType',
-                'approvals' => function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
-                    $query->where(function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
-                        $query
-                            ->where($approvalScope)
-                            ->orWhere($assignedMonitorApprovalScope);
-                    });
-                    $query->with(['status', 'approver'])->orderByDesc('assigned_at');
-                },
-            ]);
+            ->with($this->taskEagerLoads($approvalScope, $assignedMonitorApprovalScope));
 
-        $query->where(function ($query) use ($approvalScope, $assignedMonitorDocumentScope, $assignableDocumentScope): void {
-            $query->whereHas('approvals', $approvalScope);
-            $query->orWhere($assignedMonitorDocumentScope);
+        $relevantDocumentIds = Approval::query()
+            ->select('t_document_id')
+            ->where($approvalScope);
+        $relevantDocumentIds->union(
+            Document::query()
+                ->select('id')
+                ->where($assignedMonitorDocumentScope),
+        );
 
-            if ($assignableDocumentScope !== null) {
-                $query
-                    ->orWhere($assignableDocumentScope);
-            }
-        });
+        if ($assignableDocumentScope !== null) {
+            $relevantDocumentIds->union(
+                Document::query()
+                    ->select('id')
+                    ->where($assignableDocumentScope),
+            );
+        }
 
-        return $query->get()
-            ->filter(function (Document $document) use ($request): bool {
-                return $this->isAssignedMonitorTask($document, $request->user())
-                    || $document->approvals->first() !== null
-                    || ! $document->has_flow_approvals;
-            })
-            ->map(fn (Document $document): array => $this->approvalRow(
-                $document,
-                $this->taskApproval($document, $request->user()),
-                $request->user()->isAdmin() || $request->user()->canAssignDocument($document),
-                $request->user(),
-            ))
-            ->all();
+        $query->whereIn('id', $relevantDocumentIds);
+
+        $this->applyTaskFilters($query, $request, $filters, $approvalScope, $assignedMonitorApprovalScope);
+        $this->applyOrdering($query, $request, $filters, history: false);
+
+        return $query;
     }
 
-    private function myProcessedHistory(Request $request): array
+    private function myProcessedHistoryQuery(Request $request, array $filters): Builder
     {
         $approvalScope = $this->approvalScope($request, processed: true, includeAllForDeveloper: false);
         $assignedApprovalScope = $this->assignedApprovalScope($request);
+        $assignedMonitorDocumentScope = $this->assignedMonitorDocumentScope($request);
         $user = $request->user();
 
-        return Document::query()
-            ->with([
-                'documentLevel',
-                'documentType',
-                'creator',
-                'status',
-                'departments',
-                'revisedFrom.documentLevel',
-                'revisedFrom.documentType',
-                'approvals' => function ($query) use ($approvalScope, $assignedApprovalScope): void {
-                    $query->where(function ($query) use ($approvalScope, $assignedApprovalScope): void {
-                        $query->where($approvalScope)
-                            ->orWhere($assignedApprovalScope);
-                    });
-                    $query->with(['status', 'approver'])->orderByDesc('responded_at');
-                },
-            ])
-            ->where(function ($query) use ($approvalScope, $assignedApprovalScope, $user): void {
-                $query->whereHas('approvals', $approvalScope);
-                $query->orWhereHas('approvals', $assignedApprovalScope);
+        $relevantDocumentIds = Approval::query()
+            ->select('t_document_id')
+            ->where($approvalScope);
+        $relevantDocumentIds->union(
+            Approval::query()
+                ->select('t_document_id')
+                ->where($assignedApprovalScope),
+        );
 
-                if (! $user->isDeveloper()) {
+        if (! $user->isDeveloper()) {
+            $relevantDocumentIds->union(
+                Document::query()
+                    ->select('id')
+                    ->where(function ($query) use ($user): void {
+                        $query
+                            ->where('user_id', $user->id)
+                            ->orWhere('official_preparer_id', $user->id);
+                    }),
+            );
+        }
+
+        $query = Document::query()
+            ->select('t_document.*')
+            ->with($this->historyEagerLoads($approvalScope, $assignedApprovalScope))
+            ->whereIn('id', $relevantDocumentIds)
+            ->whereNot($assignedMonitorDocumentScope);
+
+        $this->applyHistoryFilters($query, $request, $filters, $approvalScope, $assignedApprovalScope);
+        $this->applyOrdering($query, $request, $filters, history: true);
+
+        return $query;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function taskEagerLoads(callable $approvalScope, callable $assignedMonitorApprovalScope): array
+    {
+        return [
+            'documentLevel',
+            'documentType',
+            'creator',
+            'status',
+            'departments',
+            'revisedFrom.documentLevel',
+            'revisedFrom.documentType',
+            'approvals' => function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
+                $query->where(function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
                     $query
-                        ->orWhere(function ($query) use ($user): void {
-                            $query
-                                ->where('user_id', $user->id)
-                                ->orWhere('official_preparer_id', $user->id);
-                        });
+                        ->where($approvalScope)
+                        ->orWhere($assignedMonitorApprovalScope);
+                });
+                $query->with(['status', 'approver'])->orderByDesc('assigned_at');
+            },
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function historyEagerLoads(callable $approvalScope, callable $assignedApprovalScope): array
+    {
+        return [
+            'documentLevel',
+            'documentType',
+            'creator',
+            'status',
+            'departments',
+            'revisedFrom.documentLevel',
+            'revisedFrom.documentType',
+            'approvals' => function ($query) use ($approvalScope, $assignedApprovalScope): void {
+                $query->where(function ($query) use ($approvalScope, $assignedApprovalScope): void {
+                    $query->where($approvalScope)
+                        ->orWhere($assignedApprovalScope);
+                });
+                $query->with(['status', 'approver'])->orderByDesc('responded_at');
+            },
+        ];
+    }
+
+    private function applyTaskFilters(
+        Builder $query,
+        Request $request,
+        array $filters,
+        callable $approvalScope,
+        callable $assignedMonitorApprovalScope,
+    ): void {
+        $this->applyCommonFilters($query, $filters);
+
+        if ($filters['stage'] !== '') {
+            $query->where(function ($query) use ($filters, $approvalScope, $assignedMonitorApprovalScope): void {
+                if ($filters['stage'] === 'Belum assign approver') {
+                    $query->whereDoesntHave('approvals', fn ($query) => $query->where('stages', '!=', 'TTD Penyusun Resmi'));
+
+                    return;
                 }
-            })
-            ->get()
-            ->reject(fn (Document $document): bool => $this->isAssignedMonitorTask($document, $user))
-            ->map(fn (Document $document): array => $this->processedHistoryRow(
-                $document,
-                $this->processedHistoryApproval($document, $user),
-                $user,
-            ))
+
+                $query->whereHas('approvals', function ($query) use ($filters, $approvalScope, $assignedMonitorApprovalScope): void {
+                    $query
+                        ->where('stages', $filters['stage'])
+                        ->where(function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
+                            $query->where($approvalScope)
+                                ->orWhere($assignedMonitorApprovalScope);
+                        });
+                });
+            });
+        }
+
+        if ($filters['search'] !== '') {
+            $this->applySearch($query, $request, $filters['search'], $approvalScope, $assignedMonitorApprovalScope);
+        }
+    }
+
+    private function applyHistoryFilters(
+        Builder $query,
+        Request $request,
+        array $filters,
+        callable $approvalScope,
+        callable $assignedApprovalScope,
+    ): void {
+        $this->applyCommonFilters($query, $filters);
+
+        if ($filters['stage'] !== '') {
+            $query->where(function ($query) use ($filters, $approvalScope, $assignedApprovalScope): void {
+                $query->whereHas('approvals', function ($query) use ($filters, $approvalScope, $assignedApprovalScope): void {
+                    $query
+                        ->where('stages', $filters['stage'])
+                        ->where(function ($query) use ($approvalScope, $assignedApprovalScope): void {
+                            $query->where($approvalScope)
+                                ->orWhere($assignedApprovalScope);
+                        });
+                });
+
+                $query->orWhere(function ($query) use ($filters): void {
+                    $query
+                        ->when($filters['stage'] === 'Pengajuan Revisi', fn ($query) => $query->whereNotNull('revised_from'))
+                        ->when($filters['stage'] === 'Pengajuan Dokumen', fn ($query) => $query->whereNull('revised_from'))
+                        ->when($filters['stage'] === 'TTD Penyusun Resmi', fn ($query) => $query->whereColumn('official_preparer_id', '!=', 'user_id'));
+                });
+            });
+        }
+
+        if ($filters['search'] !== '') {
+            $this->applySearch($query, $request, $filters['search'], $approvalScope, $assignedApprovalScope);
+        }
+    }
+
+    private function applyCommonFilters(Builder $query, array $filters): void
+    {
+        if ($filters['type'] !== '') {
+            $type = $filters['type'] === 'Instruksi Kerja' ? 'IK' : $filters['type'];
+            $query->whereHas('documentType', fn ($query) => $query->where('nama_types', $type));
+        }
+
+        if ($filters['status'] !== '') {
+            $query->where(function ($query) use ($filters): void {
+                $query->whereHas('status', fn ($query) => $query->where('nama_status', $filters['status']));
+                $query->orWhereHas('approvals.status', fn ($query) => $query->where('nama_status', $filters['status']));
+            });
+        }
+    }
+
+    private function applySearch(
+        Builder $query,
+        Request $request,
+        string $search,
+        callable $primaryApprovalScope,
+        callable $secondaryApprovalScope,
+    ): void {
+        $like = '%'.str_replace(['\\', '%', '_'], ['\\\\', '\\%', '\\_'], strtolower($search)).'%';
+
+        $query->where(function ($query) use ($request, $like, $primaryApprovalScope, $secondaryApprovalScope): void {
+            $query
+                ->whereRaw('lower(`nama_dokumen`) like ?', [$like])
+                ->orWhereRaw('lower(coalesce(`nomor_dokumen`, "")) like ?', [$like])
+                ->orWhereRaw('lower(coalesce(`nomor_lembar_revisi`, "")) like ?', [$like])
+                ->orWhereRaw('lower(coalesce(`request_type`, "")) like ?', [$like])
+                ->orWhereHas('documentType', fn ($query) => $query->whereRaw('lower(`nama_types`) like ?', [$like]))
+                ->orWhereHas('creator', fn ($query) => $query->whereRaw('lower(`name`) like ?', [$like]))
+                ->orWhereHas('departments', function ($query) use ($like): void {
+                    $query
+                        ->whereRaw('lower(coalesce(`kode_department`, "")) like ?', [$like])
+                        ->orWhereRaw('lower(`nama_department`) like ?', [$like]);
+                })
+                ->orWhereHas('status', fn ($query) => $query->whereRaw('lower(`nama_status`) like ?', [$like]))
+                ->orWhereHas('approvals', function ($query) use ($like, $primaryApprovalScope, $secondaryApprovalScope): void {
+                    $query
+                        ->where(function ($query) use ($primaryApprovalScope, $secondaryApprovalScope): void {
+                            $query->where($primaryApprovalScope)
+                                ->orWhere($secondaryApprovalScope);
+                        })
+                        ->where(function ($query) use ($like): void {
+                            $query
+                                ->whereRaw('lower(coalesce(`stages`, "")) like ?', [$like])
+                                ->orWhereHas('approver', fn ($query) => $query->whereRaw('lower(`name`) like ?', [$like]))
+                                ->orWhereHas('status', fn ($query) => $query->whereRaw('lower(`nama_status`) like ?', [$like]));
+                        });
+                });
+
+            if ($request->user()->isAdmin() || $request->user()->hasExplicitPermission('documents.approval.assign')) {
+                $query->orWhereRaw('? like ?', ['perlu verifikasi admin kd', $like]);
+                $query->orWhereRaw('? like ?', ['belum assign approver', $like]);
+            }
+        });
+    }
+
+    private function applyOrdering(Builder $query, Request $request, array $filters, bool $history): void
+    {
+        if (in_array($filters['sort'], ['name_asc', 'name_desc'], true)) {
+            $query
+                ->orderBy('nama_dokumen', $filters['sort'] === 'name_asc' ? 'asc' : 'desc')
+                ->orderBy('id', $filters['sort'] === 'name_asc' ? 'asc' : 'desc');
+
+            return;
+        }
+
+        $direction = $filters['sort'] === 'oldest' ? 'asc' : 'desc';
+        $sortExpression = $history
+            ? $this->historySortExpression($request)
+            : $this->taskSortExpression($request);
+
+        $query
+            ->orderByRaw($sortExpression.' '.$direction)
+            ->orderBy('id', $direction);
+    }
+
+    private function taskSortExpression(Request $request): string
+    {
+        $userId = (int) $request->user()->id;
+        $userClause = $request->user()->isDeveloper() ? '1 = 1' : "user_id = {$userId}";
+
+        return "coalesce((
+            select max(assigned_at)
+            from t_approval
+            where t_approval.t_document_id = t_document.id
+                and stages != 'TTD Penyusun Resmi'
+                and responded_at is null
+                and (
+                    ({$userClause})
+                    or assigned_by = {$userId}
+                )
+        ), submitted_at, created_at)";
+    }
+
+    private function historySortExpression(Request $request): string
+    {
+        $userId = (int) $request->user()->id;
+
+        return "coalesce((
+            select max(coalesce(responded_at, assigned_at))
+            from t_approval
+            where t_approval.t_document_id = t_document.id
+                and stages != 'TTD Penyusun Resmi'
+                and (
+                    (user_id = {$userId} and responded_at is not null)
+                    or assigned_by = {$userId}
+                )
+        ), submitted_at, created_at)";
+    }
+
+    private function typeOptions(): array
+    {
+        return ['' => 'Semua Jenis'] + DocumentType::query()
+            ->orderBy('nama_types')
+            ->pluck('nama_types')
+            ->mapWithKeys(fn (string $value): array => [$this->typeOptionLabel($value) => $this->typeOptionLabel($value)])
             ->all();
+    }
+
+    private function statusOptions(): array
+    {
+        $documentStatuses = StatusDocument::query()->pluck('nama_status');
+        $approvalStatuses = ApprovalStatus::query()->pluck('nama_status');
+
+        return ['' => 'Semua Status'] + $documentStatuses
+            ->merge($approvalStatuses)
+            ->unique()
+            ->sort()
+            ->mapWithKeys(fn (string $value): array => [$value => $value])
+            ->all();
+    }
+
+    private function stageOptions(Request $request, string $activeTab): array
+    {
+        $query = Approval::query()
+            ->whereNotNull('stages')
+            ->where('stages', '!=', 'TTD Penyusun Resmi');
+
+        if ($activeTab === 'processed-history') {
+            $query->where(function ($query) use ($request): void {
+                $query
+                    ->where(function ($query) use ($request): void {
+                        $query
+                            ->where('user_id', $request->user()->id)
+                            ->whereNotNull('responded_at');
+                    })
+                    ->orWhere('assigned_by', $request->user()->id);
+            });
+        } else {
+            $query->where(function ($query) use ($request): void {
+                $query
+                    ->where(function ($query) use ($request): void {
+                        $query
+                            ->when(! $request->user()->isDeveloper(), fn ($query) => $query->where('user_id', $request->user()->id))
+                            ->whereNull('responded_at');
+                    })
+                    ->orWhere(function ($query) use ($request): void {
+                        $query
+                            ->where('assigned_by', $request->user()->id)
+                            ->whereNull('responded_at');
+                    });
+            });
+        }
+
+        $stages = $query
+            ->distinct()
+            ->orderBy('stages')
+            ->pluck('stages');
+
+        if ($activeTab === 'needs-process') {
+            $stages = $stages->push('Belum assign approver');
+        } else {
+            $stages = $stages->merge(['Pengajuan Dokumen', 'Pengajuan Revisi', 'Assign Approver', 'TTD Penyusun Resmi']);
+        }
+
+        return ['' => 'Semua Tahap'] + $stages
+            ->filter()
+            ->unique()
+            ->sort()
+            ->mapWithKeys(fn (string $value): array => [$value => $value])
+            ->all();
+    }
+
+    private function typeOptionLabel(string $type): string
+    {
+        return $type === 'IK' ? 'Instruksi Kerja' : $type;
     }
 
     private function processedHistoryApproval(Document $document, User $user): ?Approval
@@ -316,25 +643,6 @@ class DocumentInboxController extends Controller
         };
     }
 
-    private function pendingRevisionOwnerScope(Request $request): callable
-    {
-        return function ($query) use ($request): void {
-            $query
-                ->whereNotNull('revised_from')
-                ->whereHas('status', fn ($query) => $query->whereNotIn('nama_status', [
-                    StatusDocument::APPROVED,
-                    StatusDocument::OBSOLETE,
-                    StatusDocument::REJECTED,
-                    StatusDocument::CANCELLED,
-                ]))
-                ->where(function ($query) use ($request): void {
-                    $query
-                        ->where('user_id', $request->user()->id)
-                        ->orWhere('official_preparer_id', $request->user()->id);
-                });
-        };
-    }
-
     private function assignableDocumentScope(Request $request): ?callable
     {
         $user = $request->user();
@@ -417,22 +725,6 @@ class DocumentInboxController extends Controller
         }
 
         return $document->approvals->first();
-    }
-
-    private function isAssignedMonitorTask(Document $document, User $user): bool
-    {
-        if (in_array($document->status?->nama_status, [
-            StatusDocument::APPROVED,
-            StatusDocument::OBSOLETE,
-            StatusDocument::REJECTED,
-            StatusDocument::CANCELLED,
-        ], true)) {
-            return false;
-        }
-
-        return $document->approvals->contains(
-            fn (Approval $approval): bool => $this->isAssignedMonitorApproval($approval, $user),
-        );
     }
 
     private function isAssignedMonitorApproval(Approval $approval, User $user): bool
@@ -598,7 +890,11 @@ class DocumentInboxController extends Controller
             return null;
         }
 
-        return Document::query()
+        if (array_key_exists($document->id, $this->rootDocumentCache)) {
+            return $this->rootDocumentCache[$document->id];
+        }
+
+        return $this->rootDocumentCache[$document->id] = Document::query()
             ->select(['id', 'm_document_types_id', 'nomor_dokumen', 'revised_from'])
             ->with('documentType')
             ->find($document->revisionRootId());
