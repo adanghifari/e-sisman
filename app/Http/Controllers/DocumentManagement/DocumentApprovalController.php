@@ -321,6 +321,9 @@ class DocumentApprovalController extends Controller
 
         return response()->file($sourcePath, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
         ]);
     }
 
