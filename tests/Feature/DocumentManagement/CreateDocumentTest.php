@@ -1188,7 +1188,7 @@ class CreateDocumentTest extends TestCase
             ->exists());
     }
 
-    public function test_revision_number_generation_uses_latest_family_state_inside_transaction(): void
+    public function test_rejected_revision_resubmission_reuses_revision_number_and_form_number(): void
     {
         Storage::fake('local');
 
@@ -1197,7 +1197,7 @@ class CreateDocumentTest extends TestCase
         $formLevel = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
         $formType = DocumentType::query()->where('nama_types', 'Form')->firstOrFail();
 
-        Document::create([
+        $rejectedRevision = Document::create([
             'm_document_level_id' => $formLevel->id,
             'm_status_document_id' => $rejectedStatus->id,
             'm_document_types_id' => $formType->id,
@@ -1224,10 +1224,78 @@ class CreateDocumentTest extends TestCase
             ->where('nama_dokumen', 'Prosedur Revisi Setelah Ditolak')
             ->firstOrFail();
 
-        $this->assertSame(2, $revision->nomor_revisi);
-        $this->assertSame('00.02', $revision->formatted_revision);
+        $this->assertSame($rejectedRevision->id, $revision->resubmitted_from);
+        $this->assertSame(1, $revision->nomor_revisi);
+        $this->assertSame('00.01', $revision->formatted_revision);
         $this->assertSame('PS-SMR-010', $revision->nomor_dokumen);
-        $this->assertSame('FMPS-SMR-010-02', $revision->nomor_lembar_revisi);
+        $this->assertSame('FMPS-SMR-010-01', $revision->nomor_lembar_revisi);
+    }
+
+    public function test_multiple_rejected_revision_resubmissions_keep_same_revision_number(): void
+    {
+        Storage::fake('local');
+
+        [$source, $submitter, $officialPreparer] = $this->revisionCreationFixture();
+        $rejectedStatus = StatusDocument::query()->where('nama_status', StatusDocument::REJECTED)->firstOrFail();
+        $formLevel = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $formType = DocumentType::query()->where('nama_types', 'Form')->firstOrFail();
+
+        $firstAttempt = Document::create([
+            'm_document_level_id' => $formLevel->id,
+            'm_status_document_id' => $rejectedStatus->id,
+            'm_document_types_id' => $formType->id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $officialPreparer->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Revisi Ditolak Pertama',
+            'nomor_dokumen' => 'PS-SMR-010',
+            'nomor_lembar_revisi' => 'FMPS-SMR-010-01',
+            'nomor_revisi' => 1,
+            'rejected_at' => now()->subDay(),
+        ]);
+        $secondAttempt = Document::create([
+            'm_document_level_id' => $formLevel->id,
+            'm_status_document_id' => $rejectedStatus->id,
+            'm_document_types_id' => $formType->id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $officialPreparer->id,
+            'revised_from' => $source->id,
+            'resubmitted_from' => $firstAttempt->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Revisi Ditolak Kedua',
+            'nomor_dokumen' => 'PS-SMR-010',
+            'nomor_lembar_revisi' => 'FMPS-SMR-010-01',
+            'nomor_revisi' => 1,
+            'rejected_at' => now(),
+        ]);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
+            ->assertOk()
+            ->assertSee('00.01')
+            ->assertDontSee('00.02');
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-4'), $this->revisionSubmitPayload($source, $officialPreparer, [
+                'nama_dokumen' => 'Revisi Setelah Ditolak Dua Kali',
+            ]))
+            ->assertRedirect(route('documents.create'));
+
+        $revision = Document::query()
+            ->where('nama_dokumen', 'Revisi Setelah Ditolak Dua Kali')
+            ->firstOrFail();
+
+        $this->assertSame($secondAttempt->id, $revision->resubmitted_from);
+        $this->assertSame($source->id, $revision->revised_from);
+        $this->assertSame(1, $revision->nomor_revisi);
+        $this->assertSame('00.01', $revision->formatted_revision);
+        $this->assertSame('PS-SMR-010', $revision->nomor_dokumen);
+        $this->assertSame('FMPS-SMR-010-01', $revision->nomor_lembar_revisi);
     }
 
     public function test_level_four_revision_from_work_instruction_uses_fmik_document_number(): void
