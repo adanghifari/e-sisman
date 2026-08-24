@@ -726,7 +726,6 @@ class DocumentApprovalController extends Controller
             'nomor_dokumen' => $source->nomor_dokumen,
             'nomor_lembar_revisi' => $lockedDocument->nomor_lembar_revisi
                 ?: $this->revisionFormNumber($source, (int) $lockedDocument->nomor_revisi),
-            'm_status_document_id' => $approvedStatus->id,
             'approved_at' => now(),
             'rejected_at' => null,
         ]);
