@@ -12,6 +12,7 @@
     :approval-flow-stages="$approvalFlowStages"
     :content-files="$contentFiles"
     :attachment-files="$attachmentFiles"
+    :document-history="$documentHistory"
 >
     <x-slot:actions>
         @if ($canRestoreMaster)

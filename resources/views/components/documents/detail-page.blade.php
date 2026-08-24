@@ -12,6 +12,7 @@
     'approvalFlowStages' => collect(),
     'contentFiles' => collect(),
     'attachmentFiles' => collect(),
+    'documentHistory' => collect(),
 ])
 
 @php
@@ -68,10 +69,10 @@
                             <dt class="text-sm font-semibold text-slate-500">Nomor Dokumen</dt>
                             <dd class="text-sm font-bold text-slate-900">{{ $masterDisplayNumber }}</dd>
                         </div>
-                        @if ($revisionRequestDisplayNumber)
+                        @if ($document->nomor_lembar_revisi)
                             <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
-                                <dt class="text-sm font-semibold text-slate-500">Nomor Dokumen Revisi</dt>
-                                <dd class="text-sm font-bold text-slate-900">{{ $revisionRequestDisplayNumber }}</dd>
+                                <dt class="text-sm font-semibold text-slate-500">Nomor Lembar Revisi</dt>
+                                <dd class="text-sm font-bold text-slate-900">{{ $document->nomor_lembar_revisi }}</dd>
                             </div>
                         @endif
                         <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
@@ -183,10 +184,10 @@
                             <input type="text" value="{{ $masterDisplayNumber }}" readonly class="{{ $readonlyInput }}">
                         </label>
 
-                        @if ($revisionRequestDisplayNumber)
+                        @if ($document->nomor_lembar_revisi)
                             <label class="block">
-                                <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen Revisi</span>
-                                <input type="text" value="{{ $revisionRequestDisplayNumber }}" readonly class="{{ $readonlyInput }}">
+                                <span class="mb-2 block text-base font-medium text-slate-500">Nomor Lembar Revisi</span>
+                                <input type="text" value="{{ $document->nomor_lembar_revisi }}" readonly class="{{ $readonlyInput }}">
                             </label>
                         @endif
 
@@ -269,6 +270,8 @@
                         @endforelse
                     </div>
                 </section>
+
+                <x-documents.history-section :document-history="$documentHistory" />
             </aside>
         </div>
     </div>

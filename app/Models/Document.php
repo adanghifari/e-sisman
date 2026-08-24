@@ -22,6 +22,7 @@ use Illuminate\Support\Collection;
     'request_type',
     'nama_dokumen',
     'nomor_dokumen',
+    'nomor_lembar_revisi',
     'nomor_revisi',
     'catatan_revisi',
     'created_at',
@@ -143,7 +144,16 @@ class Document extends Model
 
     public function getFormattedRevisionAttribute(): string
     {
-        return '00.'.str_pad((string) $this->nomor_revisi, 2, '0', STR_PAD_LEFT);
+        return self::formatRevisionNumber((int) $this->nomor_revisi);
+    }
+
+    public static function formatRevisionNumber(int $revision): string
+    {
+        $revision = max(0, $revision);
+
+        return str_pad((string) intdiv($revision, 100), 2, '0', STR_PAD_LEFT)
+            .'.'
+            .str_pad((string) ($revision % 100), 2, '0', STR_PAD_LEFT);
     }
 
     public function departments(): BelongsToMany
