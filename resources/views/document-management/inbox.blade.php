@@ -49,8 +49,8 @@
             </div>
         </x-ui.filter-bar>
 
-        <div class="text-sm font-medium text-slate-500">
-            Menampilkan {{ $activeResultCount }} dokumen
+        <div class="text-sm font-medium text-slate-500" data-inbox-count>
+            Menampilkan {{ $loadedResultCount }} dari {{ $activeResultCount }} dokumen
         </div>
 
         @if ($activeTab === 'needs-process')
@@ -73,52 +73,35 @@
                             <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Aksi</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-100">
-                        @forelse ($filteredMyTasks as $document)
-                            <tr class="hover:bg-slate-50/70">
-                                <td class="px-5 py-4">
-                                    <div class="font-semibold text-slate-800">{{ $document['number'] }}</div>
-                                    @if ($document['number_badge_label'] ?? null)
-                                        <div class="mt-2">
-                                            <x-ui.status-badge :label="$document['number_badge_label']" :tone="$document['number_badge_tone'] ?? 'red'" />
-                                        </div>
-                                    @endif
-                                </td>
-                                <td class="px-5 py-4 text-slate-700">{{ $document['name'] }}</td>
-                                <td class="px-5 py-4">
-                                    @if (($document['type_tone'] ?? null) === 'red')
-                                        <x-ui.status-badge :label="$document['type']" tone="red" />
-                                    @else
-                                        <span class="text-slate-600">{{ $document['type'] }}</span>
-                                    @endif
-                                </td>
-                                <td class="px-5 py-4 text-slate-600">{{ $document['stage'] }}</td>
-                                <td class="px-5 py-4 text-slate-600">{{ $document['owner'] }}</td>
-                                <td class="px-5 py-4 text-slate-600">{{ $document['department'] }}</td>
-                                <td class="px-5 py-4 text-slate-600">{{ $document['date'] }}</td>
-                                <td class="px-5 py-4">
-                                    <x-ui.status-badge :label="$document['status']" :tone="$document['tone']" />
-                                </td>
-                                <td class="px-5 py-4">
-                                    <span class="rounded-md bg-sky-50 px-2.5 py-1 text-xs font-semibold text-sky-700">
-                                        {{ $document['action'] }}
-                                    </span>
-                                </td>
-                                <td class="px-5 py-4">
-                                    <a href="{{ $document['detail_url'] }}" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
-                                        Detail
-                                    </a>
-                                </td>
-                            </tr>
-                        @empty
+                    <tbody class="divide-y divide-slate-100" data-inbox-rows>
+                        @if ($filteredMyTasks->isNotEmpty())
+                            @include('document-management.partials.inbox-needs-process-rows', ['documents' => $filteredMyTasks])
+                        @else
                             <tr>
                                 <td colspan="10" class="px-5 py-10 text-center text-sm text-slate-500">
                                     Tidak ada dokumen yang perlu diproses oleh Anda.
                                 </td>
                             </tr>
-                        @endforelse
+                        @endif
                     </tbody>
                 </x-ui.scrollable-table>
+
+                @if ($hasMoreResults)
+                    <div class="flex justify-center border-t border-slate-100 p-4">
+                        <button
+                            type="button"
+                            class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            data-inbox-load-more
+                            data-next-page="{{ $nextPage }}"
+                            data-page-param="needs_page"
+                            data-loaded="{{ $loadedResultCount }}"
+                            data-total="{{ $activeResultCount }}"
+                            data-loading-label="Memuat..."
+                        >
+                            Tampilkan Lebih Banyak
+                        </button>
+                    </div>
+                @endif
             </x-ui.panel>
         @endif
 
@@ -142,48 +125,98 @@
                             <th class="sticky top-0 z-10 bg-slate-50 px-5 py-3 font-semibold">Aksi</th>
                         </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-100">
-                        @forelse ($filteredMyProcessedHistory as $document)
-                            <tr class="hover:bg-slate-50/70">
-                                <td class="px-5 py-4">
-                                    <div class="font-semibold text-slate-800">{{ $document['number'] }}</div>
-                                    @if ($document['number_badge_label'] ?? null)
-                                        <div class="mt-2">
-                                            <x-ui.status-badge :label="$document['number_badge_label']" :tone="$document['number_badge_tone'] ?? 'red'" />
-                                        </div>
-                                    @endif
-                                </td>
-                                <td class="px-5 py-4 text-slate-700">{{ $document['name'] }}</td>
-                                <td class="px-5 py-4">
-                                    @if (($document['type_tone'] ?? null) === 'red')
-                                        <x-ui.status-badge :label="$document['type']" tone="red" />
-                                    @else
-                                        <span class="text-slate-600">{{ $document['type'] }}</span>
-                                    @endif
-                                </td>
-                                <td class="px-5 py-4 text-slate-600">{{ $document['submitted_at'] }}</td>
-                                <td class="px-5 py-4 text-slate-600">{{ $document['stage'] }}</td>
-                                <td class="px-5 py-4 text-slate-600">{{ $document['owner'] }}</td>
-                                <td class="px-5 py-4 text-slate-600">{{ $document['updated_at'] }}</td>
-                                <td class="px-5 py-4">
-                                    <x-ui.status-badge :label="$document['status']" :tone="$document['tone']" />
-                                </td>
-                                <td class="px-5 py-4">
-                                    <a href="{{ $document['detail_url'] }}" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
-                                        Detail
-                                    </a>
-                                </td>
-                            </tr>
-                        @empty
+                    <tbody class="divide-y divide-slate-100" data-inbox-rows>
+                        @if ($filteredMyProcessedHistory->isNotEmpty())
+                            @include('document-management.partials.inbox-processed-history-rows', ['documents' => $filteredMyProcessedHistory])
+                        @else
                             <tr>
                                 <td colspan="9" class="px-5 py-10 text-center text-sm text-slate-500">
                                     Tidak ada riwayat pengajuan yang cocok dengan filter.
                                 </td>
                             </tr>
-                        @endforelse
+                        @endif
                     </tbody>
                 </x-ui.scrollable-table>
+
+                @if ($hasMoreResults)
+                    <div class="flex justify-center border-t border-slate-100 p-4">
+                        <button
+                            type="button"
+                            class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50 disabled:cursor-not-allowed disabled:opacity-60"
+                            data-inbox-load-more
+                            data-next-page="{{ $nextPage }}"
+                            data-page-param="history_page"
+                            data-loaded="{{ $loadedResultCount }}"
+                            data-total="{{ $activeResultCount }}"
+                            data-loading-label="Memuat..."
+                        >
+                            Tampilkan Lebih Banyak
+                        </button>
+                    </div>
+                @endif
             </x-ui.panel>
         @endif
     </div>
+
+    <script>
+        (() => {
+            const button = document.querySelector('[data-inbox-load-more]');
+
+            if (! button || button.dataset.bound === 'true') {
+                return;
+            }
+
+            button.dataset.bound = 'true';
+            button.addEventListener('click', async () => {
+                if (button.disabled) {
+                    return;
+                }
+
+                const rows = document.querySelector('[data-inbox-rows]');
+                const count = document.querySelector('[data-inbox-count]');
+                const originalLabel = button.textContent.trim();
+                const url = new URL(window.location.href);
+
+                url.searchParams.set('load_more', '1');
+                url.searchParams.set(button.dataset.pageParam, button.dataset.nextPage);
+
+                button.disabled = true;
+                button.textContent = button.dataset.loadingLabel || 'Memuat...';
+
+                try {
+                    const response = await fetch(url, {
+                        headers: {
+                            Accept: 'application/json',
+                            'X-Requested-With': 'XMLHttpRequest',
+                        },
+                    });
+
+                    if (! response.ok) {
+                        throw new Error('Request failed');
+                    }
+
+                    const payload = await response.json();
+                    rows.insertAdjacentHTML('beforeend', payload.rows);
+                    button.dataset.loaded = String(payload.displayed_count);
+
+                    if (count) {
+                        count.textContent = `Menampilkan ${payload.displayed_count} dari ${payload.total} dokumen`;
+                    }
+
+                    if (! payload.has_more) {
+                        button.closest('div')?.remove();
+
+                        return;
+                    }
+
+                    button.dataset.nextPage = String(payload.next_page);
+                    button.disabled = false;
+                    button.textContent = originalLabel;
+                } catch (error) {
+                    button.disabled = false;
+                    button.textContent = originalLabel;
+                }
+            });
+        })();
+    </script>
 </x-layouts::app>
