@@ -133,8 +133,19 @@
         $documentNumberPrefix = $revisionSource
             ? ($levelKey === 'level-4' ? $levelFourPrefix : ($revisionPrefixes[$levelKey] ?? 'FM'.$documentPrefixes[$levelKey]))
             : $documentPrefixes[$levelKey];
+        $rejectedRevisionAttempt = $revisionSource
+            ? \App\Models\Document::query()
+                ->where('revised_from', $revisionSource->id)
+                ->where('request_type', 'revision')
+                ->whereNull('approved_at')
+                ->whereHas('status', fn ($query) => $query->where('nama_status', \App\Models\StatusDocument::REJECTED))
+                ->orderByDesc('nomor_revisi')
+                ->orderByDesc('rejected_at')
+                ->orderByDesc('id')
+                ->first()
+            : null;
         $latestRevisionNumber = $revisionSource
-            ? (int) $revisionSource->revisionFamily()->max('nomor_revisi')
+            ? ($rejectedRevisionAttempt?->nomor_revisi ?? (int) $revisionSource->revisionFamily()->max('nomor_revisi'))
             : null;
         $documentNumberSuffixDefault = $draft?->nomor_dokumen
             ? \Illuminate\Support\Str::afterLast($draft->nomor_dokumen, '-')
@@ -148,7 +159,7 @@
         $nextRevisionValue = $draft
             ? $draft->formatted_revision
             : ($revisionSource
-            ? \App\Models\Document::formatRevisionNumber(($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1)
+            ? \App\Models\Document::formatRevisionNumber($rejectedRevisionAttempt?->nomor_revisi ?? (($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1))
             : '00.00');
         $selectedBusinessProcess = $businessProcesses->firstWhere('id', (int) $selectedBusinessProcessId);
         $documentNumberProcessCode = $selectedBusinessProcess?->kode ?: 'SMR';
