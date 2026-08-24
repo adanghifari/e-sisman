@@ -13,10 +13,10 @@ use App\Models\StatusDocument;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
-use Illuminate\Support\Collection;
 use Illuminate\Validation\Rule;
 use Illuminate\Validation\ValidationException;
 
@@ -159,21 +159,6 @@ class DocumentController extends Controller
             : $this->buildDocumentNumber($documentLevel, $validated);
         $revisionFormNumber = null;
 
-        if (
-            $revisionSource === null
-            && $documentNumber !== null
-            && Document::query()
-                ->where('nomor_dokumen', $documentNumber)
-                ->when($draft, fn ($query) => $query->whereKeyNot($draft->id))
-                ->exists()
-        ) {
-            return back()
-                ->withInput()
-                ->withErrors([
-                    'nomor_dokumen_suffix' => 'Nomor dokumen sudah digunakan.',
-                ]);
-        }
-
         $status = StatusDocument::findByName(
             $validated['submit_action'] === 'submit'
                 ? StatusDocument::PROPOSED
@@ -181,123 +166,136 @@ class DocumentController extends Controller
         );
 
         $savedDocument = null;
+        $documentNumberLockAcquired = false;
 
-        DB::transaction(function () use ($request, $validated, $documentNumber, $revisionFormNumber, $documentRevision, $documentLevel, $documentType, $status, $level, $revisionSource, $draft, &$savedDocument): void {
-            $lockedRevisionSource = null;
-            $documentAttributes = $validated;
-            $currentDocumentNumber = $documentNumber;
-            $currentRevisionFormNumber = $revisionFormNumber;
-            $currentDocumentRevision = $documentRevision;
+        try {
+            DB::transaction(function () use ($request, $validated, $documentNumber, $revisionFormNumber, $documentRevision, $documentLevel, $documentType, $status, $level, $revisionSource, $draft, &$savedDocument, &$documentNumberLockAcquired): void {
+                $lockedRevisionSource = null;
+                $documentAttributes = $validated;
+                $currentDocumentNumber = $documentNumber;
+                $currentRevisionFormNumber = $revisionFormNumber;
+                $currentDocumentRevision = $documentRevision;
+                $resubmittedFromId = null;
 
-            if ($revisionSource !== null) {
-                $lockedRevisionSource = Document::query()
-                    ->whereKey($revisionSource->id)
-                    ->lockForUpdate()
-                    ->firstOrFail();
-                $lockedRevisionSource->load([
-                    'status',
-                    'documentLevel',
-                    'businessProcess',
-                    'businessFunction',
-                    'departments',
-                    'referenceDocument',
-                    'revisedFrom.documentLevel',
-                ]);
-
-                if ($lockedRevisionSource->status?->nama_status !== StatusDocument::APPROVED) {
-                    throw ValidationException::withMessages([
-                        'revised_from' => 'Master sumber sudah berubah. Muat ulang halaman sebelum membuat revisi.',
+                if ($revisionSource !== null) {
+                    $lockedRevisionSource = Document::query()
+                        ->whereKey($revisionSource->id)
+                        ->lockForUpdate()
+                        ->firstOrFail();
+                    $lockedRevisionSource->load([
+                        'status',
+                        'documentLevel',
+                        'businessProcess',
+                        'businessFunction',
+                        'departments',
+                        'referenceDocument',
+                        'revisedFrom.documentLevel',
                     ]);
+
+                    if ($lockedRevisionSource->status?->nama_status !== StatusDocument::APPROVED) {
+                        throw ValidationException::withMessages([
+                            'revised_from' => 'Master sumber sudah berubah. Muat ulang halaman sebelum membuat revisi.',
+                        ]);
+                    }
+
+                    if (! $this->userCanRequestRevision($request, $lockedRevisionSource)) {
+                        abort(403);
+                    }
+
+                    if ($draft === null && $this->hasActiveRevisionRequest($lockedRevisionSource)) {
+                        throw ValidationException::withMessages([
+                            'revised_from' => 'Dokumen ini masih memiliki pengajuan revisi aktif. Selesaikan atau batalkan revisi tersebut terlebih dahulu.',
+                        ]);
+                    }
+
+                    $currentDocumentRevision = $draft !== null && $draft->revised_from !== null
+                        ? (int) $draft->nomor_revisi
+                        : $this->nextRevisionNumber($lockedRevisionSource);
+                    $currentDocumentNumber = $this->revisionSourceMasterNumber($lockedRevisionSource);
+                    $currentRevisionFormNumber = $draft?->nomor_lembar_revisi
+                        ?: $this->buildRevisionFormNumber($lockedRevisionSource, (int) $currentDocumentRevision);
+
+                    $documentAttributes['m_proses_bisnis_id'] = $lockedRevisionSource->m_proses_bisnis_id;
+                    $documentAttributes['m_proses_fungsi_id'] = $lockedRevisionSource->m_proses_fungsi_id;
+                    $documentAttributes['department_ids'] = $lockedRevisionSource->departments->pluck('id')->all();
+                    $documentAttributes['reference'] = $lockedRevisionSource->reference;
+                    $documentAttributes['nama_dokumen'] = $documentAttributes['nama_dokumen'] ?? $lockedRevisionSource->nama_dokumen;
+                } elseif ($currentDocumentNumber !== null) {
+                    $documentNumberLockAcquired = $this->acquireDocumentNumberLock($currentDocumentNumber);
+                    $sameNumberDocuments = $this->lockedDocumentsForNumber($currentDocumentNumber);
+                    $resubmittedFromId = $this->resubmittedFromIdForReusableNumber($sameNumberDocuments, $draft);
                 }
 
-                if (! $this->userCanRequestRevision($request, $lockedRevisionSource)) {
-                    abort(403);
+                $submittedAt = $documentAttributes['submit_action'] === 'submit' ? now() : null;
+                $attributes = [
+                    'm_document_level_id' => $documentLevel->id,
+                    'm_status_document_id' => $status->id,
+                    'm_document_types_id' => $documentType->id,
+                    'm_proses_bisnis_id' => $documentAttributes['m_proses_bisnis_id'],
+                    'm_proses_fungsi_id' => $documentAttributes['m_proses_fungsi_id'],
+                    'user_id' => $request->user()->id,
+                    'official_preparer_id' => $documentAttributes['official_preparer_id'] ?? null,
+                    'reference' => $level === 'level-3' ? ($documentAttributes['reference'] ?? null) : null,
+                    'revised_from' => $lockedRevisionSource?->id,
+                    'resubmitted_from' => $lockedRevisionSource === null ? $resubmittedFromId : null,
+                    'request_type' => $revisionSource !== null ? 'revision' : null,
+                    'nama_dokumen' => $documentAttributes['nama_dokumen'],
+                    'nomor_dokumen' => $currentDocumentNumber,
+                    'nomor_lembar_revisi' => $currentRevisionFormNumber,
+                    'nomor_revisi' => $currentDocumentRevision,
+                    'catatan_revisi' => $documentAttributes['catatan_revisi'] ?? null,
+                    'tanggal_terbit' => $documentAttributes['tanggal_terbit'] ?? null,
+                    'submitted_at' => $submittedAt ?? $draft?->submitted_at,
+                ];
+
+                $document = $draft;
+
+                if ($document === null) {
+                    $attributes['created_at'] = now();
+                    $document = Document::create($attributes);
+                } else {
+                    $document->update($attributes);
                 }
 
-                if ($draft === null && $this->hasActiveRevisionRequest($lockedRevisionSource)) {
-                    throw ValidationException::withMessages([
-                        'revised_from' => 'Dokumen ini masih memiliki pengajuan revisi aktif. Selesaikan atau batalkan revisi tersebut terlebih dahulu.',
-                    ]);
+                $document->departments()->sync($documentAttributes['department_ids'] ?? []);
+
+                $this->removeExistingDocumentFiles($document, $documentAttributes['remove_existing_files'] ?? []);
+
+                if ($request->hasFile('imported_document')) {
+                    $this->replaceSingleDocumentFile($document, 'imported_document');
+                    $this->storeDocumentFile($document, $request->file('imported_document'), 'imported_document', $request->user()->id);
                 }
 
-                $currentDocumentRevision = $draft !== null && $draft->revised_from !== null
-                    ? (int) $draft->nomor_revisi
-                    : $this->nextRevisionNumber($lockedRevisionSource);
-                $currentDocumentNumber = $this->revisionSourceMasterNumber($lockedRevisionSource);
-                $currentRevisionFormNumber = $draft?->nomor_lembar_revisi
-                    ?: $this->buildRevisionFormNumber($lockedRevisionSource, (int) $currentDocumentRevision);
+                if ($request->hasFile('filled_template')) {
+                    $this->replaceSingleDocumentFile($document, 'filled_template');
+                    $this->storeDocumentFile($document, $request->file('filled_template'), 'filled_template', $request->user()->id);
+                }
 
-                $documentAttributes['m_proses_bisnis_id'] = $lockedRevisionSource->m_proses_bisnis_id;
-                $documentAttributes['m_proses_fungsi_id'] = $lockedRevisionSource->m_proses_fungsi_id;
-                $documentAttributes['department_ids'] = $lockedRevisionSource->departments->pluck('id')->all();
-                $documentAttributes['reference'] = $lockedRevisionSource->reference;
-                $documentAttributes['nama_dokumen'] = $documentAttributes['nama_dokumen'] ?? $lockedRevisionSource->nama_dokumen;
+                if ($request->hasFile('revision_content')) {
+                    $this->replaceSingleDocumentFile($document, 'revision_content');
+                    $this->storeDocumentFile($document, $request->file('revision_content'), 'revision_content', $request->user()->id);
+                }
+
+                if ($request->hasFile('revision_form')) {
+                    $this->replaceSingleDocumentFile($document, 'revision_form');
+                    $this->storeDocumentFile($document, $request->file('revision_form'), 'revision_form', $request->user()->id);
+                }
+
+                foreach ($request->file('attachments', []) as $attachment) {
+                    $this->storeDocumentFile($document, $attachment, 'attachment', $request->user()->id);
+                }
+
+                if ($submittedAt !== null) {
+                    $this->recordOfficialPreparerApproval($document, $request->user()->id, $submittedAt);
+                }
+
+                $savedDocument = $document;
+            });
+        } finally {
+            if ($documentNumberLockAcquired && $documentNumber !== null) {
+                $this->releaseDocumentNumberLock($documentNumber);
             }
-
-            $submittedAt = $documentAttributes['submit_action'] === 'submit' ? now() : null;
-            $attributes = [
-                'm_document_level_id' => $documentLevel->id,
-                'm_status_document_id' => $status->id,
-                'm_document_types_id' => $documentType->id,
-                'm_proses_bisnis_id' => $documentAttributes['m_proses_bisnis_id'],
-                'm_proses_fungsi_id' => $documentAttributes['m_proses_fungsi_id'],
-                'user_id' => $request->user()->id,
-                'official_preparer_id' => $documentAttributes['official_preparer_id'] ?? null,
-                'reference' => $level === 'level-3' ? ($documentAttributes['reference'] ?? null) : null,
-                'revised_from' => $lockedRevisionSource?->id,
-                'request_type' => $revisionSource !== null ? 'revision' : null,
-                'nama_dokumen' => $documentAttributes['nama_dokumen'],
-                'nomor_dokumen' => $currentDocumentNumber,
-                'nomor_lembar_revisi' => $currentRevisionFormNumber,
-                'nomor_revisi' => $currentDocumentRevision,
-                'catatan_revisi' => $documentAttributes['catatan_revisi'] ?? null,
-                'tanggal_terbit' => $documentAttributes['tanggal_terbit'] ?? null,
-                'submitted_at' => $submittedAt ?? $draft?->submitted_at,
-            ];
-
-            $document = $draft;
-
-            if ($document === null) {
-                $attributes['created_at'] = now();
-                $document = Document::create($attributes);
-            } else {
-                $document->update($attributes);
-            }
-
-            $document->departments()->sync($documentAttributes['department_ids'] ?? []);
-
-            $this->removeExistingDocumentFiles($document, $documentAttributes['remove_existing_files'] ?? []);
-
-            if ($request->hasFile('imported_document')) {
-                $this->replaceSingleDocumentFile($document, 'imported_document');
-                $this->storeDocumentFile($document, $request->file('imported_document'), 'imported_document', $request->user()->id);
-            }
-
-            if ($request->hasFile('filled_template')) {
-                $this->replaceSingleDocumentFile($document, 'filled_template');
-                $this->storeDocumentFile($document, $request->file('filled_template'), 'filled_template', $request->user()->id);
-            }
-
-            if ($request->hasFile('revision_content')) {
-                $this->replaceSingleDocumentFile($document, 'revision_content');
-                $this->storeDocumentFile($document, $request->file('revision_content'), 'revision_content', $request->user()->id);
-            }
-
-            if ($request->hasFile('revision_form')) {
-                $this->replaceSingleDocumentFile($document, 'revision_form');
-                $this->storeDocumentFile($document, $request->file('revision_form'), 'revision_form', $request->user()->id);
-            }
-
-            foreach ($request->file('attachments', []) as $attachment) {
-                $this->storeDocumentFile($document, $attachment, 'attachment', $request->user()->id);
-            }
-
-            if ($submittedAt !== null) {
-                $this->recordOfficialPreparerApproval($document, $request->user()->id, $submittedAt);
-            }
-
-            $savedDocument = $document;
-        });
+        }
 
         if ($validated['submit_action'] === 'submit') {
             return redirect()
@@ -428,6 +426,99 @@ class DocumentController extends Controller
         $this->authorizeDraftAccess($request, $draft);
 
         return $draft;
+    }
+
+    private function acquireDocumentNumberLock(string $documentNumber): bool
+    {
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            return false;
+        }
+
+        $result = DB::selectOne('select get_lock(?, 10) as acquired', [$this->documentNumberLockName($documentNumber)]);
+
+        if ((int) ($result->acquired ?? 0) !== 1) {
+            throw ValidationException::withMessages([
+                'nomor_dokumen_suffix' => 'Nomor dokumen sedang diproses. Coba lagi beberapa saat.',
+            ]);
+        }
+
+        return true;
+    }
+
+    private function releaseDocumentNumberLock(string $documentNumber): void
+    {
+        if (! in_array(DB::connection()->getDriverName(), ['mysql', 'mariadb'], true)) {
+            return;
+        }
+
+        DB::selectOne('select release_lock(?)', [$this->documentNumberLockName($documentNumber)]);
+    }
+
+    private function documentNumberLockName(string $documentNumber): string
+    {
+        return 'document-number:'.hash('sha256', $documentNumber);
+    }
+
+    /**
+     * @return Collection<int, Document>
+     */
+    private function lockedDocumentsForNumber(string $documentNumber): Collection
+    {
+        return Document::query()
+            ->with('status')
+            ->where('nomor_dokumen', $documentNumber)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->get();
+    }
+
+    private function resubmittedFromIdForReusableNumber(Collection $sameNumberDocuments, ?Document $draft): ?int
+    {
+        $otherDocuments = $sameNumberDocuments
+            ->reject(fn (Document $document): bool => $draft !== null && $document->id === $draft->id)
+            ->values();
+
+        if ($otherDocuments->isEmpty()) {
+            return null;
+        }
+
+        if ($otherDocuments->contains(fn (Document $document): bool => $this->documentNumberWasEverMaster($document))) {
+            throw ValidationException::withMessages([
+                'nomor_dokumen_suffix' => 'Nomor dokumen sudah digunakan oleh dokumen master.',
+            ]);
+        }
+
+        if ($otherDocuments->contains(fn (Document $document): bool => ! $this->isReusableRejectedInitialAttempt($document))) {
+            throw ValidationException::withMessages([
+                'nomor_dokumen_suffix' => 'Nomor dokumen sudah digunakan.',
+            ]);
+        }
+
+        return $otherDocuments
+            ->sortByDesc(fn (Document $document): string => sprintf(
+                '%010d-%010d',
+                $document->rejected_at?->timestamp ?? 0,
+                $document->id,
+            ))
+            ->first()
+            ?->id;
+    }
+
+    private function documentNumberWasEverMaster(Document $document): bool
+    {
+        return $document->approved_at !== null
+            || in_array($document->status?->nama_status, [
+                StatusDocument::APPROVED,
+                StatusDocument::OBSOLETE,
+            ], true);
+    }
+
+    private function isReusableRejectedInitialAttempt(Document $document): bool
+    {
+        return $document->revised_from === null
+            && $document->request_type === null
+            && $document->approved_at === null
+            && $document->status?->nama_status === StatusDocument::REJECTED;
     }
 
     private function authorizeDraftAccess(Request $request, Document $document): void

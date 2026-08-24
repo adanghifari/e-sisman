@@ -19,6 +19,7 @@ use Illuminate\Support\Collection;
     'official_preparer_id',
     'reference',
     'revised_from',
+    'resubmitted_from',
     'request_type',
     'nama_dokumen',
     'nomor_dokumen',
@@ -94,6 +95,16 @@ class Document extends Model
     public function revisedFrom(): BelongsTo
     {
         return $this->belongsTo(self::class, 'revised_from');
+    }
+
+    public function resubmittedFrom(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'resubmitted_from');
+    }
+
+    public function resubmissions(): HasMany
+    {
+        return $this->hasMany(self::class, 'resubmitted_from');
     }
 
     public function revisions(): HasMany

@@ -412,6 +412,40 @@
                     </div>
                 </section>
 
+                @if ($rejectionHistory->isNotEmpty())
+                    <section class="overflow-hidden rounded-lg border border-red-100 bg-white shadow-sm">
+                        <div class="border-b border-red-100 bg-red-50 px-6 py-5">
+                            <h3 class="text-sm font-bold text-red-900">Riwayat Penolakan Sebelumnya</h3>
+                            <p class="mt-1 text-xs font-semibold text-red-700">Catatan ini diambil dari approval attempt sebelumnya.</p>
+                        </div>
+                        <div class="space-y-3 px-6 py-5">
+                            @foreach ($rejectionHistory as $index => $rejection)
+                                <div class="rounded-lg border border-red-100 bg-red-50/60 px-3 py-3">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <p class="text-sm font-bold text-slate-900">Penolakan {{ $index + 1 }}</p>
+                                            <p class="mt-1 text-xs font-semibold text-slate-600">
+                                                {{ $rejection['approver_name'] }} &bull; {{ $rejection['stage'] }}
+                                            </p>
+                                            @if ($rejection['responded_at'])
+                                                <p class="mt-1 text-xs font-medium text-slate-500">
+                                                    Diproses pada {{ $rejection['responded_at']->translatedFormat('d M Y H:i:s') }}
+                                                </p>
+                                            @endif
+                                        </div>
+                                        <span class="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-red-700">
+                                            Attempt #{{ $rejection['document_id'] }}
+                                        </span>
+                                    </div>
+                                    <p class="mt-3 rounded-md bg-white px-3 py-2 text-xs font-medium text-slate-700">
+                                        {{ $rejection['catatan'] ?: '-' }}
+                                    </p>
+                                </div>
+                            @endforeach
+                        </div>
+                    </section>
+                @endif
+
                 <x-documents.history-section :document-history="$documentHistory" />
 
                 @if ($activeApproval)
