@@ -299,15 +299,13 @@ class DocumentApprovalController extends Controller
         abort_unless(is_file($path), 404);
 
         $recordDocumentDownload->handle($request, $downloadDocument, $file, [
-            'name' =>$downloadDocument->nama_dokumen,
+            'name' => $downloadDocument->nama_dokumen,
             'number' => $this->approvalDownloadNumber($document, $downloadDocument),
-            'revision'=> $downloadDocument->nomor_revisi,
+            'revision' => $downloadDocument->nomor_revisi,
             'context' => 'approval',
         ]);
 
-        return response()->file($path, [
-            'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
-        ]);
+        return response()->file($path, $this->pdfResponseHeaders($file));
     }
 
     public function preview(Request $request, Document $document, DocumentFile $file): BinaryFileResponse
@@ -319,12 +317,17 @@ class DocumentApprovalController extends Controller
         $sourcePath = Storage::disk('local')->path($file->path_file);
         abort_unless(is_file($sourcePath), 404);
 
-        return response()->file($sourcePath, [
+        return response()->file($sourcePath, $this->pdfResponseHeaders($file));
+    }
+
+    private function pdfResponseHeaders(DocumentFile $file): array
+    {
+        return [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
             'Pragma' => 'no-cache',
             'Expires' => '0',
-        ]);
+        ];
     }
 
     private function authorizedFileDocument(Document $document, DocumentFile $file): Document

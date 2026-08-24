@@ -139,7 +139,7 @@
                                 </div>
 
                                 <iframe
-                                    src="{{ route($fileRoutePrefix.'.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                    src="{{ route($fileRoutePrefix.'.files.preview', [$document, $file]) }}?v={{ $file->updated_at?->timestamp ?? $file->id }}#view=FitH&navpanes=0"
                                     class="min-h-[760px] w-full bg-white xl:h-[82vh]"
                                 ></iframe>
                             </section>

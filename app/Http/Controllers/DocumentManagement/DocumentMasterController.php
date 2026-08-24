@@ -315,12 +315,7 @@ class DocumentMasterController extends Controller
             'context' => 'master',
         ]);
 
-        return response()->file($path, [
-            'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
-            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
-            'Pragma' => 'no-cache',
-            'Expires' => '0',
-        ]);
+        return response()->file($path, $this->pdfResponseHeaders($file));
     }
 
     public function preview(Document $document, DocumentFile $file): BinaryFileResponse
@@ -331,12 +326,17 @@ class DocumentMasterController extends Controller
         $path = Storage::disk('local')->path($file->path_file);
         abort_unless(is_file($path), 404);
 
-        return response()->file($path, [
+        return response()->file($path, $this->pdfResponseHeaders($file));
+    }
+
+    private function pdfResponseHeaders(DocumentFile $file): array
+    {
+        return [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
             'Pragma' => 'no-cache',
             'Expires' => '0',
-        ]);
+        ];
     }
 
     private function authorizeMasterFileAccess(Document $document, DocumentFile $file): void

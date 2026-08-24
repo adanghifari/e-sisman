@@ -197,7 +197,7 @@
                                     </div>
 
                                     <iframe
-                                        src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                        src="{{ route('documents.approval.files.preview', [$document, $file]) }}?v={{ $file->updated_at?->timestamp ?? $file->id }}#view=FitH&navpanes=0"
                                         class="min-h-[760px] w-full bg-white xl:h-[82vh]"
                                     ></iframe>
                                 </section>
@@ -222,7 +222,7 @@
                                             </div>
 
                                             <iframe
-                                                src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                                src="{{ route('documents.approval.files.preview', [$document, $file]) }}?v={{ $file->updated_at?->timestamp ?? $file->id }}#view=FitH&navpanes=0"
                                                 class="h-[620px] w-full bg-white 2xl:h-[72vh]"
                                             ></iframe>
                                         </section>
@@ -243,7 +243,7 @@
                                     </div>
 
                                     <iframe
-                                        src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                        src="{{ route('documents.approval.files.preview', [$document, $file]) }}?v={{ $file->updated_at?->timestamp ?? $file->id }}#view=FitH&navpanes=0"
                                         class="min-h-[760px] w-full bg-white xl:h-[82vh]"
                                     ></iframe>
                                 </section>
@@ -268,7 +268,7 @@
                                 </div>
 
                                 <iframe
-                                    src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                    src="{{ route('documents.approval.files.preview', [$document, $file]) }}?v={{ $file->updated_at?->timestamp ?? $file->id }}#view=FitH&navpanes=0"
                                     class="min-h-[760px] w-full bg-white xl:h-[82vh]"
                                 ></iframe>
                             </section>
