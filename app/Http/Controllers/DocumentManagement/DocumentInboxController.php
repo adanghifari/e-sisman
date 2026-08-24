@@ -14,6 +14,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Collection;
 
 class DocumentInboxController extends Controller
 {
@@ -132,7 +133,7 @@ class DocumentInboxController extends Controller
     }
 
     /**
-     * @return array{rows: \Illuminate\Support\Collection<int, array<string, mixed>>, total: int, has_more: bool}
+     * @return array{rows: Collection<int, array<string, mixed>>, total: int, has_more: bool}
      */
     private function batchFor(Request $request, string $activeTab, array $filters, int $page, int $total): array
     {
@@ -343,28 +344,41 @@ class DocumentInboxController extends Controller
         $this->applyCommonFilters($query, $filters);
 
         if ($filters['stage'] !== '') {
-            $query->where(function ($query) use ($filters, $approvalScope, $assignedApprovalScope): void {
-                $query->whereHas('approvals', function ($query) use ($filters, $approvalScope, $assignedApprovalScope): void {
-                    $query
-                        ->where('stages', $filters['stage'])
-                        ->where(function ($query) use ($approvalScope, $assignedApprovalScope): void {
-                            $query->where($approvalScope)
-                                ->orWhere($assignedApprovalScope);
-                        });
-                });
-
-                $query->orWhere(function ($query) use ($filters): void {
-                    $query
-                        ->when($filters['stage'] === 'Pengajuan Revisi', fn ($query) => $query->whereNotNull('revised_from'))
-                        ->when($filters['stage'] === 'Pengajuan Dokumen', fn ($query) => $query->whereNull('revised_from'))
-                        ->when($filters['stage'] === 'TTD Penyusun Resmi', fn ($query) => $query->whereColumn('official_preparer_id', '!=', 'user_id'));
-                });
-            });
+            $this->applyHistoryStageFilter($query, $request, $filters['stage'], $approvalScope, $assignedApprovalScope);
         }
 
         if ($filters['search'] !== '') {
             $this->applySearch($query, $request, $filters['search'], $approvalScope, $assignedApprovalScope);
         }
+    }
+
+    private function applyHistoryStageFilter(
+        Builder $query,
+        Request $request,
+        string $stage,
+        callable $approvalScope,
+        callable $assignedApprovalScope,
+    ): void {
+        match ($stage) {
+            'Assign Approver' => $query->whereHas('approvals', $this->assignedApprovalScope($request)),
+            'Pengajuan Revisi' => $query
+                ->where('user_id', $request->user()->id)
+                ->whereNotNull('revised_from'),
+            'Pengajuan Dokumen' => $query
+                ->where('user_id', $request->user()->id)
+                ->whereNull('revised_from'),
+            'TTD Penyusun Resmi' => $query
+                ->where('official_preparer_id', $request->user()->id)
+                ->where('user_id', '!=', $request->user()->id),
+            default => $query->whereHas('approvals', function ($query) use ($stage, $approvalScope, $assignedApprovalScope): void {
+                $query
+                    ->where('stages', $stage)
+                    ->where(function ($query) use ($approvalScope, $assignedApprovalScope): void {
+                        $query->where($approvalScope)
+                            ->orWhere($assignedApprovalScope);
+                    });
+            }),
+        };
     }
 
     private function applyCommonFilters(Builder $query, array $filters): void
