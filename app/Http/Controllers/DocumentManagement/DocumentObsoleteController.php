@@ -43,7 +43,7 @@ class DocumentObsoleteController extends Controller
                 'revisedFrom',
             ])
             ->where('m_status_document_id', $obsoleteStatusId)
-            ->whereNull('request_type');
+            ->where(fn ($query) => $this->whereVisibleMasterRecord($query));
 
         if ($filters['search'] !== '') {
             $search = $filters['search'];
@@ -154,7 +154,7 @@ class DocumentObsoleteController extends Controller
         ]);
 
         abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
-        abort_unless($document->request_type === null, 404);
+        abort_unless($document->request_type !== 'obsolete', 404);
 
         return view('document-management.obsolete.show', [
             'document' => $document,
@@ -178,7 +178,7 @@ class DocumentObsoleteController extends Controller
         $document->loadMissing('status');
 
         abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
-        abort_unless($this->canRestoreMaster($request, $document), 403);
+        abort_unless($this->canAccessRestoreAction($request, $document), 403);
 
         $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
         $obsoleteStatus = StatusDocument::findByName(StatusDocument::OBSOLETE);
@@ -187,7 +187,7 @@ class DocumentObsoleteController extends Controller
         $activeMaster = $family
             ->first(fn (Document $revision): bool => $revision->id !== $document->id
                 && $revision->m_status_document_id === $approvedStatus->id
-                && $revision->request_type === null);
+                && $this->isVisibleMasterRecord($revision));
 
         if ($activeMaster !== null) {
             return redirect()
@@ -203,7 +203,7 @@ class DocumentObsoleteController extends Controller
                 ->whereIn('id', $familyIds)
                 ->where('id', '!=', $document->id)
                 ->where('m_status_document_id', $approvedStatus->id)
-                ->whereNull('request_type')
+                ->where(fn ($query) => $this->whereVisibleMasterRecord($query))
                 ->update([
                     'm_status_document_id' => $obsoleteStatus->id,
                 ]);
@@ -263,16 +263,51 @@ class DocumentObsoleteController extends Controller
 
         abort_unless($file->t_document_id === $document->id, 404);
         abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
-        abort_unless($document->request_type === null, 404);
+        abort_unless($document->request_type !== 'obsolete', 404);
     }
 
     private function canRestoreMaster(Request $request, Document $document): bool
+    {
+        if (! $this->canAccessRestoreAction($request, $document)) {
+            return false;
+        }
+
+        if ($this->activeMasterInFamily($document) !== null) {
+            return false;
+        }
+
+        return $request->user()?->hasPermission('documents.obsolete.restore') ?? false;
+    }
+
+    private function canAccessRestoreAction(Request $request, Document $document): bool
     {
         if ($document->status?->nama_status !== StatusDocument::OBSOLETE) {
             return false;
         }
 
         return $request->user()?->hasPermission('documents.obsolete.restore') ?? false;
+    }
+
+    private function activeMasterInFamily(Document $document): ?Document
+    {
+        $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
+
+        return $document->revisionFamily()
+            ->first(fn (Document $revision): bool => $revision->id !== $document->id
+                && $revision->m_status_document_id === $approvedStatus->id
+                && $this->isVisibleMasterRecord($revision));
+    }
+
+    private function whereVisibleMasterRecord($query): void
+    {
+        $query
+            ->whereNull('request_type')
+            ->orWhere('request_type', '!=', 'obsolete');
+    }
+
+    private function isVisibleMasterRecord(Document $document): bool
+    {
+        return $document->request_type !== 'obsolete';
     }
 
     private function restoreBlockedMessage(Document $document, Document $activeMaster): string

@@ -303,6 +303,7 @@ class DocumentMasterTest extends TestCase
             'nomor_dokumen' => 'FMPS-SMR-OBS-GRP',
             'nomor_revisi' => 1,
             'revised_from' => $rootDocument->id,
+            'request_type' => 'revision',
             'approved_at' => now()->subDays(2),
         ]);
         $latestRevision = $this->createDocument($user, $obsoleteStatus, [
@@ -310,6 +311,7 @@ class DocumentMasterTest extends TestCase
             'nomor_dokumen' => 'FMPS-SMR-OBS-GRP',
             'nomor_revisi' => 2,
             'revised_from' => $rootDocument->id,
+            'request_type' => 'revision',
             'approved_at' => now()->subDay(),
         ]);
 
@@ -772,6 +774,57 @@ class DocumentMasterTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_obsolete_revision_detail_and_preview_accept_revision_transaction(): void
+    {
+        Storage::fake('local');
+
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        $user = $this->userWithPermission('documents.obsolete.detail');
+        $previewPermission = Permission::query()->firstOrCreate(
+            ['code' => 'documents.obsolete.preview'],
+            [
+                'name' => 'documents.obsolete.preview',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.obsolete.files.preview',
+                'action' => 'view',
+            ],
+        );
+        $user->roles()->firstOrFail()->permissions()->syncWithoutDetaching([$previewPermission->id]);
+        $master = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Master Sebelum Revisi',
+            'nomor_dokumen' => 'PS-SMR-REVISION',
+            'nomor_revisi' => 0,
+        ]);
+        $revision = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Master Sebelum Revisi',
+            'nomor_dokumen' => 'PS-SMR-REVISION',
+            'nomor_revisi' => 1,
+            'revised_from' => $master->id,
+            'request_type' => 'revision',
+        ]);
+        $file = DocumentFile::create([
+            't_document_id' => $revision->id,
+            'type_file' => 'revision_content',
+            'path_file' => "documents/{$revision->id}/revision.pdf",
+            'uploaded_by' => $user->id,
+            'original_file_name' => 'revision.pdf',
+            'stored_file_name' => 'revision.pdf',
+            'file_size' => 3,
+        ]);
+        Storage::disk('local')->put($file->path_file, "%PDF-1.4\n% revision fixture");
+
+        $this->actingAs($user)
+            ->get(route('documents.obsolete.show', $revision))
+            ->assertOk()
+            ->assertSee('Detail Dokumen Obsolete')
+            ->assertSee('revision.pdf');
+
+        $this->actingAs($user)
+            ->get(route('documents.obsolete.files.preview', [$revision, $file]))
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
+    }
+
     public function test_regular_user_cannot_restore_obsolete_document_as_master(): void
     {
         $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
@@ -910,6 +963,7 @@ class DocumentMasterTest extends TestCase
             'nomor_dokumen' => 'FMPS-SMR-BLOCK',
             'nomor_revisi' => 3,
             'revised_from' => $rootDocument->id,
+            'request_type' => 'revision',
         ]);
         $newerRevision = $this->createDocument($owner, $obsoleteStatus, [
             'nama_dokumen' => 'Prosedur Restore Blocked Revisi 5',
@@ -924,12 +978,22 @@ class DocumentMasterTest extends TestCase
         $documentControlAdmin = $this->userWithPermission('documents.obsolete.restore');
 
         $this->actingAs($documentControlAdmin)
+            ->get(route('documents.obsolete.show', $olderRevision))
+            ->assertOk()
+            ->assertDontSee('Jadikan Master');
+
+        $this->actingAs($documentControlAdmin)
             ->post(route('documents.obsolete.restore', $olderRevision))
             ->assertRedirect(route('documents.obsolete.show', $olderRevision))
             ->assertSessionHas('restore_warning.message', 'Versi terbaru 00.03 masih menjadi master. Silakan obsolete-kan versi terbaru dulu.');
 
         $this->assertSame(StatusDocument::OBSOLETE, $olderRevision->refresh()->status->nama_status);
         $this->assertSame(StatusDocument::APPROVED, $activeMaster->refresh()->status->nama_status);
+
+        $this->actingAs($documentControlAdmin)
+            ->get(route('documents.obsolete.show', $newerRevision))
+            ->assertOk()
+            ->assertDontSee('Jadikan Master');
 
         $this->actingAs($documentControlAdmin)
             ->post(route('documents.obsolete.restore', $newerRevision))

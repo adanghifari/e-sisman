@@ -1716,7 +1716,7 @@ class CreateDocumentTest extends TestCase
         $this->actingAs($user)
             ->get(route('documents.approval.show', $active))
             ->assertOk()
-            ->assertSee('Riwayat Penolakan Sebelumnya')
+            ->assertSee('Pengajuan ulang dibuat dari transaksi #'.$attempts->last()->id)
             ->assertSee('Catatan penolakan 4');
     }
 
