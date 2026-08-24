@@ -2,18 +2,20 @@
 
 namespace Tests\Feature\DocumentManagement;
 
+use App\Models\Approval;
+use App\Models\ApprovalFlow;
+use App\Models\ApprovalStatus;
 use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
 use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
-use App\Models\ApprovalFlow;
-use App\Models\ApprovalStatus;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\StatusDocument;
 use App\Models\User;
+use App\Support\DocumentRejectionHistory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -1582,6 +1584,157 @@ class CreateDocumentTest extends TestCase
             ->assertSessionHasErrors(['nomor_dokumen_suffix']);
     }
 
+    public function test_rejected_initial_submission_number_can_be_reused_with_resubmission_chain(): void
+    {
+        Storage::fake('local');
+
+        [$user, $businessProcess, $businessFunction, $department, $level, $documentType] = $this->initialResubmissionFixture();
+        $rejectedStatus = StatusDocument::query()->where('nama_status', StatusDocument::REJECTED)->firstOrFail();
+        $previous = $this->createRejectedInitialAttempt($user, $level, $documentType, $businessProcess, $businessFunction, 'PS-SMR-003', [
+            'm_status_document_id' => $rejectedStatus->id,
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '003'))
+            ->assertRedirect(route('documents.create'));
+
+        $newDocument = Document::query()
+            ->where('nomor_dokumen', 'PS-SMR-003')
+            ->whereKeyNot($previous->id)
+            ->firstOrFail();
+
+        $this->assertSame($previous->id, $newDocument->resubmitted_from);
+        $this->assertSame(StatusDocument::REJECTED, $previous->refresh()->status->nama_status);
+    }
+
+    public function test_multiple_rejected_initial_submissions_keep_immediate_chain_and_history_notes(): void
+    {
+        Storage::fake('local');
+
+        [$user, $businessProcess, $businessFunction, $department, $level, $documentType] = $this->initialResubmissionFixture();
+        $attempts = collect();
+        $previous = null;
+
+        foreach (range(1, 4) as $index) {
+            $attempt = $this->createRejectedInitialAttempt($user, $level, $documentType, $businessProcess, $businessFunction, 'PS-SMR-004', [
+                'nama_dokumen' => "Attempt {$index}",
+                'resubmitted_from' => $previous?->id,
+            ], "Catatan penolakan {$index}");
+
+            $attempts->push($attempt);
+            $previous = $attempt;
+        }
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '004'))
+            ->assertRedirect(route('documents.create'));
+
+        $active = Document::query()
+            ->where('nomor_dokumen', 'PS-SMR-004')
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED))
+            ->firstOrFail();
+
+        $this->assertSame($attempts->last()->id, $active->resubmitted_from);
+        $this->assertCount(5, Document::query()->where('nomor_dokumen', 'PS-SMR-004')->get());
+
+        $history = app(DocumentRejectionHistory::class)->forDocument($active);
+
+        $this->assertSame(
+            ['Catatan penolakan 1', 'Catatan penolakan 2', 'Catatan penolakan 3', 'Catatan penolakan 4'],
+            $history->pluck('catatan')->all(),
+        );
+        $this->assertSame($attempts->pluck('id')->all(), $history->pluck('document_id')->all());
+
+        $this->actingAs($user)
+            ->get(route('documents.approval.show', $active))
+            ->assertOk()
+            ->assertSee('Riwayat Penolakan Sebelumnya')
+            ->assertSee('Catatan penolakan 4');
+    }
+
+    public function test_active_document_number_duplicate_is_blocked(): void
+    {
+        Storage::fake('local');
+
+        [$user, $businessProcess, $businessFunction, $department, $level, $documentType] = $this->initialResubmissionFixture();
+        $proposedStatus = StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail();
+
+        Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $proposedStatus->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Prosedur Aktif',
+            'nomor_dokumen' => 'PS-SMR-005',
+            'submitted_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('documents.create.level', 'level-2'))
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '005'))
+            ->assertRedirect(route('documents.create.level', 'level-2'))
+            ->assertSessionHasErrors(['nomor_dokumen_suffix']);
+    }
+
+    public function test_master_document_number_duplicate_is_blocked_even_if_rejected_attempt_exists(): void
+    {
+        Storage::fake('local');
+
+        [$user, $businessProcess, $businessFunction, $department, $level, $documentType] = $this->initialResubmissionFixture();
+        $approvedStatus = StatusDocument::query()->where('nama_status', StatusDocument::APPROVED)->firstOrFail();
+
+        Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Prosedur Master',
+            'nomor_dokumen' => 'PS-SMR-006',
+            'approved_at' => now(),
+        ]);
+        $this->createRejectedInitialAttempt($user, $level, $documentType, $businessProcess, $businessFunction, 'PS-SMR-006');
+
+        $this->actingAs($user)
+            ->from(route('documents.create.level', 'level-2'))
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '006'))
+            ->assertRedirect(route('documents.create.level', 'level-2'))
+            ->assertSessionHasErrors(['nomor_dokumen_suffix']);
+    }
+
+    public function test_rejection_history_does_not_mix_same_number_outside_resubmission_chain(): void
+    {
+        [$user, $businessProcess, $businessFunction, $department, $level, $documentType] = $this->initialResubmissionFixture();
+        $unrelated = $this->createRejectedInitialAttempt($user, $level, $documentType, $businessProcess, $businessFunction, 'PS-SMR-007', [
+            'nama_dokumen' => 'Unrelated',
+        ], 'Catatan tidak boleh ikut');
+        $chainAttempt = $this->createRejectedInitialAttempt($user, $level, $documentType, $businessProcess, $businessFunction, 'PS-SMR-007', [
+            'nama_dokumen' => 'Chain',
+        ], 'Catatan chain');
+        $active = Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail()->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Active',
+            'nomor_dokumen' => 'PS-SMR-007',
+            'resubmitted_from' => $chainAttempt->id,
+        ]);
+
+        $history = app(DocumentRejectionHistory::class)->forDocument($active);
+
+        $this->assertSame(['Catatan chain'], $history->pluck('catatan')->all());
+        $this->assertNotContains($unrelated->id, $history->pluck('document_id')->all());
+    }
+
     public function test_template_upload_must_be_pdf_document(): void
     {
         Storage::fake('local');
@@ -1659,6 +1812,97 @@ class CreateDocumentTest extends TestCase
             ])
             ->assertRedirect(route('documents.create.level', 'level-3'))
             ->assertSessionHasErrors(['attachments.0']);
+    }
+
+    private function initialResubmissionFixture(): array
+    {
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'QA',
+            'nama_proses_fungsi' => 'Quality Assurance',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+
+        foreach ([StatusDocument::DRAFT, StatusDocument::PROPOSED, StatusDocument::APPROVED, StatusDocument::REJECTED] as $status) {
+            StatusDocument::query()->firstOrCreate(['nama_status' => $status]);
+        }
+
+        foreach ([
+            ApprovalStatus::PENDING => 'Menunggu',
+            ApprovalStatus::APPROVED => 'Disetujui',
+            ApprovalStatus::REJECTED => 'Ditolak',
+            ApprovalStatus::TERMINATED => 'Dihentikan',
+        ] as $code => $name) {
+            ApprovalStatus::query()->firstOrCreate([
+                'kode_status' => $code,
+            ], [
+                'nama_status' => $name,
+            ]);
+        }
+
+        $documentType = DocumentType::query()->firstOrCreate(['nama_types' => 'Prosedur']);
+        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+
+        return [$user, $businessProcess, $businessFunction, $department, $level, $documentType];
+    }
+
+    private function initialSubmitPayload(BusinessProcess $businessProcess, BusinessFunction $businessFunction, Department $department, string $suffix, array $overrides = []): array
+    {
+        return array_merge([
+            'nama_dokumen' => 'Prosedur Resubmit',
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'department_ids' => [$department->id],
+            'official_preparer_id' => User::query()->firstOrFail()->id,
+            'nomor_dokumen_suffix' => $suffix,
+            'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
+            'submit_action' => 'submit',
+        ], $overrides);
+    }
+
+    private function createRejectedInitialAttempt(
+        User $user,
+        DocumentLevel $level,
+        DocumentType $documentType,
+        BusinessProcess $businessProcess,
+        BusinessFunction $businessFunction,
+        string $documentNumber,
+        array $overrides = [],
+        string $note = 'Dokumen belum sesuai.',
+    ): Document {
+        $document = Document::create(array_merge([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => StatusDocument::query()->where('nama_status', StatusDocument::REJECTED)->firstOrFail()->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Prosedur Ditolak',
+            'nomor_dokumen' => $documentNumber,
+            'rejected_at' => now(),
+        ], $overrides));
+
+        Approval::create([
+            't_document_id' => $document->id,
+            'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::REJECTED)->id,
+            'user_id' => User::factory()->create()->id,
+            'role_id' => null,
+            'assigned_by' => $user->id,
+            'assigned_at' => now()->subMinute(),
+            'responded_at' => now(),
+            'stages' => 'Approval Dokumen',
+            'catatan' => $note,
+        ]);
+
+        return $document;
     }
 
     private function revisionCreationFixture(): array

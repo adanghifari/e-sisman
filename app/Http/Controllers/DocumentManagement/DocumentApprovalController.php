@@ -12,8 +12,9 @@ use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
 use App\Models\StatusDocument;
-use App\Support\DocumentHistory;
 use App\Models\User;
+use App\Support\DocumentHistory;
+use App\Support\DocumentRejectionHistory;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -77,6 +78,7 @@ class DocumentApprovalController extends Controller
             'obsoleteSourceContentFiles' => $obsoleteSourceContentFiles,
             'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
             'documentHistory' => app(DocumentHistory::class)->forDocument($document),
+            'rejectionHistory' => app(DocumentRejectionHistory::class)->forDocument($document),
         ]);
     }
 
@@ -497,6 +499,7 @@ class DocumentApprovalController extends Controller
     private function stageApproverIds(Request $request, Document $document, ApprovalFlowStage $stage): Collection
     {
         $inputKey = "stage_approvers.{$stage->id}";
+
         return collect($request->input($inputKey, []))
             ->filter()
             ->map(fn ($userId) => (int) $userId)
