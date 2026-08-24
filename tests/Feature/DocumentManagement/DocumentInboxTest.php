@@ -2137,6 +2137,52 @@ class DocumentInboxTest extends TestCase
         $this->assertSame(1, $log->document_revision_snapshot);
     }
 
+    public function test_approval_download_logs_promoted_revision_form_number_snapshot(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
+        $source = $this->createDocument($user, [
+            'nama_dokumen' => 'Dokumen Master Sumber',
+            'nomor_dokumen' => 'PS-SMR-SNAP',
+            'nomor_revisi' => 0,
+        ]);
+        $document = $this->createDocument($user, [
+            'nama_dokumen' => 'Dokumen Revisi Promoted',
+            'nomor_dokumen' => 'PS-SMR-SNAP',
+            'nomor_lembar_revisi' => 'FMPS-SMR-SNAP-01',
+            'nomor_revisi' => 1,
+            'request_type' => 'revision',
+            'revised_from' => $source->id,
+        ]);
+
+        Storage::disk('local')->put("documents/{$document->id}/revision-promoted.pdf", 'promoted revision content');
+        $file = DocumentFile::create([
+            't_document_id' => $document->id,
+            'type_file' => 'revision_content',
+            'path_file' => "documents/{$document->id}/revision-promoted.pdf",
+            'uploaded_by' => $user->id,
+            'updated_at' => now(),
+            'original_file_name' => 'revision-promoted.pdf',
+            'stored_file_name' => 'revision-promoted.pdf',
+            'file_size' => 25,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.approval.files.show', [$document, $file]))
+            ->assertOk();
+
+        $log = DocumentDownloadLog::query()->firstOrFail();
+
+        $this->assertSame('approval', $log->download_context);
+        $this->assertSame('FMPS-SMR-SNAP-01', $log->document_number_snapshot);
+        $this->assertSame('Dokumen Revisi Promoted', $log->document_name_snapshot);
+        $this->assertSame(1, $log->document_revision_snapshot);
+    }
+
     private function createDocument(User $user, array $attributes = []): Document
     {
         $status = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::PROPOSED]);
