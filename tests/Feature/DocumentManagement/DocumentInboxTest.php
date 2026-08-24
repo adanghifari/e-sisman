@@ -1891,6 +1891,79 @@ class DocumentInboxTest extends TestCase
             ->assertDontSee('FMPS-SMR-OBSOLETE');
     }
 
+    public function test_approved_obsolete_request_obsoletes_revision_master_document(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create();
+        $obsoleteRequester = User::factory()->create();
+        $approver = User::factory()->create();
+        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::OBSOLETE]);
+        $obsoleteRequestStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::PROPOSED]);
+        $originalMaster = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Master Original',
+            'nomor_dokumen' => 'PS-SMR-REV-OBS',
+            'nomor_revisi' => 0,
+            'm_status_document_id' => $approvedStatus->id,
+            'approved_at' => now()->subDays(2),
+        ]);
+        $revisionMaster = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Master Revisi Aktif',
+            'nomor_dokumen' => 'PS-SMR-REV-OBS',
+            'nomor_revisi' => 1,
+            'revised_from' => $originalMaster->id,
+            'request_type' => 'revision',
+            'm_status_document_id' => $approvedStatus->id,
+            'approved_at' => now()->subDay(),
+        ]);
+        $request = Document::create([
+            'm_document_level_id' => $revisionMaster->m_document_level_id,
+            'm_status_document_id' => $obsoleteRequestStatus->id,
+            'm_document_types_id' => $revisionMaster->m_document_types_id,
+            'm_proses_bisnis_id' => $revisionMaster->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $revisionMaster->m_proses_fungsi_id,
+            'user_id' => $obsoleteRequester->id,
+            'official_preparer_id' => $submitter->id,
+            'revised_from' => $revisionMaster->id,
+            'request_type' => 'obsolete',
+            'nama_dokumen' => 'Master Revisi Aktif',
+            'nomor_dokumen' => 'PS-SMR-REV-OBS',
+            'nomor_revisi' => $revisionMaster->nomor_revisi,
+            'catatan_revisi' => 'Dokumen revisi sudah tidak digunakan.',
+            'submitted_at' => now(),
+        ]);
+        $request->departments()->sync($revisionMaster->departments()->pluck('departments.id')->all());
+
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $request->m_document_level_id,
+            'nama_flow' => 'Flow Obsolete Revisi',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Disahkan oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+        $role = Role::query()->firstOrCreate(['nama_role' => $stage->nama_tahap]);
+
+        Approval::create([
+            't_document_id' => $request->id,
+            'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::PENDING)->id,
+            'user_id' => $approver->id,
+            'role_id' => $role->id,
+            'assigned_by' => $submitter->id,
+            'assigned_at' => now(),
+            'stages' => $stage->display_label,
+        ]);
+
+        $this->actingAs($approver)
+            ->post(route('documents.approval.approve', $request))
+            ->assertRedirect(route('documents.approval.show', $request));
+
+        $this->assertSame(StatusDocument::APPROVED, $request->refresh()->status->nama_status);
+        $this->assertSame(StatusDocument::OBSOLETE, $revisionMaster->refresh()->status->nama_status);
+    }
+
     public function test_first_flow_stage_requires_manual_approver_selection(): void
     {
         $this->ensureApprovalStatuses();
