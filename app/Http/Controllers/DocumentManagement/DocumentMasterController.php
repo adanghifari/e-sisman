@@ -58,7 +58,7 @@ class DocumentMasterController extends Controller
                 'obsoleteRevisions.departments',
             ])
             ->where('m_status_document_id', $approvedStatusId)
-            ->whereNull('request_type');
+            ->where(fn ($query) => $this->whereVisibleMasterRecord($query));
 
         if ($filters['search'] !== '') {
             $search = $filters['search'];
@@ -196,7 +196,7 @@ class DocumentMasterController extends Controller
             $document->status?->nama_status === StatusDocument::APPROVED,
             404,
         );
-        abort_unless($document->request_type === null, 404);
+        abort_unless($this->isVisibleMasterRecord($document), 404);
 
         return view('document-management.master.show', [
             'document' => $document,
@@ -222,7 +222,7 @@ class DocumentMasterController extends Controller
         $document->loadMissing('status', 'documentLevel', 'departments');
 
         abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
-        abort_unless($document->request_type === null, 404);
+        abort_unless($this->isVisibleMasterRecord($document), 404);
         abort_unless($this->canRequestObsolete($request, $document), 403);
 
         $validated = $request->validate([
@@ -269,7 +269,7 @@ class DocumentMasterController extends Controller
         $activeMaster = $family
             ->first(fn (Document $revision): bool => $revision->id !== $document->id
                 && $revision->m_status_document_id === $approvedStatus->id
-                && $revision->request_type === null);
+                && $this->isVisibleMasterRecord($revision));
 
         if ($activeMaster !== null) {
             return redirect()
@@ -285,7 +285,7 @@ class DocumentMasterController extends Controller
                 ->whereIn('id', $familyIds)
                 ->where('id', '!=', $document->id)
                 ->where('m_status_document_id', $approvedStatus->id)
-                ->whereNull('request_type')
+                ->where(fn ($query) => $this->whereVisibleMasterRecord($query))
                 ->update([
                     'm_status_document_id' => $obsoleteStatus->id,
                 ]);
@@ -339,7 +339,19 @@ class DocumentMasterController extends Controller
 
         abort_unless($file->t_document_id === $document->id, 404);
         abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
-        abort_unless($document->request_type === null, 404);
+        abort_unless($this->isVisibleMasterRecord($document), 404);
+    }
+
+    private function whereVisibleMasterRecord($query): void
+    {
+        $query
+            ->whereNull('request_type')
+            ->orWhere('request_type', '!=', 'obsolete');
+    }
+
+    private function isVisibleMasterRecord(Document $document): bool
+    {
+        return $document->request_type !== 'obsolete';
     }
 
     private function canRequestRevision(Request $request, Document $document): bool

@@ -33,15 +33,23 @@ class DocumentDownloadActivityQuery
         return $this->builder()
             ->limit($limit)
             ->get()
-            ->map(fn ($activity): array => [
-                'text' => sprintf(
-                    '%s mengunduh %s - %s',
-                    $activity->downloaded_by ?: '-',
-                    $activity->number ?: '-',
-                    $activity->name,
-                ),
-                'time' => Carbon::parse($activity->downloaded_at)->format('d/m/Y H:i'),
-            ]);
+            ->map(function ($activity): array {
+                $number = $activity->number ?: '-';
+                $revision = $this->formatRevision((int) $activity->revision);
+                $displayNumber = $this->isRevisionFormNumber($number)
+                    ? $number
+                    : trim($number.' '.$revision);
+
+                return [
+                    'text' => sprintf(
+                        '%s mengunduh %s - %s',
+                        $activity->downloaded_by ?: '-',
+                        $displayNumber,
+                        $activity->name,
+                    ),
+                    'time' => Carbon::parse($activity->downloaded_at)->format('d/m/Y H:i'),
+                ];
+            });
     }
 
     /**
@@ -102,6 +110,13 @@ class DocumentDownloadActivityQuery
             'downloaded_at' => Carbon::parse($activity->downloaded_at)->format('d/m/Y H:i'),
             'count' => (int) $activity->count,
         ];
+    }
+
+    private function isRevisionFormNumber(string $number): bool
+    {
+        return str_starts_with($number, 'FMPS-')
+            || str_starts_with($number, 'FMIK-')
+            || str_starts_with($number, 'FMSM-');
     }
 
     private function formatRevision(int $revision): string

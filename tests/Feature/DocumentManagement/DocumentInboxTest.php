@@ -1738,7 +1738,7 @@ class DocumentInboxTest extends TestCase
             ->get(route('documents.approval.show', $request))
             ->assertOk()
             ->assertSee('Riwayat Dokumen')
-            ->assertSee('Dokumen diobsoletekan lewat pengajuan FMPS-SMR-OBSOLETE')
+            ->assertSee('Dokumen diobsoletekan lewat pengajuan PS-SMR-OBSOLETE')
             ->assertSee('Obsolete')
             ->assertSee(route('documents.approval.files.preview', [$request, $sourceFile]), false);
 

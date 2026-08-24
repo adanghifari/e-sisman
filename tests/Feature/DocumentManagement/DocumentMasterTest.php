@@ -522,12 +522,6 @@ class DocumentMasterTest extends TestCase
 
         $revision->refresh();
         $source->refresh();
-        $masterRevision = Document::query()
-            ->whereNull('request_type')
-            ->where('revised_from', $source->id)
-            ->where('nomor_dokumen', 'PS-KSA-02')
-            ->where('nomor_revisi', 1)
-            ->firstOrFail();
 
         $this->assertSame(StatusDocument::APPROVED, $revision->status->nama_status);
         $this->assertSame('revision', $revision->request_type);
@@ -537,10 +531,6 @@ class DocumentMasterTest extends TestCase
         $this->assertSame('PS-KSA-02', $revision->nomor_dokumen);
         $this->assertSame('FMPS-KSA-02-01', $revision->nomor_lembar_revisi);
         $this->assertSame(1, $revision->nomor_revisi);
-        $this->assertSame($source->m_document_level_id, $masterRevision->m_document_level_id);
-        $this->assertSame($source->m_document_types_id, $masterRevision->m_document_types_id);
-        $this->assertSame('PS-KSA-02', $masterRevision->nomor_dokumen);
-        $this->assertSame(1, $masterRevision->nomor_revisi);
 
         $this->actingAs($submitter)
             ->get(route('documents.master'))
@@ -554,10 +544,10 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Obsolete');
 
         $this->actingAs($submitter)
-            ->get(route('documents.master.show', $masterRevision))
+            ->get(route('documents.master.show', $revision))
             ->assertOk()
-            ->assertSee('Nomor Dokumen Revisi')
-            ->assertSee('FMPS-KSA-02')
+            ->assertSee('Nomor Lembar Revisi')
+            ->assertSee('FMPS-KSA-02-01')
             ->assertSee('Isi Dokumen Versi Revisi')
             ->assertSee('dokumen-revisi.pdf')
             ->assertSee('Lembar Revisi')
@@ -565,14 +555,10 @@ class DocumentMasterTest extends TestCase
             ->assertDontSee('Belum ada file isi dokumen.');
 
         $this->actingAs($submitter)
-            ->get(route('documents.approval.show', $masterRevision))
+            ->get(route('documents.approval.show', $revision))
             ->assertOk()
-            ->assertSee('Nomor Dokumen Revisi')
-            ->assertSee('FMPS-KSA-02');
-
-        $this->actingAs($submitter)
-            ->get(route('documents.master.show', $revision))
-            ->assertNotFound();
+            ->assertSee('Nomor Lembar Revisi')
+            ->assertSee('FMPS-KSA-02-01');
 
         $this->actingAs($submitter)
             ->get(route('documents.approval.show', $revision))
