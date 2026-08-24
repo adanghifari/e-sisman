@@ -456,7 +456,7 @@ class DocumentController extends Controller
 
     private function documentNumberLockName(string $documentNumber): string
     {
-        return 'document-number:'.hash('sha256', $documentNumber);
+        return 'document-number:'.substr(hash('sha256', $documentNumber), 0, 48);
     }
 
     /**

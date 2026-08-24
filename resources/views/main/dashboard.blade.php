@@ -179,9 +179,13 @@
             <x-ui.scroll-area max-height="210px" class="mt-4 space-y-4 pr-2">
                 @forelse ($activities as $activity)
                     <div class="flex gap-3">
-                        <span class="mt-1.5 size-2 rounded-full bg-sky-500"></span>
+                        <span class="mt-1.5 size-2 rounded-full {{ $activity['is_obsolete'] ? 'bg-red-500' : 'bg-sky-500' }}"></span>
                         <div class="min-w-0">
-                            <p class="text-sm leading-5 text-slate-700">{{ $activity['text'] }}</p>
+                            <p class="text-sm leading-5 text-slate-700">
+                                {{ $activity['downloaded_by'] }} mengunduh
+                                <span class="font-semibold {{ $activity['is_obsolete'] ? 'text-red-600' : 'text-slate-700' }}">{{ $activity['number'] }}</span>
+                                - {{ $activity['name'] }}
+                            </p>
                             <p class="mt-1 text-xs font-medium text-slate-400">{{ $activity['time'] }}</p>
                         </div>
                     </div>

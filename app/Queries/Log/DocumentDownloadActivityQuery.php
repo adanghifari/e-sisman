@@ -35,18 +35,12 @@ class DocumentDownloadActivityQuery
             ->get()
             ->map(function ($activity): array {
                 $number = $activity->number ?: '-';
-                $revision = $this->formatRevision((int) $activity->revision);
-                $displayNumber = $this->isRevisionFormNumber($number)
-                    ? $number
-                    : trim($number.' '.$revision);
 
                 return [
-                    'text' => sprintf(
-                        '%s mengunduh %s - %s',
-                        $activity->downloaded_by ?: '-',
-                        $displayNumber,
-                        $activity->name,
-                    ),
+                    'downloaded_by' => $activity->downloaded_by ?: '-',
+                    'number' => $number,
+                    'name' => $activity->name,
+                    'is_obsolete' => $activity->download_context === 'obsolete',
                     'time' => Carbon::parse($activity->downloaded_at)->format('d/m/Y H:i'),
                 ];
             });
@@ -67,6 +61,7 @@ class DocumentDownloadActivityQuery
                 DB::raw('COALESCE(t_document_download_logs.document_number_snapshot, t_document.nomor_dokumen) as number'),
                 DB::raw('COALESCE(t_document_download_logs.document_revision_snapshot, t_document.nomor_revisi) as revision'),
                 DB::raw("COALESCE(users.name, '-') as downloaded_by"),
+                't_document_download_logs.download_context',
                 't_document_download_logs.downloaded_at',
                 DB::raw('(
                     SELECT COUNT(*)
@@ -110,13 +105,6 @@ class DocumentDownloadActivityQuery
             'downloaded_at' => Carbon::parse($activity->downloaded_at)->format('d/m/Y H:i'),
             'count' => (int) $activity->count,
         ];
-    }
-
-    private function isRevisionFormNumber(string $number): bool
-    {
-        return str_starts_with($number, 'FMPS-')
-            || str_starts_with($number, 'FMIK-')
-            || str_starts_with($number, 'FMSM-');
     }
 
     private function formatRevision(int $revision): string

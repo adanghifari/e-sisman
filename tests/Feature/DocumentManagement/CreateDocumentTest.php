@@ -95,6 +95,18 @@ class CreateDocumentTest extends TestCase
         $role->permissions()->syncWithoutDetaching($permissions->pluck('id')->all());
     }
 
+    public function test_document_number_lock_name_stays_within_mysql_limit(): void
+    {
+        $controller = app(\App\Http\Controllers\DocumentManagement\DocumentController::class);
+        $method = new \ReflectionMethod($controller, 'documentNumberLockName');
+        $method->setAccessible(true);
+
+        $lockName = $method->invoke($controller, 'PS-KSA-001');
+
+        $this->assertStringStartsWith('document-number:', $lockName);
+        $this->assertLessThanOrEqual(64, strlen($lockName));
+    }
+
     public function test_level_three_create_page_is_displayed(): void
     {
         $user = User::factory()->create([
