@@ -184,6 +184,7 @@ class Document extends Model
 
     public function files(): HasMany
     {
-        return $this->hasMany(DocumentFile::class, 't_document_id');
+        // Newer file records win when legacy/concurrent data contains duplicates.
+        return $this->hasMany(DocumentFile::class, 't_document_id')->orderByDesc('id');
     }
 }

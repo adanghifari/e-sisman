@@ -35,7 +35,10 @@
         ];
         $revisionMainFiles = $levelKey === 'level-4'
             ? collect(['revision_content', 'revision_form'])
-                ->map(fn ($type) => $contentFiles->firstWhere('type_file', $type))
+                ->map(fn ($type) => $contentFiles
+                    ->where('type_file', $type)
+                    ->sortByDesc('id')
+                    ->first())
                 ->filter()
                 ->values()
             : collect();

@@ -321,6 +321,9 @@ class DocumentApprovalController extends Controller
 
         return response()->file($sourcePath, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
         ]);
     }
 
@@ -679,12 +682,17 @@ class DocumentApprovalController extends Controller
             ->pluck('id')
             ->all();
         $familyIds = $document->revisionFamily()->pluck('id')->all();
+        /** @var Collection<int, Document> $lockedFamily */
         $lockedFamily = Document::query()
             ->whereIn('id', $familyIds)
             ->orderBy('id')
             ->lockForUpdate()
             ->get();
+
+        /** @var Document|null $lockedDocument */
         $lockedDocument = $lockedFamily->firstWhere('id', $document->id);
+
+        /** @var Document|null $source */
         $source = $lockedDocument !== null
             ? $lockedFamily->firstWhere('id', $lockedDocument->revised_from)
             : null;
@@ -723,7 +731,6 @@ class DocumentApprovalController extends Controller
             'nomor_dokumen' => $source->nomor_dokumen,
             'nomor_lembar_revisi' => $lockedDocument->nomor_lembar_revisi
                 ?: $this->revisionFormNumber($source, (int) $lockedDocument->nomor_revisi),
-            'm_status_document_id' => $approvedStatus->id,
             'approved_at' => now(),
             'rejected_at' => null,
         ]);
