@@ -458,6 +458,145 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Pengaju Riwayat');
     }
 
+    public function test_needs_process_initial_load_only_shows_first_fifteen_documents(): void
+    {
+        $approver = User::factory()->create();
+        $submitter = User::factory()->create();
+
+        foreach (range(1, 16) as $index) {
+            $document = $this->createDocument($submitter, [
+                'nama_dokumen' => sprintf('Batch Task %02d', $index),
+                'nomor_dokumen' => sprintf('PS-SMR-BATCH-%02d', $index),
+            ]);
+            $this->createApproval($document, $approver, ApprovalStatus::PENDING, [
+                'assigned_at' => now()->subMinutes(16 - $index),
+            ]);
+        }
+
+        $this->actingAs($approver)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee('Menampilkan 15 dari 16 dokumen')
+            ->assertSee('Batch Task 16')
+            ->assertSee('Batch Task 02')
+            ->assertDontSee('Batch Task 01');
+    }
+
+    public function test_needs_process_load_more_returns_next_fifteen_without_duplicates(): void
+    {
+        $approver = User::factory()->create();
+        $submitter = User::factory()->create();
+
+        foreach (range(1, 31) as $index) {
+            $document = $this->createDocument($submitter, [
+                'nama_dokumen' => sprintf('Load More Task %02d', $index),
+                'nomor_dokumen' => sprintf('PS-SMR-LOAD-%02d', $index),
+            ]);
+            $this->createApproval($document, $approver, ApprovalStatus::PENDING, [
+                'assigned_at' => now()->subMinutes(31 - $index),
+            ]);
+        }
+
+        $firstBatch = $this->actingAs($approver)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']));
+        $secondBatch = $this->actingAs($approver)
+            ->get(route('documents.inbox', [
+                'tab' => 'needs-process',
+                'load_more' => 1,
+                'needs_page' => 2,
+            ]));
+        $thirdBatch = $this->actingAs($approver)
+            ->get(route('documents.inbox', [
+                'tab' => 'needs-process',
+                'load_more' => 1,
+                'needs_page' => 3,
+            ]));
+
+        $firstBatch->assertOk()->assertSee('Load More Task 31')->assertDontSee('Load More Task 16');
+        $secondRows = $secondBatch->assertOk()->json('rows');
+        $thirdRows = $thirdBatch->assertOk()->json('rows');
+
+        $this->assertSame(15, substr_count($secondRows, '<tr'));
+        $this->assertStringContainsString('Load More Task 16', $secondRows);
+        $this->assertStringContainsString('Load More Task 02', $secondRows);
+        $this->assertStringNotContainsString('Load More Task 31', $secondRows);
+        $this->assertStringNotContainsString('Load More Task 01', $secondRows);
+        $this->assertSame(1, substr_count($thirdRows, '<tr'));
+        $this->assertStringContainsString('Load More Task 01', $thirdRows);
+    }
+
+    public function test_search_filters_against_full_history_before_batching(): void
+    {
+        $approver = User::factory()->create();
+        $submitter = User::factory()->create();
+
+        foreach (range(1, 20) as $index) {
+            $document = $this->createDocument($submitter, [
+                'nama_dokumen' => sprintf('Riwayat Umum %02d', $index),
+                'nomor_dokumen' => sprintf('PS-SMR-HISTORY-%02d', $index),
+            ]);
+            $this->createApproval($document, $approver, ApprovalStatus::APPROVED, [
+                'responded_at' => now()->subMinutes(20 - $index),
+            ]);
+        }
+
+        $target = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Riwayat Target Khusus',
+            'nomor_dokumen' => 'IK-KSA-TARGET',
+        ]);
+        $this->createApproval($target, $approver, ApprovalStatus::APPROVED, [
+            'responded_at' => now()->subDays(5),
+        ]);
+
+        $this->actingAs($approver)
+            ->get(route('documents.inbox', [
+                'tab' => 'processed-history',
+                'search' => 'IK-KSA-TARGET',
+            ]))
+            ->assertOk()
+            ->assertSee('Menampilkan 1 dari 1 dokumen')
+            ->assertSee('Riwayat Target Khusus')
+            ->assertDontSee('Riwayat Umum 20');
+    }
+
+    public function test_processed_history_load_more_uses_independent_history_page_parameter(): void
+    {
+        $approver = User::factory()->create();
+        $submitter = User::factory()->create();
+
+        foreach (range(1, 16) as $index) {
+            $document = $this->createDocument($submitter, [
+                'nama_dokumen' => sprintf('History Batch %02d', $index),
+                'nomor_dokumen' => sprintf('PS-SMR-HB-%02d', $index),
+            ]);
+            $this->createApproval($document, $approver, ApprovalStatus::APPROVED, [
+                'responded_at' => now()->subMinutes(16 - $index),
+            ]);
+        }
+
+        $this->actingAs($approver)
+            ->get(route('documents.inbox', [
+                'tab' => 'processed-history',
+                'needs_page' => 2,
+            ]))
+            ->assertOk()
+            ->assertSee('History Batch 16')
+            ->assertDontSee('History Batch 01');
+
+        $rows = $this->actingAs($approver)
+            ->get(route('documents.inbox', [
+                'tab' => 'processed-history',
+                'load_more' => 1,
+                'needs_page' => 2,
+                'history_page' => 2,
+            ]))
+            ->assertOk()
+            ->json('rows');
+
+        $this->assertSame(1, substr_count($rows, '<tr'));
+        $this->assertStringContainsString('History Batch 01', $rows);
+    }
+
     public function test_submitter_sees_pending_revision_in_needs_process_when_only_official_signature_exists(): void
     {
         $this->ensureApprovalStatuses();
@@ -1360,8 +1499,8 @@ class DocumentInboxTest extends TestCase
                 ->where('t_document_id', $document->id)
                 ->where('user_id', $approver->id)
                 ->firstOrFail()
-            ->status
-            ->kode_status,
+                ->status
+                ->kode_status,
         );
     }
 
@@ -2000,8 +2139,8 @@ class DocumentInboxTest extends TestCase
 
     private function createDocument(User $user, array $attributes = []): Document
     {
-        $status = StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
-        $documentType = DocumentType::create(['nama_types' => 'Prosedur']);
+        $status = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::PROPOSED]);
+        $documentType = DocumentType::query()->firstOrCreate(['nama_types' => 'Prosedur']);
         $businessProcess = BusinessProcess::create([
             'kode' => fake()->unique()->lexify('???'),
             'nama_proses_bisnis' => fake()->unique()->words(3, true),
@@ -2010,10 +2149,10 @@ class DocumentInboxTest extends TestCase
             'kode' => fake()->unique()->lexify('???'),
             'nama_proses_fungsi' => fake()->unique()->words(3, true),
         ]);
-        $department = Department::create([
-            'kode_department' => 'QA',
-            'nama_department' => 'Quality Assurance',
-        ]);
+        $department = Department::query()->firstOrCreate(
+            ['kode_department' => 'QA'],
+            ['nama_department' => 'Quality Assurance'],
+        );
         $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
 
         $document = Document::create($attributes + [
