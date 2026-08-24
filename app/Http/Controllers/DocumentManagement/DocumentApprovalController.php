@@ -682,12 +682,17 @@ class DocumentApprovalController extends Controller
             ->pluck('id')
             ->all();
         $familyIds = $document->revisionFamily()->pluck('id')->all();
+        /** @var Collection<int, Document> $lockedFamily */
         $lockedFamily = Document::query()
             ->whereIn('id', $familyIds)
             ->orderBy('id')
             ->lockForUpdate()
             ->get();
+
+        /** @var Document|null $lockedDocument */
         $lockedDocument = $lockedFamily->firstWhere('id', $document->id);
+
+        /** @var Document|null $source */
         $source = $lockedDocument !== null
             ? $lockedFamily->firstWhere('id', $lockedDocument->revised_from)
             : null;
