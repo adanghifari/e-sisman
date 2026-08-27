@@ -36,7 +36,7 @@
                         wire:navigate
                     >
                         <flux:icon name="archive-box" class="size-4" />
-                        Arsip Import Manual
+                        Lihat Arsip Import Manual
                     </a>
                 @endif
                 @if ($canCreateImportedObsolete)

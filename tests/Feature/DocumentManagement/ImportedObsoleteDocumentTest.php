@@ -122,7 +122,7 @@ class ImportedObsoleteDocumentTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('documents.obsolete.imports.store'), [
-                'obsolete_rule_type' => ImportedObsoleteDocument::CURRENT_RULE,
+                'obsolete_rule_type' => ImportedObsoleteDocument::LEGACY_RULE,
                 'nama_dokumen' => 'Legacy Source',
                 'nomor_revisi' => '00.01',
                 'obsolete_document' => UploadedFile::fake()->create('legacy-source.pdf', 100, 'application/pdf'),
@@ -157,6 +157,32 @@ class ImportedObsoleteDocumentTest extends TestCase
             'related_document_id' => $targetDocument->id,
             'relation_type' => ImportedObsoleteDocumentRelation::REFERENCES,
         ]);
+    }
+
+    public function test_current_rule_requires_all_modern_master_data(): void
+    {
+        Storage::fake('local');
+
+        $user = $this->userWithPermissions([
+            'documents.obsolete.imports.store',
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('documents.obsolete.imports.create'))
+            ->post(route('documents.obsolete.imports.store'), [
+                'obsolete_rule_type' => ImportedObsoleteDocument::CURRENT_RULE,
+                'nama_dokumen' => 'Current Rule Tanpa Master Data',
+                'obsolete_document' => UploadedFile::fake()->create('current-rule.pdf', 100, 'application/pdf'),
+            ])
+            ->assertRedirect(route('documents.obsolete.imports.create'))
+            ->assertSessionHasErrors([
+                'm_document_level_id',
+                'm_document_types_id',
+                'm_proses_bisnis_id',
+                'm_proses_fungsi_id',
+            ]);
+
+        $this->assertFalse(ImportedObsoleteDocument::query()->where('nama_dokumen', 'Current Rule Tanpa Master Data')->exists());
     }
 
     public function test_imported_obsolete_relation_requires_exactly_one_target(): void

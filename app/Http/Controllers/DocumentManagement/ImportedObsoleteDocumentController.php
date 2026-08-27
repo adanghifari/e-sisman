@@ -211,10 +211,10 @@ class ImportedObsoleteDocumentController extends Controller
     {
         $validated = $request->validate([
             'obsolete_rule_type' => ['required', Rule::in(ImportedObsoleteDocument::RULE_TYPES)],
-            'm_document_level_id' => ['nullable', 'integer', Rule::exists('m_document_levels', 'id')],
-            'm_document_types_id' => ['nullable', 'integer', Rule::exists('m_document_types', 'id')],
-            'm_proses_bisnis_id' => ['nullable', 'integer', Rule::exists('m_proses_bisnis', 'id')],
-            'm_proses_fungsi_id' => ['nullable', 'integer', Rule::exists('m_proses_fungsi', 'id')],
+            'm_document_level_id' => ['required_if:obsolete_rule_type,'.ImportedObsoleteDocument::CURRENT_RULE, 'nullable', 'integer', Rule::exists('m_document_levels', 'id')],
+            'm_document_types_id' => ['required_if:obsolete_rule_type,'.ImportedObsoleteDocument::CURRENT_RULE, 'nullable', 'integer', Rule::exists('m_document_types', 'id')],
+            'm_proses_bisnis_id' => ['required_if:obsolete_rule_type,'.ImportedObsoleteDocument::CURRENT_RULE, 'nullable', 'integer', Rule::exists('m_proses_bisnis', 'id')],
+            'm_proses_fungsi_id' => ['required_if:obsolete_rule_type,'.ImportedObsoleteDocument::CURRENT_RULE, 'nullable', 'integer', Rule::exists('m_proses_fungsi', 'id')],
             'nama_dokumen' => ['required', 'string', 'max:255'],
             'nomor_dokumen' => ['nullable', 'string', 'max:255'],
             'nomor_revisi' => ['nullable', 'string', 'max:50'],

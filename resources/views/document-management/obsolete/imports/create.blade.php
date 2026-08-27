@@ -16,7 +16,7 @@
 
             <x-ui.panel title="Identitas Dokumen" description="Mulai dari nama dokumen, lalu pilih ketentuan arsip yang sesuai.">
                 @php
-                    $selectedRuleType = old('obsolete_rule_type', \App\Models\ImportedObsoleteDocument::LEGACY_RULE);
+                    $selectedRuleType = old('obsolete_rule_type');
                 @endphp
 
                 <div class="space-y-5" data-imported-obsolete-rule-form>
@@ -75,7 +75,7 @@
                         @enderror
                     </div>
 
-                    <div class="grid gap-4 md:grid-cols-2">
+                    <div class="grid gap-4 md:grid-cols-2" data-rule-dependent-fields>
                         <x-ui.input label="Nomor Dokumen" name="nomor_dokumen" :value="old('nomor_dokumen')" />
                         <x-ui.input label="Nomor Revisi" name="nomor_revisi" :value="old('nomor_revisi')" placeholder="Contoh: 00, 00.01, Rev A, R02" />
                         <x-ui.date-input label="Tanggal Terbit" name="tanggal_terbit" :value="old('tanggal_terbit')" />
@@ -95,9 +95,21 @@
 
                         <div class="grid gap-4 md:grid-cols-2">
                             <x-ui.select label="Dok Level" name="m_document_level_id" :value="old('m_document_level_id')" :options="$documentLevelOptions" />
+                            @error('m_document_level_id')
+                                <span class="text-sm font-semibold text-red-500">{{ $message }}</span>
+                            @enderror
                             <x-ui.select label="Jenis Dokumen" name="m_document_types_id" :value="old('m_document_types_id')" :options="$documentTypeOptions" />
+                            @error('m_document_types_id')
+                                <span class="text-sm font-semibold text-red-500">{{ $message }}</span>
+                            @enderror
                             <x-ui.select label="Proses Bisnis" name="m_proses_bisnis_id" :value="old('m_proses_bisnis_id')" :options="$processOptions" />
+                            @error('m_proses_bisnis_id')
+                                <span class="text-sm font-semibold text-red-500">{{ $message }}</span>
+                            @enderror
                             <x-ui.select label="Proses Fungsi" name="m_proses_fungsi_id" :value="old('m_proses_fungsi_id')" :options="$functionOptions" />
+                            @error('m_proses_fungsi_id')
+                                <span class="text-sm font-semibold text-red-500">{{ $message }}</span>
+                            @enderror
                         </div>
                     </div>
 
@@ -106,11 +118,13 @@
                         <p class="mt-1">Untuk tahap ini, simpan nomor dokumen, revisi, tanggal, file, catatan, dan relasi dokumen. Field legacy tambahan akan ditentukan setelah audit format arsip aktual.</p>
                     </div>
 
-                    <x-ui.textarea label="Catatan Dokumen" name="catatan" :value="old('catatan')" placeholder="Catatan bebas terkait arsip obsolete ini." />
+                    <div data-rule-dependent-fields>
+                        <x-ui.textarea label="Catatan Dokumen" name="catatan" :value="old('catatan')" placeholder="Catatan bebas terkait arsip obsolete ini." />
+                    </div>
                 </div>
             </x-ui.panel>
 
-            <x-ui.panel title="File Dokumen" description="Upload file utama dokumen obsolete dan lampiran pendukung jika ada.">
+            <x-ui.panel title="File Dokumen" description="Upload file utama dokumen obsolete dan lampiran pendukung jika ada." data-rule-dependent-section>
                 <div class="grid gap-4 md:grid-cols-2">
                     <x-ui.file-upload label="File Dokumen" name="obsolete_document" accept=".pdf,.doc,.docx,.xls,.xlsx" required />
                     <x-ui.file-upload label="Lampiran" name="attachments[]" accept=".pdf,.doc,.docx,.xls,.xlsx" multiple />
@@ -127,6 +141,7 @@
                 title="Dokumen Terkait"
                 description="Tambahkan relasi jika arsip ini berhubungan dengan arsip obsolete legacy lain atau dokumen master existing."
                 :padded="false"
+                data-rule-dependent-section
             >
                 @php
                     $oldRelations = collect(old('relations', []))->values();
@@ -285,13 +300,23 @@
                     const selectedRule = ruleForm.querySelector('[data-imported-obsolete-rule-option]:checked')?.value;
                     const currentRuleFields = ruleForm.querySelector('[data-current-rule-fields]');
                     const legacyRuleNote = ruleForm.querySelector('[data-legacy-rule-note]');
+                    const dependentFields = document.querySelectorAll('[data-rule-dependent-fields]');
+                    const dependentSections = document.querySelectorAll('[data-rule-dependent-section]');
+                    const hasSelectedRule = Boolean(selectedRule);
                     const isCurrentRule = selectedRule === '{{ \App\Models\ImportedObsoleteDocument::CURRENT_RULE }}';
 
-                    currentRuleFields?.classList.toggle('hidden', !isCurrentRule);
-                    legacyRuleNote?.classList.toggle('hidden', isCurrentRule);
+                    dependentFields.forEach((section) => {
+                        section.classList.toggle('hidden', !hasSelectedRule);
+                    });
+                    dependentSections.forEach((section) => {
+                        section.classList.toggle('hidden', !hasSelectedRule);
+                    });
+
+                    currentRuleFields?.classList.toggle('hidden', !hasSelectedRule || !isCurrentRule);
+                    legacyRuleNote?.classList.toggle('hidden', !hasSelectedRule || isCurrentRule);
 
                     currentRuleFields?.querySelectorAll('select, input, textarea').forEach((field) => {
-                        field.disabled = !isCurrentRule;
+                        field.disabled = !hasSelectedRule || !isCurrentRule;
                     });
                 };
 
