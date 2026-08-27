@@ -10,8 +10,8 @@ use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\StatusDocument;
 use App\Support\DocumentHistory;
-use Illuminate\Http\RedirectResponse;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
@@ -124,6 +124,8 @@ class DocumentObsoleteController extends Controller
             'typeOptions' => $typeOptions,
             'processOptions' => $processOptions,
             'canCreateObsolete' => $request->user()?->hasPermission('documents.obsolete.create') ?? false,
+            'canViewImportedObsolete' => $request->user()?->hasPermission('documents.obsolete.imports.view') ?? false,
+            'canCreateImportedObsolete' => $request->user()?->hasPermission('documents.obsolete.imports.create') ?? false,
             'sortOptions' => [
                 'newest' => 'Terbaru',
                 'oldest' => 'Terlama',

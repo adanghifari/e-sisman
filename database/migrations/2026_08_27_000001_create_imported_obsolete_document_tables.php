@@ -9,63 +9,62 @@ return new class extends Migration
 {
     public function up(): void
     {
-        Schema::create('imported_obsolete_documents', function (Blueprint $table): void {
-            $table->id();
-            $table->string('obsolete_rule_type');
-            $table->foreignId('m_document_level_id')->nullable()->constrained('m_document_levels')->restrictOnDelete();
-            $table->foreignId('m_document_types_id')->nullable()->constrained('m_document_types')->restrictOnDelete();
-            $table->foreignId('m_proses_bisnis_id')->nullable()->constrained('m_proses_bisnis')->restrictOnDelete();
-            $table->foreignId('m_proses_fungsi_id')->nullable()->constrained('m_proses_fungsi')->restrictOnDelete();
-            $table->foreignId('uploaded_by')->constrained('users')->restrictOnDelete();
-            $table->string('nama_dokumen');
-            $table->string('nomor_dokumen')->nullable();
-            $table->string('nomor_revisi')->nullable();
-            $table->date('tanggal_terbit')->nullable();
-            $table->date('tanggal_obsolete')->nullable();
-            $table->text('catatan')->nullable();
-            $table->timestamps();
+        if (! Schema::hasTable('imported_obsolete_documents')) {
+            Schema::create('imported_obsolete_documents', function (Blueprint $table): void {
+                $table->id();
+                $table->string('obsolete_rule_type');
+                $table->foreignId('m_document_level_id')->nullable()->constrained('m_document_levels')->restrictOnDelete();
+                $table->foreignId('m_document_types_id')->nullable()->constrained('m_document_types')->restrictOnDelete();
+                $table->foreignId('m_proses_bisnis_id')->nullable()->constrained('m_proses_bisnis')->restrictOnDelete();
+                $table->foreignId('m_proses_fungsi_id')->nullable()->constrained('m_proses_fungsi')->restrictOnDelete();
+                $table->foreignId('uploaded_by')->constrained('users')->restrictOnDelete();
+                $table->string('nama_dokumen');
+                $table->string('nomor_dokumen')->nullable();
+                $table->string('nomor_revisi')->nullable();
+                $table->date('tanggal_terbit')->nullable();
+                $table->date('tanggal_obsolete')->nullable();
+                $table->text('catatan')->nullable();
+                $table->timestamps();
 
-            $table->index('obsolete_rule_type');
-            $table->index('nomor_dokumen');
-        });
+                $table->index('obsolete_rule_type');
+                $table->index('nomor_dokumen');
+            });
+        }
 
-        Schema::create('imported_obsolete_document_files', function (Blueprint $table): void {
-            $table->id();
-            $table->foreignId('imported_obsolete_document_id')
-                ->constrained('imported_obsolete_documents')
-                ->cascadeOnDelete();
-            $table->string('type_file');
-            $table->string('path_file');
-            $table->foreignId('uploaded_by')->constrained('users')->restrictOnDelete();
-            $table->string('original_file_name');
-            $table->string('stored_file_name');
-            $table->unsignedBigInteger('file_size')->nullable();
-            $table->timestamps();
+        if (! Schema::hasTable('imported_obsolete_document_files')) {
+            Schema::create('imported_obsolete_document_files', function (Blueprint $table): void {
+                $table->id();
+                $table->unsignedBigInteger('imported_obsolete_document_id');
+                $table->string('type_file');
+                $table->string('path_file');
+                $table->unsignedBigInteger('uploaded_by');
+                $table->string('original_file_name');
+                $table->string('stored_file_name');
+                $table->unsignedBigInteger('file_size')->nullable();
+                $table->timestamps();
 
-            $table->index(['imported_obsolete_document_id', 'type_file'], 'imported_obsolete_files_document_type_index');
-        });
+                $table->index(['imported_obsolete_document_id', 'type_file'], 'imported_obsolete_files_document_type_index');
+            });
+        }
 
-        Schema::create('imported_obsolete_document_relations', function (Blueprint $table): void {
-            $table->id();
-            $table->foreignId('imported_obsolete_document_id')
-                ->constrained('imported_obsolete_documents')
-                ->cascadeOnDelete();
-            $table->foreignId('related_imported_obsolete_document_id')
-                ->nullable()
-                ->constrained('imported_obsolete_documents')
-                ->restrictOnDelete();
-            $table->foreignId('related_document_id')
-                ->nullable()
-                ->constrained('t_document')
-                ->restrictOnDelete();
-            $table->string('relation_type');
-            $table->text('keterangan')->nullable();
-            $table->foreignId('created_by')->constrained('users')->restrictOnDelete();
-            $table->timestamps();
+        $this->addFileForeignKeys();
 
-            $table->index('relation_type');
-        });
+        if (! Schema::hasTable('imported_obsolete_document_relations')) {
+            Schema::create('imported_obsolete_document_relations', function (Blueprint $table): void {
+                $table->id();
+                $table->unsignedBigInteger('imported_obsolete_document_id');
+                $table->unsignedBigInteger('related_imported_obsolete_document_id')->nullable();
+                $table->unsignedBigInteger('related_document_id')->nullable();
+                $table->string('relation_type');
+                $table->text('keterangan')->nullable();
+                $table->unsignedBigInteger('created_by');
+                $table->timestamps();
 
+                $table->index('relation_type');
+            });
+        }
+
+        $this->addRelationForeignKeys();
         $this->addRelationCheckConstraints();
     }
 
@@ -80,22 +79,117 @@ return new class extends Migration
     {
         $driver = DB::connection()->getDriverName();
 
+        if ($this->constraintExists('imported_obsolete_document_relations', 'iod_rel_one_target_chk')) {
+            return;
+        }
+
         if (in_array($driver, ['mysql', 'mariadb'], true)) {
             DB::statement(
-                'alter table imported_obsolete_document_relations add constraint imported_obsolete_relations_one_target_check check ((related_imported_obsolete_document_id is null) <> (related_document_id is null))',
+                'alter table imported_obsolete_document_relations add constraint iod_rel_one_target_chk check ((related_imported_obsolete_document_id is null) <> (related_document_id is null))',
             );
             DB::statement(
-                'alter table imported_obsolete_document_relations add constraint imported_obsolete_relations_no_self_check check (related_imported_obsolete_document_id is null or imported_obsolete_document_id <> related_imported_obsolete_document_id)',
+                'alter table imported_obsolete_document_relations add constraint iod_rel_no_self_chk check (related_imported_obsolete_document_id is null or imported_obsolete_document_id <> related_imported_obsolete_document_id)',
             );
         }
 
         if ($driver === 'pgsql') {
             DB::statement(
-                'alter table imported_obsolete_document_relations add constraint imported_obsolete_relations_one_target_check check ((related_imported_obsolete_document_id is null) <> (related_document_id is null))',
+                'alter table imported_obsolete_document_relations add constraint iod_rel_one_target_chk check ((related_imported_obsolete_document_id is null) <> (related_document_id is null))',
             );
             DB::statement(
-                'alter table imported_obsolete_document_relations add constraint imported_obsolete_relations_no_self_check check (related_imported_obsolete_document_id is null or imported_obsolete_document_id <> related_imported_obsolete_document_id)',
+                'alter table imported_obsolete_document_relations add constraint iod_rel_no_self_chk check (related_imported_obsolete_document_id is null or imported_obsolete_document_id <> related_imported_obsolete_document_id)',
             );
         }
+    }
+
+    private function addFileForeignKeys(): void
+    {
+        if (! $this->foreignKeyExists('imported_obsolete_document_files', 'imported_obsolete_document_id')) {
+            Schema::table('imported_obsolete_document_files', function (Blueprint $table): void {
+                $table->foreign('imported_obsolete_document_id', 'iod_files_document_fk')
+                    ->references('id')
+                    ->on('imported_obsolete_documents')
+                    ->cascadeOnDelete();
+            });
+        }
+
+        if (! $this->foreignKeyExists('imported_obsolete_document_files', 'uploaded_by')) {
+            Schema::table('imported_obsolete_document_files', function (Blueprint $table): void {
+                $table->foreign('uploaded_by', 'iod_files_uploader_fk')
+                    ->references('id')
+                    ->on('users')
+                    ->restrictOnDelete();
+            });
+        }
+    }
+
+    private function addRelationForeignKeys(): void
+    {
+        if (! $this->foreignKeyExists('imported_obsolete_document_relations', 'imported_obsolete_document_id')) {
+            Schema::table('imported_obsolete_document_relations', function (Blueprint $table): void {
+                $table->foreign('imported_obsolete_document_id', 'iod_rel_source_fk')
+                    ->references('id')
+                    ->on('imported_obsolete_documents')
+                    ->cascadeOnDelete();
+            });
+        }
+
+        if (! $this->foreignKeyExists('imported_obsolete_document_relations', 'related_imported_obsolete_document_id')) {
+            Schema::table('imported_obsolete_document_relations', function (Blueprint $table): void {
+                $table->foreign('related_imported_obsolete_document_id', 'iod_rel_imported_fk')
+                    ->references('id')
+                    ->on('imported_obsolete_documents')
+                    ->restrictOnDelete();
+            });
+        }
+
+        if (! $this->foreignKeyExists('imported_obsolete_document_relations', 'related_document_id')) {
+            Schema::table('imported_obsolete_document_relations', function (Blueprint $table): void {
+                $table->foreign('related_document_id', 'iod_rel_document_fk')
+                    ->references('id')
+                    ->on('t_document')
+                    ->restrictOnDelete();
+            });
+        }
+
+        if (! $this->foreignKeyExists('imported_obsolete_document_relations', 'created_by')) {
+            Schema::table('imported_obsolete_document_relations', function (Blueprint $table): void {
+                $table->foreign('created_by', 'iod_rel_creator_fk')
+                    ->references('id')
+                    ->on('users')
+                    ->restrictOnDelete();
+            });
+        }
+    }
+
+    private function foreignKeyExists(string $table, string $column): bool
+    {
+        $driver = DB::connection()->getDriverName();
+
+        if (in_array($driver, ['mysql', 'mariadb'], true)) {
+            return DB::table('information_schema.KEY_COLUMN_USAGE')
+                ->where('TABLE_SCHEMA', DB::getDatabaseName())
+                ->where('TABLE_NAME', $table)
+                ->where('COLUMN_NAME', $column)
+                ->whereNotNull('REFERENCED_TABLE_NAME')
+                ->exists();
+        }
+
+        return false;
+    }
+
+    private function constraintExists(string $table, string $constraint): bool
+    {
+        $driver = DB::connection()->getDriverName();
+
+        if (in_array($driver, ['mysql', 'mariadb'], true)) {
+            return DB::table('information_schema.TABLE_CONSTRAINTS')
+                ->where('CONSTRAINT_SCHEMA', DB::getDatabaseName())
+                ->where('TABLE_NAME', $table)
+                ->where('CONSTRAINT_NAME', $constraint)
+                ->exists();
+        }
+
+        return false;
     }
 };
