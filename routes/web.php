@@ -48,6 +48,9 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::post('documents/create/{level}', [DocumentController::class, 'store'])
         ->whereIn('level', array_keys(config('document-levels')))
         ->name('documents.store');
+    Route::post('documents/create/{level}/autosave', [DocumentController::class, 'autosave'])
+        ->whereIn('level', array_keys(config('document-levels')))
+        ->name('documents.autosave');
     Route::get('documents/master', DocumentMasterController::class)->name('documents.master');
     Route::get('documents/obsolete', DocumentObsoleteController::class)->name('documents.obsolete');
     Route::get('documents/obsolete/imports', [ImportedObsoleteDocumentController::class, 'index'])->name('documents.obsolete.imports.index');
