@@ -5,7 +5,7 @@
 
             @if ($canImportMaster)
                 <a
-                    href="{{ route('documents.existing.imports.create', ['document_state' => \App\Models\ImportedExistingDocument::STATE_MASTER]) }}"
+                    href="{{ route('documents.master.imports.create') }}"
                     class="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
                     wire:navigate
                 >

@@ -143,7 +143,7 @@ class DocumentMasterController extends Controller
                 'name_desc' => 'Nama Z-A',
                 'revision_desc' => 'Revisi Tertinggi',
             ],
-            'canImportMaster' => $request->user()?->hasPermission('documents.existing.imports.create') ?? false,
+            'canImportMaster' => $request->user()?->hasPermission('documents.master.imports.create') ?? false,
         ]);
     }
 

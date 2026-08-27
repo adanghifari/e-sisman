@@ -9,9 +9,12 @@
             :description="$isMasterImport ? 'Upload manual dokumen master existing sebelum go-live tanpa masuk approval awal.' : 'Upload manual dokumen obsolete tanpa mengubah lifecycle dokumen master.'"
         />
 
-        <form method="POST" action="{{ route('documents.existing.imports.store') }}" enctype="multipart/form-data" class="space-y-6">
+        <form method="POST" action="{{ $formAction }}" enctype="multipart/form-data" class="space-y-6">
             @csrf
             <input type="hidden" name="document_state" value="{{ $documentState ?? \App\Models\ImportedExistingDocument::STATE_OBSOLETE }}">
+            @if ($isMasterImport)
+                <input type="hidden" name="obsolete_rule_type" value="{{ \App\Models\ImportedExistingDocument::CURRENT_RULE }}">
+            @endif
 
             @if ($errors->any())
                 <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
@@ -35,30 +38,30 @@
                         @enderror
                     </div>
 
-                    <div>
-                        <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Jenis Ketentuan</p>
-                        <div class="grid gap-3 md:grid-cols-2">
-                            <label class="relative cursor-pointer rounded-lg border border-slate-200 bg-white p-4 transition has-[:checked]:border-sky-400 has-[:checked]:bg-sky-50 has-[:checked]:ring-2 has-[:checked]:ring-sky-100">
-                                <input
-                                    type="radio"
-                                    name="obsolete_rule_type"
-                                    value="{{ \App\Models\ImportedExistingDocument::CURRENT_RULE }}"
-                                    class="sr-only"
-                                    data-imported-existing-rule-option
-                                    @checked($selectedRuleType === \App\Models\ImportedExistingDocument::CURRENT_RULE)
-                                >
-                                <span class="flex items-start gap-3">
-                                    <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-sky-100 text-sky-700">
-                                        <flux:icon name="check-badge" class="size-5" />
+                    @unless ($isMasterImport)
+                        <div>
+                            <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Jenis Ketentuan</p>
+                            <div class="grid gap-3 md:grid-cols-2">
+                                <label class="relative cursor-pointer rounded-lg border border-slate-200 bg-white p-4 transition has-[:checked]:border-sky-400 has-[:checked]:bg-sky-50 has-[:checked]:ring-2 has-[:checked]:ring-sky-100">
+                                    <input
+                                        type="radio"
+                                        name="obsolete_rule_type"
+                                        value="{{ \App\Models\ImportedExistingDocument::CURRENT_RULE }}"
+                                        class="sr-only"
+                                        data-imported-existing-rule-option
+                                        @checked($selectedRuleType === \App\Models\ImportedExistingDocument::CURRENT_RULE)
+                                    >
+                                    <span class="flex items-start gap-3">
+                                        <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-sky-100 text-sky-700">
+                                            <flux:icon name="check-badge" class="size-5" />
+                                        </span>
+                                        <span>
+                                            <span class="block font-semibold text-slate-900">Sesuai Ketentuan Saat Ini</span>
+                                            <span class="mt-1 block text-sm leading-5 text-slate-500">Gunakan pemetaan master data modern seperti dok level, jenis dokumen, proses, dan fungsi.</span>
+                                        </span>
                                     </span>
-                                    <span>
-                                        <span class="block font-semibold text-slate-900">Sesuai Ketentuan Saat Ini</span>
-                                        <span class="mt-1 block text-sm leading-5 text-slate-500">Gunakan pemetaan master data modern seperti dok level, jenis dokumen, proses, dan fungsi.</span>
-                                    </span>
-                                </span>
-                            </label>
+                                </label>
 
-                            @unless ($isMasterImport)
                                 <label class="relative cursor-pointer rounded-lg border border-slate-200 bg-white p-4 transition has-[:checked]:border-sky-400 has-[:checked]:bg-sky-50 has-[:checked]:ring-2 has-[:checked]:ring-sky-100">
                                     <input
                                         type="radio"
@@ -78,12 +81,12 @@
                                         </span>
                                     </span>
                                 </label>
-                            @endunless
+                            </div>
+                            @error('obsolete_rule_type')
+                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                            @enderror
                         </div>
-                        @error('obsolete_rule_type')
-                            <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                        @enderror
-                    </div>
+                    @endunless
 
                     <div class="grid gap-4 md:grid-cols-2" data-rule-dependent-fields>
                         <x-ui.input label="Nomor Dokumen" name="nomor_dokumen" :value="old('nomor_dokumen')" />
@@ -94,7 +97,7 @@
                         @endunless
                     </div>
 
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-current-rule-fields>
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-current-rule-fields @if ($isMasterImport) data-always-visible @endif>
                         <div class="mb-4 flex items-start gap-3">
                             <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-white text-sky-700 ring-1 ring-sky-100">
                                 <flux:icon name="squares-2x2" class="size-5" />
@@ -293,7 +296,7 @@
             </x-ui.panel>
 
             <div class="flex justify-end gap-3">
-                <a href="{{ route('documents.existing.imports.index') }}" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
+                <a href="{{ $cancelUrl }}" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
                     Batal
                 </a>
                 <button type="submit" class="inline-flex h-11 items-center justify-center rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">
@@ -314,8 +317,10 @@
                     const legacyRuleNote = ruleForm.querySelector('[data-legacy-rule-note]');
                     const dependentFields = document.querySelectorAll('[data-rule-dependent-fields]');
                     const dependentSections = document.querySelectorAll('[data-rule-dependent-section]');
-                    const hasSelectedRule = Boolean(selectedRule);
+                    const currentRuleAlwaysVisible = currentRuleFields?.hasAttribute('data-always-visible') || false;
+                    const hasSelectedRule = Boolean(selectedRule) || currentRuleAlwaysVisible;
                     const isCurrentRule = selectedRule === '{{ \App\Models\ImportedExistingDocument::CURRENT_RULE }}';
+                    const shouldShowCurrentRule = currentRuleAlwaysVisible || isCurrentRule;
 
                     dependentFields.forEach((section) => {
                         section.classList.toggle('hidden', !hasSelectedRule);
@@ -324,11 +329,11 @@
                         section.classList.toggle('hidden', !hasSelectedRule);
                     });
 
-                    currentRuleFields?.classList.toggle('hidden', !hasSelectedRule || !isCurrentRule);
-                    legacyRuleNote?.classList.toggle('hidden', !hasSelectedRule || isCurrentRule);
+                    currentRuleFields?.classList.toggle('hidden', !hasSelectedRule || !shouldShowCurrentRule);
+                    legacyRuleNote?.classList.toggle('hidden', !hasSelectedRule || shouldShowCurrentRule);
 
                     currentRuleFields?.querySelectorAll('select, input, textarea').forEach((field) => {
-                        field.disabled = !hasSelectedRule || !isCurrentRule;
+                        field.disabled = !hasSelectedRule || !shouldShowCurrentRule;
                     });
                 };
 

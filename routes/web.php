@@ -52,10 +52,12 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
         ->whereIn('level', array_keys(config('document-levels')))
         ->name('documents.autosave');
     Route::get('documents/master', DocumentMasterController::class)->name('documents.master');
+    Route::get('documents/master/imports/create', [ImportedExistingDocumentController::class, 'createMaster'])->name('documents.master.imports.create');
+    Route::post('documents/master/imports', [ImportedExistingDocumentController::class, 'storeMaster'])->name('documents.master.imports.store');
     Route::get('documents/obsolete', DocumentObsoleteController::class)->name('documents.obsolete');
+    Route::get('documents/obsolete/imports/create', [ImportedExistingDocumentController::class, 'createObsolete'])->name('documents.obsolete.imports.create');
+    Route::post('documents/obsolete/imports', [ImportedExistingDocumentController::class, 'storeObsolete'])->name('documents.obsolete.imports.store');
     Route::get('documents/existing/imports', [ImportedExistingDocumentController::class, 'index'])->name('documents.existing.imports.index');
-    Route::get('documents/existing/imports/create', [ImportedExistingDocumentController::class, 'create'])->name('documents.existing.imports.create');
-    Route::post('documents/existing/imports', [ImportedExistingDocumentController::class, 'store'])->name('documents.existing.imports.store');
     Route::post('documents/existing/imports/numbering-setups', [ImportedExistingDocumentController::class, 'storeNumberingSetup'])->name('documents.existing.imports.numbering-setups.store');
     Route::get('documents/existing/imports/{importedExistingDocument}', [ImportedExistingDocumentController::class, 'show'])->name('documents.existing.imports.show');
     Route::post('documents/existing/imports/{importedExistingDocument}/revision', [ImportedExistingDocumentController::class, 'storeRevision'])->name('documents.existing.imports.revisions.store');

@@ -79,18 +79,30 @@ class ImportedExistingDocumentController extends Controller
                 ->orderBy('nama_proses_bisnis')
                 ->pluck('nama_proses_bisnis', 'id')
                 ->all(),
-            'canCreateImportedExisting' => $request->user()?->hasPermission('documents.existing.imports.create') ?? false,
+            'canCreateImportedExisting' => $request->user()?->hasPermission('documents.obsolete.imports.create') ?? false,
         ]);
     }
 
-    public function create(Request $request): View
+    public function createMaster(): View
     {
-        $documentState = in_array($request->query('document_state'), ImportedExistingDocument::DOCUMENT_STATES, true)
-            ? $request->query('document_state')
-            : ImportedExistingDocument::STATE_OBSOLETE;
+        return $this->createForState(ImportedExistingDocument::STATE_MASTER);
+    }
 
+    public function createObsolete(): View
+    {
+        return $this->createForState(ImportedExistingDocument::STATE_OBSOLETE);
+    }
+
+    private function createForState(string $documentState): View
+    {
         return view('document-management.existing.imports.create', [
             'documentState' => $documentState,
+            'formAction' => $documentState === ImportedExistingDocument::STATE_MASTER
+                ? route('documents.master.imports.store')
+                : route('documents.obsolete.imports.store'),
+            'cancelUrl' => $documentState === ImportedExistingDocument::STATE_MASTER
+                ? route('documents.master')
+                : route('documents.existing.imports.index'),
             'ruleOptions' => $this->ruleOptions(),
             'documentLevelOptions' => ['' => 'Tidak dipetakan'] + DocumentLevel::query()->orderBy('id')->pluck('nama_dokumen', 'id')->all(),
             'documentTypeOptions' => ['' => 'Tidak dipetakan'] + DocumentType::query()->orderBy('nama_types')->pluck('nama_types', 'id')->all(),
@@ -129,7 +141,26 @@ class ImportedExistingDocumentController extends Controller
         return back()->with('status', 'Setup numbering dokumen existing berhasil disimpan.');
     }
 
-    public function store(Request $request): RedirectResponse
+    public function storeMaster(Request $request): RedirectResponse
+    {
+        $request->merge([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+        ]);
+
+        return $this->storeForState($request);
+    }
+
+    public function storeObsolete(Request $request): RedirectResponse
+    {
+        $request->merge([
+            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
+        ]);
+
+        return $this->storeForState($request);
+    }
+
+    private function storeForState(Request $request): RedirectResponse
     {
         $validated = $this->validateStoreRequest($request);
         $document = null;
@@ -182,9 +213,15 @@ class ImportedExistingDocumentController extends Controller
             }
         });
 
+        if ($document->document_state === ImportedExistingDocument::STATE_MASTER) {
+            return redirect()
+                ->route('documents.master.imported.show', $document)
+                ->with('status', 'Dokumen master existing berhasil diimport.');
+        }
+
         return redirect()
             ->route('documents.existing.imports.show', $document)
-            ->with('status', 'Arsip Dokumen Existing berhasil disimpan.');
+            ->with('status', 'Arsip dokumen obsolete berhasil disimpan.');
     }
 
     public function show(ImportedExistingDocument $importedExistingDocument): View
