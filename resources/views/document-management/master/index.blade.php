@@ -1,6 +1,19 @@
 <x-layouts::app :title="__('Dokumen Master')">
     <div class="space-y-6">
-        <x-ui.page-header title="Dokumen Master" />
+        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <x-ui.page-header title="Dokumen Master" />
+
+            @if ($canImportMaster)
+                <a
+                    href="{{ route('documents.existing.imports.create', ['document_state' => \App\Models\ImportedExistingDocument::STATE_MASTER]) }}"
+                    class="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
+                    wire:navigate
+                >
+                    <flux:icon name="arrow-up-tray" class="size-4" />
+                    Import Dokumen Master
+                </a>
+            @endif
+        </div>
 
         <x-ui.filter-bar :action="route('documents.master')">
             <x-ui.input
@@ -57,13 +70,13 @@
 
                 @forelse ($documents as $document)
                     @php
-                        $obsoleteDocuments = $document->getRelation('masterObsoleteDocuments');
+                        $obsoleteDocuments = $document->obsolete_documents;
                         $hasObsoleteDocuments = $obsoleteDocuments->isNotEmpty();
-                        $rowKey = 'master-document-'.$document->id;
-                        $publishedAt = $document->tanggal_terbit ?? $document->approved_at;
+                        $rowKey = 'master-document-'.$document->source_type.'-'.$document->source_id;
+                        $publishedAt = $document->tanggal_terbit;
                         $processLabel = collect([
-                            $document->businessProcess?->nama_proses_bisnis,
-                            $document->businessFunction?->nama_proses_fungsi,
+                            $document->proses_bisnis,
+                            $document->proses_fungsi,
                         ])->filter()->implode(' / ');
                     @endphp
 
@@ -82,13 +95,16 @@
                                 @endif
                             </td>
                             <td class="px-3 py-4">
-                                <p class="font-semibold uppercase tracking-wide text-slate-800">{{ $document->nama_dokumen }}</p>
-                                <p class="mt-1 text-xs font-medium text-slate-500">
-                                    {{ $document->departments->pluck('nama_department')->implode(', ') ?: 'Tanpa department' }}
-                                </p>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <p class="font-semibold uppercase tracking-wide text-slate-800">{{ $document->nama_dokumen }}</p>
+                                    @if ($document->is_imported)
+                                        <span class="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">Imported</span>
+                                    @endif
+                                </div>
+                                <p class="mt-1 text-xs font-medium text-slate-500">{{ $document->department }}</p>
                             </td>
-                            <td class="px-3 py-4 font-semibold text-slate-700">{{ $document->master_display_number ?: $document->nomor_dokumen ?: '-' }}</td>
-                            <td class="px-3 py-4 text-slate-600">{{ $document->formatted_revision }}</td>
+                            <td class="px-3 py-4 font-semibold text-slate-700">{{ $document->nomor_dokumen }}</td>
+                            <td class="px-3 py-4 text-slate-600">{{ $document->nomor_revisi }}</td>
                             <td class="px-3 py-4 text-slate-600">{{ $processLabel ?: '-' }}</td>
                             <td class="px-3 py-4 text-slate-600">{{ $publishedAt?->format('d/m/Y') ?: '-' }}</td>
                             <td class="px-3 py-4">
@@ -96,7 +112,7 @@
                             </td>
                             <td class="px-2 py-4">
                                 <div class="flex items-center gap-2">
-                                    <x-ui.icon-button :href="route('documents.master.show', $document)" icon="eye" label="Lihat detail" size="sm" />
+                                    <x-ui.icon-button :href="$document->detail_url" icon="eye" label="Lihat detail" size="sm" />
                                 </div>
                             </td>
                         </tr>
@@ -131,22 +147,23 @@
                                                 <tbody class="divide-y divide-slate-100">
                                                     @foreach ($obsoleteDocuments as $obsolete)
                                                         @php
-                                                            $obsoletePublishedAt = $obsolete->tanggal_terbit ?? $obsolete->approved_at;
-                                                            $obsoleteDate = $obsolete->master_obsolete_date;
+                                                            $obsoletePublishedAt = $obsolete->tanggal_terbit;
+                                                            $obsoleteDate = $obsolete->tanggal_obsolete;
                                                         @endphp
 
                                                         <tr>
-                                                            <td class="px-5 py-4 font-semibold uppercase tracking-wide text-slate-700">
-                                                                {{ $obsolete->master_display_number ?: $obsolete->nomor_dokumen ?: $obsolete->nama_dokumen }}
+                                                            <td class="px-5 py-4">
+                                                                <p class="font-semibold uppercase tracking-wide text-slate-700">{{ $obsolete->nama_dokumen }}</p>
+                                                                <p class="mt-1 text-xs font-medium text-slate-500">{{ $obsolete->nomor_dokumen }}</p>
                                                             </td>
-                                                            <td class="px-5 py-4 text-slate-600">{{ $obsolete->formatted_revision }}</td>
+                                                            <td class="px-5 py-4 text-slate-600">{{ $obsolete->nomor_revisi }}</td>
                                                             <td class="px-5 py-4 text-slate-600">{{ $obsoletePublishedAt?->format('d/m/Y') ?: '-' }}</td>
                                                             <td class="px-5 py-4 text-slate-600">{{ $obsoleteDate?->format('d/m/Y') ?: '-' }}</td>
                                                             <td class="px-5 py-4">
                                                                 <x-ui.status-badge label="Obsolete" tone="red" />
                                                             </td>
                                                             <td class="px-5 py-4">
-                                                                <x-ui.icon-button :href="route('documents.obsolete.show', $obsolete)" icon="eye" label="Lihat detail obsolete" size="sm" />
+                                                                <x-ui.icon-button :href="$obsolete->detail_url" icon="eye" label="Lihat detail obsolete" size="sm" />
                                                             </td>
                                                         </tr>
                                                     @endforeach

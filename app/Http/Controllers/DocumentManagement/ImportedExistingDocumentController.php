@@ -83,9 +83,14 @@ class ImportedExistingDocumentController extends Controller
         ]);
     }
 
-    public function create(): View
+    public function create(Request $request): View
     {
+        $documentState = in_array($request->query('document_state'), ImportedExistingDocument::DOCUMENT_STATES, true)
+            ? $request->query('document_state')
+            : ImportedExistingDocument::STATE_OBSOLETE;
+
         return view('document-management.existing.imports.create', [
+            'documentState' => $documentState,
             'ruleOptions' => $this->ruleOptions(),
             'documentLevelOptions' => ['' => 'Tidak dipetakan'] + DocumentLevel::query()->orderBy('id')->pluck('nama_dokumen', 'id')->all(),
             'documentTypeOptions' => ['' => 'Tidak dipetakan'] + DocumentType::query()->orderBy('nama_types')->pluck('nama_types', 'id')->all(),

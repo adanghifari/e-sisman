@@ -1,12 +1,17 @@
-<x-layouts::app :title="__('Tambah Arsip Dokumen Existing')">
+@php
+    $isMasterImport = ($documentState ?? \App\Models\ImportedExistingDocument::STATE_OBSOLETE) === \App\Models\ImportedExistingDocument::STATE_MASTER;
+@endphp
+
+<x-layouts::app :title="$isMasterImport ? __('Import Dokumen Master') : __('Tambah Arsip Dokumen Existing')">
     <div class="space-y-6">
         <x-ui.page-header
-            title="Tambah Arsip Dokumen Existing"
-            description="Upload manual dokumen obsolete tanpa mengubah lifecycle dokumen master."
+            :title="$isMasterImport ? 'Import Dokumen Master' : 'Tambah Arsip Dokumen Existing'"
+            :description="$isMasterImport ? 'Upload manual dokumen master existing sebelum go-live tanpa masuk approval awal.' : 'Upload manual dokumen obsolete tanpa mengubah lifecycle dokumen master.'"
         />
 
         <form method="POST" action="{{ route('documents.existing.imports.store') }}" enctype="multipart/form-data" class="space-y-6">
             @csrf
+            <input type="hidden" name="document_state" value="{{ $documentState ?? \App\Models\ImportedExistingDocument::STATE_OBSOLETE }}">
 
             @if ($errors->any())
                 <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
@@ -16,7 +21,10 @@
 
             <x-ui.panel title="Identitas Dokumen" description="Mulai dari nama dokumen, lalu pilih ketentuan arsip yang sesuai.">
                 @php
-                    $selectedRuleType = old('obsolete_rule_type');
+                    $selectedRuleType = old(
+                        'obsolete_rule_type',
+                        $isMasterImport ? \App\Models\ImportedExistingDocument::CURRENT_RULE : null,
+                    );
                 @endphp
 
                 <div class="space-y-5" data-imported-existing-rule-form>
@@ -50,25 +58,27 @@
                                 </span>
                             </label>
 
-                            <label class="relative cursor-pointer rounded-lg border border-slate-200 bg-white p-4 transition has-[:checked]:border-sky-400 has-[:checked]:bg-sky-50 has-[:checked]:ring-2 has-[:checked]:ring-sky-100">
-                                <input
-                                    type="radio"
-                                    name="obsolete_rule_type"
-                                    value="{{ \App\Models\ImportedExistingDocument::LEGACY_RULE }}"
-                                    class="sr-only"
-                                    data-imported-existing-rule-option
-                                    @checked($selectedRuleType === \App\Models\ImportedExistingDocument::LEGACY_RULE)
-                                >
-                                <span class="flex items-start gap-3">
-                                    <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700">
-                                        <flux:icon name="archive-box" class="size-5" />
+                            @unless ($isMasterImport)
+                                <label class="relative cursor-pointer rounded-lg border border-slate-200 bg-white p-4 transition has-[:checked]:border-sky-400 has-[:checked]:bg-sky-50 has-[:checked]:ring-2 has-[:checked]:ring-sky-100">
+                                    <input
+                                        type="radio"
+                                        name="obsolete_rule_type"
+                                        value="{{ \App\Models\ImportedExistingDocument::LEGACY_RULE }}"
+                                        class="sr-only"
+                                        data-imported-existing-rule-option
+                                        @checked($selectedRuleType === \App\Models\ImportedExistingDocument::LEGACY_RULE)
+                                    >
+                                    <span class="flex items-start gap-3">
+                                        <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700">
+                                            <flux:icon name="archive-box" class="size-5" />
+                                        </span>
+                                        <span>
+                                            <span class="block font-semibold text-slate-900">Mengikuti Ketentuan Dokumen Lama</span>
+                                            <span class="mt-1 block text-sm leading-5 text-slate-500">Simpan identitas historis dokumen sebagaimana tertulis pada arsip lama.</span>
+                                        </span>
                                     </span>
-                                    <span>
-                                        <span class="block font-semibold text-slate-900">Mengikuti Ketentuan Dokumen Lama</span>
-                                        <span class="mt-1 block text-sm leading-5 text-slate-500">Simpan identitas historis dokumen sebagaimana tertulis pada arsip lama.</span>
-                                    </span>
-                                </span>
-                            </label>
+                                </label>
+                            @endunless
                         </div>
                         @error('obsolete_rule_type')
                             <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -79,7 +89,9 @@
                         <x-ui.input label="Nomor Dokumen" name="nomor_dokumen" :value="old('nomor_dokumen')" />
                         <x-ui.input label="Nomor Revisi" name="nomor_revisi" :value="old('nomor_revisi')" placeholder="Contoh: 00, 00.01, Rev A, R02" />
                         <x-ui.date-input label="Tanggal Terbit" name="tanggal_terbit" :value="old('tanggal_terbit')" />
-                        <x-ui.date-input label="Tanggal Obsolete" name="tanggal_obsolete" :value="old('tanggal_obsolete')" />
+                        @unless ($isMasterImport)
+                            <x-ui.date-input label="Tanggal Obsolete" name="tanggal_obsolete" :value="old('tanggal_obsolete')" />
+                        @endunless
                     </div>
 
                     <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-current-rule-fields>
@@ -89,7 +101,7 @@
                             </span>
                             <div>
                                 <h3 class="font-semibold text-slate-900">Pemetaan Ketentuan Saat Ini</h3>
-                                <p class="mt-1 text-sm leading-5 text-slate-500">Isi jika dokumen obsolete ini masih dapat dipetakan ke struktur dokumen modern.</p>
+                                <p class="mt-1 text-sm leading-5 text-slate-500">{{ $isMasterImport ? 'Field ini wajib untuk imported master agar tampil seragam di Dokumen Master.' : 'Isi jika dokumen obsolete ini masih dapat dipetakan ke struktur dokumen modern.' }}</p>
                             </div>
                         </div>
 
@@ -119,17 +131,17 @@
                     </div>
 
                     <div data-rule-dependent-fields>
-                        <x-ui.textarea label="Catatan Dokumen" name="catatan" :value="old('catatan')" placeholder="Catatan bebas terkait arsip obsolete ini." />
+                        <x-ui.textarea label="Catatan Dokumen" name="catatan" :value="old('catatan')" :placeholder="$isMasterImport ? 'Catatan bebas terkait imported master ini.' : 'Catatan bebas terkait arsip obsolete ini.'" />
                     </div>
                 </div>
             </x-ui.panel>
 
-            <x-ui.panel title="File Dokumen" description="Upload file utama dokumen obsolete dan lampiran pendukung jika ada." data-rule-dependent-section>
+            <x-ui.panel title="File Dokumen" :description="$isMasterImport ? 'Upload file utama dokumen master existing dan lampiran pendukung jika ada.' : 'Upload file utama dokumen obsolete dan lampiran pendukung jika ada.'" data-rule-dependent-section>
                 <div class="grid gap-4 md:grid-cols-2">
-                    <x-ui.file-upload label="File Dokumen" name="obsolete_document" accept=".pdf,.doc,.docx,.xls,.xlsx" required />
+                    <x-ui.file-upload label="File Dokumen" :name="$isMasterImport ? 'existing_document' : 'obsolete_document'" accept=".pdf,.doc,.docx,.xls,.xlsx" required />
                     <x-ui.file-upload label="Lampiran" name="attachments[]" accept=".pdf,.doc,.docx,.xls,.xlsx" multiple />
                 </div>
-                @error('obsolete_document')
+                @error($isMasterImport ? 'existing_document' : 'obsolete_document')
                     <span class="mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
                 @enderror
                 @error('attachments')
@@ -139,7 +151,7 @@
 
             <x-ui.panel
                 title="Dokumen Terkait"
-                description="Tambahkan relasi jika arsip ini berhubungan dengan arsip obsolete legacy lain atau dokumen master existing."
+                :description="$isMasterImport ? 'Tambahkan relasi jika dokumen master existing ini berhubungan dengan arsip obsolete legacy lain atau dokumen master V2.' : 'Tambahkan relasi jika arsip ini berhubungan dengan arsip obsolete legacy lain atau dokumen master existing.'"
                 :padded="false"
                 data-rule-dependent-section
             >
@@ -285,7 +297,7 @@
                     Batal
                 </a>
                 <button type="submit" class="inline-flex h-11 items-center justify-center rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">
-                    Simpan Arsip
+                    {{ $isMasterImport ? 'Simpan Dokumen Master' : 'Simpan Arsip' }}
                 </button>
             </div>
         </form>
