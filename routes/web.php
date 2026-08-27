@@ -7,6 +7,7 @@ use App\Http\Controllers\DocumentManagement\DocumentInboxController;
 use App\Http\Controllers\DocumentManagement\DocumentMasterController;
 use App\Http\Controllers\DocumentManagement\DocumentObsoleteController;
 use App\Http\Controllers\DocumentManagement\DocumentTemplateController;
+use App\Http\Controllers\DocumentManagement\ImportedObsoleteDocumentController;
 use App\Http\Controllers\Log\ActivityLogController;
 use App\Http\Controllers\Log\ActivityLogExportController;
 use App\Http\Middleware\EnsureRoutePermission;
@@ -47,8 +48,17 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::post('documents/create/{level}', [DocumentController::class, 'store'])
         ->whereIn('level', array_keys(config('document-levels')))
         ->name('documents.store');
+    Route::post('documents/create/{level}/autosave', [DocumentController::class, 'autosave'])
+        ->whereIn('level', array_keys(config('document-levels')))
+        ->name('documents.autosave');
     Route::get('documents/master', DocumentMasterController::class)->name('documents.master');
     Route::get('documents/obsolete', DocumentObsoleteController::class)->name('documents.obsolete');
+    Route::get('documents/obsolete/imports', [ImportedObsoleteDocumentController::class, 'index'])->name('documents.obsolete.imports.index');
+    Route::get('documents/obsolete/imports/create', [ImportedObsoleteDocumentController::class, 'create'])->name('documents.obsolete.imports.create');
+    Route::post('documents/obsolete/imports', [ImportedObsoleteDocumentController::class, 'store'])->name('documents.obsolete.imports.store');
+    Route::get('documents/obsolete/imports/{importedObsoleteDocument}', [ImportedObsoleteDocumentController::class, 'show'])->name('documents.obsolete.imports.show');
+    Route::get('documents/obsolete/imports/{importedObsoleteDocument}/files/{file}', [ImportedObsoleteDocumentController::class, 'file'])->name('documents.obsolete.imports.files.show');
+    Route::get('documents/obsolete/imports/{importedObsoleteDocument}/files/{file}/preview', [ImportedObsoleteDocumentController::class, 'preview'])->name('documents.obsolete.imports.files.preview');
     Route::get('documents/obsolete/{document}', [DocumentObsoleteController::class, 'show'])->name('documents.obsolete.show');
     Route::post('documents/obsolete/{document}/restore', [DocumentObsoleteController::class, 'restore'])->name('documents.obsolete.restore');
     Route::get('documents/obsolete/{document}/files/{file}', [DocumentObsoleteController::class, 'file'])->name('documents.obsolete.files.show');

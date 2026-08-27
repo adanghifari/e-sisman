@@ -27,16 +27,28 @@
             </div>
         </x-ui.filter-bar>
 
-        @if ($canCreateObsolete)
-            <div class="flex justify-end">
-                <a
-                    href="{{ route('documents.master') }}"
-                    class="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
-                    wire:navigate
-                >
-                    <flux:icon name="plus" class="size-4" />
-                    Tambah Dokumen Obsolete
-                </a>
+        @if ($canViewImportedObsolete || $canCreateImportedObsolete)
+            <div class="flex flex-wrap justify-end gap-2">
+                @if ($canViewImportedObsolete)
+                    <a
+                        href="{{ route('documents.obsolete.imports.index') }}"
+                        class="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:bg-slate-50"
+                        wire:navigate
+                    >
+                        <flux:icon name="archive-box" class="size-4" />
+                        Lihat Arsip Import Manual
+                    </a>
+                @endif
+                @if ($canCreateImportedObsolete)
+                    <a
+                        href="{{ route('documents.obsolete.imports.create') }}"
+                        class="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
+                        wire:navigate
+                    >
+                        <flux:icon name="plus" class="size-4" />
+                        Tambah Dokumen Obsolete
+                    </a>
+                @endif
             </div>
         @endif
 

@@ -14,7 +14,6 @@ use App\Models\DocumentType;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentHistory;
-use App\Support\DocumentRejectionHistory;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -78,7 +77,6 @@ class DocumentApprovalController extends Controller
             'obsoleteSourceContentFiles' => $obsoleteSourceContentFiles,
             'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
             'documentHistory' => app(DocumentHistory::class)->forDocument($document),
-            'rejectionHistory' => app(DocumentRejectionHistory::class)->forDocument($document),
         ]);
     }
 
@@ -782,7 +780,11 @@ class DocumentApprovalController extends Controller
 
         Document::query()
             ->whereKey($document->revised_from)
-            ->whereNull('request_type')
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('request_type')
+                    ->orWhere('request_type', '!=', 'obsolete');
+            })
             ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::APPROVED))
             ->update([
                 'm_status_document_id' => $obsoleteStatus->id,
@@ -799,7 +801,7 @@ class DocumentApprovalController extends Controller
 
         $document->revisionFamily()
             ->where('id', '!=', $document->id)
-            ->where('request_type', null)
+            ->filter(fn (Document $revision): bool => $revision->request_type !== 'obsolete')
             ->where('m_status_document_id', $approvedStatus->id)
             ->each(function (Document $revision) use ($obsoleteStatus): void {
                 $revision->update([

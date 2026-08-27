@@ -3,25 +3,25 @@
 namespace App\Support;
 
 use App\Models\Document;
+use App\Models\Approval;
+use App\Models\ApprovalStatus;
 use Illuminate\Support\Collection;
 
 class DocumentHistory
 {
     public function forDocument(Document $document): Collection
     {
-        $family = $document->revisionFamily()
-            ->load(['status'])
-            ->sortBy(fn (Document $familyDocument): string => sprintf(
-                '%010d-%010d',
-                $familyDocument->nomor_revisi,
-                $familyDocument->id,
-            ))
-            ->values();
+        $family = $this->transactionsFor($document);
+        $family->load(['status', 'approvals.status']);
 
         $events = collect();
 
         $family->each(function (Document $familyDocument) use ($events): void {
             foreach ($this->baseEvents($familyDocument) as $event) {
+                $events->push($event);
+            }
+
+            foreach ($this->approvalEvents($familyDocument) as $event) {
                 $events->push($event);
             }
         });
@@ -30,13 +30,50 @@ class DocumentHistory
         $this->automaticObsoleteEvents($family)->each(fn (array $event) => $events->push($event));
 
         return $events
+            ->filter(fn (array $event): bool => $event['timestamp'] !== null)
             ->sortBy(fn (array $event): string => sprintf(
-                '%010d-%010d-%s',
-                $event['timestamp']?->timestamp ?? PHP_INT_MAX,
+                '%010d-%010d-%010d-%s',
+                $event['timestamp']->timestamp,
                 $event['document_id'],
+                $event['source_id'] ?? 0,
                 $event['label'],
             ))
             ->values();
+    }
+
+    /**
+     * @return Collection<int, Document>
+     */
+    private function transactionsFor(Document $document): Collection
+    {
+        $transactions = $document->revisionFamily()->keyBy('id');
+        $pendingParentIds = $transactions
+            ->pluck('resubmitted_from')
+            ->filter()
+            ->unique()
+            ->values();
+
+        while ($pendingParentIds->isNotEmpty()) {
+            $parentId = $pendingParentIds->shift();
+
+            if ($transactions->has($parentId)) {
+                continue;
+            }
+
+            $parent = Document::query()->find($parentId);
+
+            if ($parent === null) {
+                continue;
+            }
+
+            $transactions->put($parent->id, $parent);
+
+            if ($parent->resubmitted_from !== null && ! $transactions->has($parent->resubmitted_from)) {
+                $pendingParentIds->push($parent->resubmitted_from);
+            }
+        }
+
+        return $transactions->values();
     }
 
     /**
@@ -44,13 +81,51 @@ class DocumentHistory
      */
     private function baseEvents(Document $document): array
     {
+        $isRevision = $document->request_type === 'revision';
+        $isResubmission = $document->resubmitted_from !== null;
+
         return [
-            $this->event($document, 'Dibuat', 'Dokumen dibuat', $document->created_at, 'slate'),
-            $this->event($document, 'Diajukan', 'Dokumen diajukan', $document->submitted_at, 'sky'),
-            $this->event($document, 'Disetujui', $document->request_type === 'revision' ? 'Revisi menjadi master' : 'Dokumen disetujui', $document->approved_at, 'emerald'),
+            $this->event(
+                $document,
+                $isResubmission ? 'Diajukan ulang' : 'Dibuat',
+                $isResubmission
+                    ? 'Pengajuan ulang dibuat dari transaksi #'.$document->resubmitted_from
+                    : ($isRevision ? 'Revisi dibuat sebagai draft' : 'Dokumen dibuat'),
+                $document->created_at,
+                $isResubmission ? 'sky' : 'slate',
+            ),
+            $this->event($document, 'Diajukan', $isRevision ? 'Revisi diajukan' : 'Dokumen diajukan', $document->submitted_at, 'sky'),
+            $this->event($document, 'Disetujui', $isRevision ? 'Revisi menjadi master' : 'Dokumen disetujui', $document->approved_at, 'emerald'),
             $this->event($document, 'Ditolak', 'Dokumen ditolak', $document->rejected_at, 'red'),
             $this->event($document, 'Dibatalkan', 'Dokumen dibatalkan', $document->cancelled_at, 'amber'),
         ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function approvalEvents(Document $document): array
+    {
+        $events = [];
+
+        $document->approvals
+            ->groupBy(fn (Approval $approval): string => $approval->stages ?: 'Approval')
+            ->each(function (Collection $stageApprovals, string $stage) use (&$events, $document): void {
+                $assigned = $stageApprovals
+                    ->filter(fn (Approval $approval): bool => $approval->assigned_at !== null)
+                    ->sortBy(fn (Approval $approval): int => $approval->assigned_at->timestamp)
+                    ->first();
+
+                $stageHasStarted = $stageApprovals->contains(
+                    fn (Approval $approval): bool => $approval->status?->kode_status !== ApprovalStatus::WAITING,
+                );
+
+                if ($assigned !== null && $stageHasStarted) {
+                    $events[] = $this->event($document, 'Approval', 'Memasuki tahap approval '.$stage, $assigned->assigned_at, 'sky', $assigned->id);
+                }
+            });
+
+        return $events;
     }
 
     private function manualObsoleteEvents(Collection $family): Collection
@@ -96,7 +171,15 @@ class DocumentHistory
             ->values();
     }
 
-    private function event(Document $document, string $label, string $description, mixed $timestamp, string $tone): array
+    private function event(
+        Document $document,
+        string $label,
+        string $description,
+        mixed $timestamp,
+        string $tone,
+        ?int $sourceId = null,
+        ?string $note = null,
+    ): array
     {
         return [
             'document_id' => $document->id,
@@ -106,6 +189,8 @@ class DocumentHistory
             'description' => $description,
             'timestamp' => $timestamp,
             'tone' => $tone,
+            'source_id' => $sourceId,
+            'note' => $note,
         ];
     }
 

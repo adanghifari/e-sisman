@@ -1435,7 +1435,7 @@ class CreateDocumentTest extends TestCase
         $this->assertTrue($document->departments()->whereKey($secondDepartment->id)->exists());
     }
 
-    public function test_level_three_draft_defaults_official_preparer_and_keeps_uploaded_file(): void
+    public function test_level_three_draft_keeps_uploaded_file_without_defaulting_official_preparer(): void
     {
         Storage::fake('local');
 
@@ -1488,7 +1488,7 @@ class CreateDocumentTest extends TestCase
             ->where('nama_dokumen', 'Draft IK Dengan File')
             ->firstOrFail();
 
-        $this->assertSame($user->id, $document->official_preparer_id);
+        $this->assertNull($document->official_preparer_id);
         $this->assertTrue($document->files()
             ->where('type_file', 'filled_template')
             ->where('original_file_name', 'template-draft.pdf')
@@ -1521,11 +1521,11 @@ class CreateDocumentTest extends TestCase
     public function test_level_three_empty_draft_can_be_saved(): void
     {
         $user = User::factory()->create();
-        $businessProcess = BusinessProcess::create([
+        BusinessProcess::create([
             'kode' => 'SMR',
             'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
         ]);
-        $businessFunction = BusinessFunction::create([
+        BusinessFunction::create([
             'kode' => 'OPS',
             'nama_proses_fungsi' => 'Operasional',
         ]);
@@ -1541,9 +1541,9 @@ class CreateDocumentTest extends TestCase
         $document = Document::query()->firstOrFail();
 
         $this->assertSame('Draft tanpa judul', $document->nama_dokumen);
-        $this->assertSame($businessProcess->id, $document->m_proses_bisnis_id);
-        $this->assertSame($businessFunction->id, $document->m_proses_fungsi_id);
-        $this->assertSame($user->id, $document->official_preparer_id);
+        $this->assertNull($document->m_proses_bisnis_id);
+        $this->assertNull($document->m_proses_fungsi_id);
+        $this->assertNull($document->official_preparer_id);
         $this->assertNull($document->nomor_dokumen);
     }
 
@@ -1716,7 +1716,7 @@ class CreateDocumentTest extends TestCase
         $this->actingAs($user)
             ->get(route('documents.approval.show', $active))
             ->assertOk()
-            ->assertSee('Riwayat Penolakan Sebelumnya')
+            ->assertSee('Pengajuan ulang dibuat dari transaksi #'.$attempts->last()->id)
             ->assertSee('Catatan penolakan 4');
     }
 
