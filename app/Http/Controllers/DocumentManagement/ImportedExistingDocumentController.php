@@ -97,61 +97,7 @@ class ImportedExistingDocumentController extends Controller
 
     public function createMasterLevel(string $level): View
     {
-        $levelConfig = config("document-levels.{$level}");
-        abort_if($levelConfig === null, 404);
-
-        $documentLevelRecord = DocumentLevel::query()->where('kode', $level)->first();
-
-        $businessProcesses = BusinessProcess::query()->active()->orderBy('nama_proses_bisnis')->get();
-        $businessFunctions = BusinessFunction::query()->active()->orderBy('nama_proses_fungsi')->get();
-        $departments = Department::query()->active()->orderBy('nama_department')->get();
-
-        $workflowProcedures = collect();
-        $importedProcedures = collect();
-        if ($level === 'level-3') {
-            $procedureLevelId = DocumentLevel::query()->where('kode', 'level-2')->value('id');
-            $approvedStatusId = StatusDocument::query()->where('nama_status', StatusDocument::APPROVED)->value('id');
-            if ($procedureLevelId) {
-                if ($approvedStatusId) {
-                    $workflowProcedures = Document::query()
-                        ->select(['id', 'nomor_dokumen', 'nama_dokumen', 'm_proses_bisnis_id', 'm_proses_fungsi_id'])
-                        ->where('m_document_level_id', $procedureLevelId)
-                        ->where('m_status_document_id', $approvedStatusId)
-                        ->orderBy('nomor_dokumen')
-                        ->get();
-                }
-                $importedProcedures = ImportedExistingDocument::query()
-                    ->select(['id', 'nomor_dokumen', 'nama_dokumen', 'm_proses_bisnis_id', 'm_proses_fungsi_id'])
-                    ->where('m_document_level_id', $procedureLevelId)
-                    ->where('document_state', ImportedExistingDocument::STATE_MASTER)
-                    ->orderBy('nomor_dokumen')
-                    ->get();
-            }
-        }
-
-        $documentTypeOptions = ['' => 'Pilih Jenis Dokumen'] + DocumentType::query()->active()->orderBy('nama_types')->pluck('nama_types', 'id')->all();
-        $processOptions = ['' => 'Pilih Proses Bisnis'] + $businessProcesses->pluck('nama_proses_bisnis', 'id')->all();
-        $functionOptions = ['' => 'Pilih Proses Fungsi'] + $businessFunctions->pluck('nama_proses_fungsi', 'id')->all();
-        $departmentOptions = $departments->map(fn ($d) => [
-            'value' => $d->id,
-            'label' => ($d->kode_department ? $d->kode_department.' - ' : '').$d->nama_department,
-        ])->values();
-        $selectedDepartmentIds = collect(old('department_ids', []))
-            ->map(fn ($id): string => (string) $id)
-            ->all();
-
-        return view('document-management.master.imports.create', [
-            'level' => $level,
-            'levelConfig' => $levelConfig,
-            'documentLevelRecord' => $documentLevelRecord,
-            'documentTypeOptions' => $documentTypeOptions,
-            'processOptions' => $processOptions,
-            'functionOptions' => $functionOptions,
-            'departmentOptions' => $departmentOptions,
-            'selectedDepartmentIds' => $selectedDepartmentIds,
-            'workflowProcedures' => $workflowProcedures,
-            'importedProcedures' => $importedProcedures,
-        ]);
+        return $this->createCurrentRuleImportLevel($level, ImportedExistingDocument::STATE_MASTER);
     }
 
     public function storeMasterLevel(Request $request, string $level): RedirectResponse
@@ -161,15 +107,7 @@ class ImportedExistingDocumentController extends Controller
 
         $documentLevelRecord = DocumentLevel::query()->where('kode', $level)->firstOrFail();
 
-        $typeNames = [
-            'level-1' => ['Manual'],
-            'level-2' => ['Prosedur'],
-            'level-3' => ['IK', 'Instruksi Kerja'],
-        ][$level] ?? ['IK', 'Instruksi Kerja'];
-
-        $documentType = DocumentType::query()
-            ->whereIn('nama_types', $typeNames)
-            ->first();
+        $documentType = $this->documentTypeForLevel($level);
 
         $request->merge([
             'document_state' => ImportedExistingDocument::STATE_MASTER,
@@ -183,15 +121,32 @@ class ImportedExistingDocumentController extends Controller
 
     public function createObsolete(): View
     {
-        return $this->createForState(ImportedExistingDocument::STATE_OBSOLETE);
+        $documentLevels = collect(config('document-levels'))
+            ->except('level-4')
+            ->all();
+
+        return view('document-management.obsolete.imports.index', [
+            'documentLevels' => $documentLevels,
+        ]);
     }
 
-    private function createForState(string $documentState): View
+    public function createObsoleteLegacy(): View
+    {
+        return $this->createForState(ImportedExistingDocument::STATE_OBSOLETE, true);
+    }
+
+    public function createObsoleteLevel(string $level): View
+    {
+        return $this->createCurrentRuleImportLevel($level, ImportedExistingDocument::STATE_OBSOLETE);
+    }
+
+    private function createForState(string $documentState, bool $legacyOnly = false): View
     {
         return view('document-management.existing.imports.create', [
             'documentState' => $documentState,
             'formAction' => route('documents.obsolete.imports.store'),
-            'cancelUrl' => route('documents.existing.imports.index'),
+            'cancelUrl' => $legacyOnly ? route('documents.obsolete.imports.create') : route('documents.existing.imports.index'),
+            'legacyOnly' => $legacyOnly,
             'ruleOptions' => $this->ruleOptions(),
             'documentLevelOptions' => ['' => 'Tidak dipetakan'] + DocumentLevel::query()->orderBy('id')->pluck('nama_dokumen', 'id')->all(),
             'documentTypeOptions' => ['' => 'Tidak dipetakan'] + DocumentType::query()->orderBy('nama_types')->pluck('nama_types', 'id')->all(),
@@ -241,9 +196,102 @@ class ImportedExistingDocumentController extends Controller
     {
         $request->merge([
             'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
+            'obsolete_rule_type' => $request->input('obsolete_rule_type', ImportedExistingDocument::LEGACY_RULE),
         ]);
 
         return $this->storeForState($request);
+    }
+
+    public function storeObsoleteLevel(Request $request, string $level): RedirectResponse
+    {
+        $levelConfig = config("document-levels.{$level}");
+        abort_if($levelConfig === null, 404);
+
+        $documentLevelRecord = DocumentLevel::query()->where('kode', $level)->firstOrFail();
+        $documentType = $this->documentTypeForLevel($level);
+
+        $request->merge([
+            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $documentLevelRecord->id,
+            'm_document_types_id' => $documentType?->id,
+        ]);
+
+        return $this->storeForState($request);
+    }
+
+    private function createCurrentRuleImportLevel(string $level, string $documentState): View
+    {
+        $levelConfig = config("document-levels.{$level}");
+        abort_if($levelConfig === null, 404);
+
+        $documentLevelRecord = DocumentLevel::query()->where('kode', $level)->first();
+
+        $businessProcesses = BusinessProcess::query()->active()->orderBy('nama_proses_bisnis')->get();
+        $businessFunctions = BusinessFunction::query()->active()->orderBy('nama_proses_fungsi')->get();
+        $departments = Department::query()->active()->orderBy('nama_department')->get();
+
+        $workflowProcedures = collect();
+        $importedProcedures = collect();
+        if ($level === 'level-3') {
+            $procedureLevelId = DocumentLevel::query()->where('kode', 'level-2')->value('id');
+            $approvedStatusId = StatusDocument::query()->where('nama_status', StatusDocument::APPROVED)->value('id');
+            if ($procedureLevelId) {
+                if ($approvedStatusId) {
+                    $workflowProcedures = Document::query()
+                        ->select(['id', 'nomor_dokumen', 'nama_dokumen', 'm_proses_bisnis_id', 'm_proses_fungsi_id'])
+                        ->where('m_document_level_id', $procedureLevelId)
+                        ->where('m_status_document_id', $approvedStatusId)
+                        ->orderBy('nomor_dokumen')
+                        ->get();
+                }
+                $importedProcedures = ImportedExistingDocument::query()
+                    ->select(['id', 'nomor_dokumen', 'nama_dokumen', 'm_proses_bisnis_id', 'm_proses_fungsi_id'])
+                    ->where('m_document_level_id', $procedureLevelId)
+                    ->where('document_state', ImportedExistingDocument::STATE_MASTER)
+                    ->orderBy('nomor_dokumen')
+                    ->get();
+            }
+        }
+
+        $processOptions = ['' => 'Pilih Proses Bisnis'] + $businessProcesses->pluck('nama_proses_bisnis', 'id')->all();
+        $functionOptions = ['' => 'Pilih Proses Fungsi'] + $businessFunctions->pluck('nama_proses_fungsi', 'id')->all();
+        $departmentOptions = $departments->map(fn ($d) => [
+            'value' => $d->id,
+            'label' => ($d->kode_department ? $d->kode_department.' - ' : '').$d->nama_department,
+        ])->values();
+        $selectedDepartmentIds = collect(old('department_ids', []))
+            ->map(fn ($id): string => (string) $id)
+            ->all();
+
+        return view('document-management.master.imports.create', [
+            'level' => $level,
+            'levelConfig' => $levelConfig,
+            'documentLevelRecord' => $documentLevelRecord,
+            'documentState' => $documentState,
+            'processOptions' => $processOptions,
+            'functionOptions' => $functionOptions,
+            'departmentOptions' => $departmentOptions,
+            'selectedDepartmentIds' => $selectedDepartmentIds,
+            'workflowProcedures' => $workflowProcedures,
+            'importedProcedures' => $importedProcedures,
+            'importedDocumentOptions' => ImportedExistingDocument::query()->orderBy('nama_dokumen')->get(['id', 'nama_dokumen', 'nomor_dokumen']),
+            'existingDocumentOptions' => Document::query()->orderBy('nama_dokumen')->get(['id', 'nama_dokumen', 'nomor_dokumen']),
+            'relationTypeOptions' => $this->relationTypeOptions(),
+        ]);
+    }
+
+    private function documentTypeForLevel(string $level): ?DocumentType
+    {
+        $typeNames = [
+            'level-1' => ['Manual'],
+            'level-2' => ['Prosedur'],
+            'level-3' => ['IK', 'Instruksi Kerja'],
+        ][$level] ?? ['IK', 'Instruksi Kerja'];
+
+        return DocumentType::query()
+            ->whereIn('nama_types', $typeNames)
+            ->first();
     }
 
     private function storeForState(Request $request): RedirectResponse
@@ -277,7 +325,9 @@ class ImportedExistingDocumentController extends Controller
             $this->storeImportedExistingFile(
                 $document,
                 $request->file('existing_document') ?: $request->file('obsolete_document'),
-                ImportedExistingDocumentFile::EXISTING_DOCUMENT,
+                $document->document_state === ImportedExistingDocument::STATE_OBSOLETE
+                    ? ImportedExistingDocumentFile::OBSOLETE_DOCUMENT
+                    : ImportedExistingDocumentFile::EXISTING_DOCUMENT,
                 $request->user()->id,
             );
 
@@ -490,7 +540,7 @@ class ImportedExistingDocumentController extends Controller
             'relations.*.keterangan' => ['nullable', 'string', 'max:1000'],
         ]);
 
-        if (($validated['document_state'] ?? null) === ImportedExistingDocument::STATE_MASTER) {
+        if (($validated['obsolete_rule_type'] ?? null) === ImportedExistingDocument::CURRENT_RULE) {
             $validated['obsolete_rule_type'] = ImportedExistingDocument::CURRENT_RULE;
             $requiredMasterFields = [
                 'm_document_level_id',
@@ -506,14 +556,14 @@ class ImportedExistingDocumentController extends Controller
             foreach ($requiredMasterFields as $field) {
                 if ($field === 'department_ids') {
                     if (count($validated['department_ids'] ?? []) === 0) {
-                        $masterErrors[$field] = 'Pilih minimal satu department untuk imported existing master.';
+                        $masterErrors[$field] = 'Pilih minimal satu department untuk import sesuai ketentuan saat ini.';
                     }
 
                     continue;
                 }
 
                 if (! filled($validated[$field] ?? null)) {
-                    $masterErrors[$field] = 'Field ini wajib diisi untuk imported existing master.';
+                    $masterErrors[$field] = 'Field ini wajib diisi untuk import sesuai ketentuan saat ini.';
                 }
             }
 
@@ -521,7 +571,7 @@ class ImportedExistingDocumentController extends Controller
                 filled($validated['nomor_revisi'] ?? null)
                 && ! preg_match('/^\d{2}\.\d{2}$/', (string) $validated['nomor_revisi'])
             ) {
-                $masterErrors['nomor_revisi'] = 'Nomor revisi untuk imported master wajib menggunakan format 00.00.';
+                $masterErrors['nomor_revisi'] = 'Nomor revisi untuk import sesuai ketentuan saat ini wajib menggunakan format 00.00.';
             }
 
             if ($masterErrors !== []) {

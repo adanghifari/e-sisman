@@ -61,8 +61,17 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
         ->whereIn('level', ['level-1', 'level-2', 'level-3'])
         ->name('documents.master.imports.store.level');
     Route::get('documents/obsolete', DocumentObsoleteController::class)->name('documents.obsolete');
-    Route::get('documents/obsolete/imports/create', [ImportedExistingDocumentController::class, 'createObsolete'])->name('documents.obsolete.imports.create');
+    Route::get('documents/obsolete/imports/create', fn () => redirect()->route('documents.obsolete.imports.create'));
+    Route::get('documents/obsolete/imports/create/legacy', fn () => redirect()->route('documents.obsolete.imports.create.legacy'));
+    Route::get('documents/obsolete/imports', [ImportedExistingDocumentController::class, 'createObsolete'])->name('documents.obsolete.imports.create');
+    Route::get('documents/obsolete/imports/legacy', [ImportedExistingDocumentController::class, 'createObsoleteLegacy'])->name('documents.obsolete.imports.create.legacy');
+    Route::get('documents/obsolete/imports/{level}', [ImportedExistingDocumentController::class, 'createObsoleteLevel'])
+        ->whereIn('level', ['level-1', 'level-2', 'level-3'])
+        ->name('documents.obsolete.imports.create.level');
     Route::post('documents/obsolete/imports', [ImportedExistingDocumentController::class, 'storeObsolete'])->name('documents.obsolete.imports.store');
+    Route::post('documents/obsolete/imports/{level}', [ImportedExistingDocumentController::class, 'storeObsoleteLevel'])
+        ->whereIn('level', ['level-1', 'level-2', 'level-3'])
+        ->name('documents.obsolete.imports.store.level');
     Route::get('documents/existing/imports', [ImportedExistingDocumentController::class, 'index'])->name('documents.existing.imports.index');
     Route::post('documents/existing/imports/numbering-setups', [ImportedExistingDocumentController::class, 'storeNumberingSetup'])->name('documents.existing.imports.numbering-setups.store');
     Route::get('documents/existing/imports/{importedExistingDocument}', [ImportedExistingDocumentController::class, 'show'])->name('documents.existing.imports.show');

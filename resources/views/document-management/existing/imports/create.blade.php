@@ -1,12 +1,19 @@
 @php
     $isMasterImport = ($documentState ?? \App\Models\ImportedExistingDocument::STATE_OBSOLETE) === \App\Models\ImportedExistingDocument::STATE_MASTER;
+    $legacyOnly = $legacyOnly ?? false;
+    $pageTitle = $isMasterImport
+        ? 'Import Dokumen Master'
+        : ($legacyOnly ? 'Import Dokumen Obsolete Legacy' : 'Tambah Arsip Dokumen Existing');
+    $pageDescription = $isMasterImport
+        ? 'Upload manual dokumen master existing sebelum go-live tanpa masuk approval awal.'
+        : ($legacyOnly ? 'Upload dokumen obsolete yang masih mengikuti ketentuan dokumen lama.' : 'Upload manual dokumen obsolete tanpa mengubah lifecycle dokumen master.');
 @endphp
 
-<x-layouts::app :title="$isMasterImport ? __('Import Dokumen Master') : __('Tambah Arsip Dokumen Existing')">
+<x-layouts::app :title="__($pageTitle)">
     <div class="space-y-6">
         <x-ui.page-header
-            :title="$isMasterImport ? 'Import Dokumen Master' : 'Tambah Arsip Dokumen Existing'"
-            :description="$isMasterImport ? 'Upload manual dokumen master existing sebelum go-live tanpa masuk approval awal.' : 'Upload manual dokumen obsolete tanpa mengubah lifecycle dokumen master.'"
+            :title="$pageTitle"
+            :description="$pageDescription"
         />
 
         <form method="POST" action="{{ $formAction }}" enctype="multipart/form-data" class="space-y-6">
@@ -14,6 +21,8 @@
             <input type="hidden" name="document_state" value="{{ $documentState ?? \App\Models\ImportedExistingDocument::STATE_OBSOLETE }}">
             @if ($isMasterImport)
                 <input type="hidden" name="obsolete_rule_type" value="{{ \App\Models\ImportedExistingDocument::CURRENT_RULE }}">
+            @elseif ($legacyOnly)
+                <input type="hidden" name="obsolete_rule_type" value="{{ \App\Models\ImportedExistingDocument::LEGACY_RULE }}">
             @endif
 
             @if ($errors->any())
@@ -22,11 +31,13 @@
                 </div>
             @endif
 
-            <x-ui.panel title="Identitas Dokumen" description="Mulai dari nama dokumen, lalu pilih ketentuan arsip yang sesuai.">
+            <x-ui.panel title="Identitas Dokumen" description="{{ $legacyOnly ? 'Isi identitas arsip sesuai dokumen lama.' : 'Mulai dari nama dokumen, lalu pilih ketentuan arsip yang sesuai.' }}">
                 @php
                     $selectedRuleType = old(
                         'obsolete_rule_type',
-                        $isMasterImport ? \App\Models\ImportedExistingDocument::CURRENT_RULE : null,
+                        $isMasterImport
+                            ? \App\Models\ImportedExistingDocument::CURRENT_RULE
+                            : ($legacyOnly ? \App\Models\ImportedExistingDocument::LEGACY_RULE : null),
                     );
                 @endphp
 
@@ -38,7 +49,7 @@
                         @enderror
                     </div>
 
-                    @unless ($isMasterImport)
+                    @unless ($isMasterImport || $legacyOnly)
                         <div>
                             <p class="mb-2 text-xs font-semibold uppercase tracking-wide text-slate-500">Jenis Ketentuan</p>
                             <div class="grid gap-3 md:grid-cols-2">
@@ -312,7 +323,8 @@
 
             if (ruleForm) {
                 const syncRuleFields = () => {
-                    const selectedRule = ruleForm.querySelector('[data-imported-existing-rule-option]:checked')?.value;
+                    const selectedRule = ruleForm.querySelector('[data-imported-existing-rule-option]:checked')?.value
+                        || document.querySelector('input[type="hidden"][name="obsolete_rule_type"]')?.value;
                     const currentRuleFields = ruleForm.querySelector('[data-current-rule-fields]');
                     const legacyRuleNote = ruleForm.querySelector('[data-legacy-rule-note]');
                     const dependentFields = document.querySelectorAll('[data-rule-dependent-fields]');

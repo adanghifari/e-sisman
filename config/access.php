@@ -209,10 +209,31 @@ return [
             'action' => 'create',
         ],
         [
+            'code' => 'documents.obsolete.imports.create-legacy',
+            'name' => 'Import Dokumen Obsolete Legacy',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.obsolete.imports.create.legacy',
+            'action' => 'create',
+        ],
+        [
+            'code' => 'documents.obsolete.imports.create-level',
+            'name' => 'Pilih Level Import Dokumen Obsolete',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.obsolete.imports.create.level',
+            'action' => 'create',
+        ],
+        [
             'code' => 'documents.obsolete.imports.store',
             'name' => 'Simpan Import Dokumen Obsolete',
             'module' => 'Manajemen Dokumen',
             'route' => 'documents.obsolete.imports.store',
+            'action' => 'create',
+        ],
+        [
+            'code' => 'documents.obsolete.imports.store-level',
+            'name' => 'Simpan Import Dokumen Obsolete per Level',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.obsolete.imports.store.level',
             'action' => 'create',
         ],
         [

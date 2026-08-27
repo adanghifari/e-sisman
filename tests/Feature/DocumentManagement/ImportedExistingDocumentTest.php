@@ -50,8 +50,13 @@ class ImportedExistingDocumentTest extends TestCase
         $this->actingAs($user)
             ->get(route('documents.obsolete.imports.create'))
             ->assertOk()
-            ->assertSee('Tambah Arsip Dokumen Existing')
-            ->assertSee('Sesuai Ketentuan Saat Ini');
+            ->assertSee('Import Dokumen Obsolete')
+            ->assertSee('Dokumen Level I : Manual SKMBS')
+            ->assertSee('Dokumen Level II : Prosedur SKMBS')
+            ->assertSee('Dokumen Level III : Instruksi Kerja')
+            ->assertSee('Mengikuti Ketentuan Dokumen Lama')
+            ->assertSee(route('documents.obsolete.imports.create.level', 'level-2'), false)
+            ->assertSee(route('documents.obsolete.imports.create.legacy'), false);
 
         $this->actingAs($user)
             ->get(route('documents.existing.imports.show', $document))
@@ -226,6 +231,68 @@ class ImportedExistingDocumentTest extends TestCase
             ->assertSessionHasErrors('nomor_revisi');
 
         $this->assertFalse(ImportedExistingDocument::query()->where('nama_dokumen', 'Existing Master Format Revisi Salah')->exists());
+    }
+
+    public function test_imported_existing_obsolete_current_rule_can_be_stored_per_level(): void
+    {
+        Storage::fake('local');
+
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.obsolete.imports.create',
+            'documents.obsolete.imports.create-level',
+            'documents.obsolete.imports.store-level',
+        ]);
+        $relatedLegacy = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
+            'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Arsip Obsolete Lama Terkait',
+            'nomor_dokumen' => 'LEG-RELATED-001',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.obsolete.imports.create.level', 'level-2'))
+            ->assertOk()
+            ->assertSee('Dokumen Terkait')
+            ->assertSee('Tambah Relasi');
+
+        $this->actingAs($user)
+            ->post(route('documents.obsolete.imports.store.level', 'level-2'), [
+                'm_document_level_id' => $level->id,
+                'm_document_types_id' => $documentType->id,
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'nama_dokumen' => 'Existing Obsolete Sesuai Ketentuan',
+                'nomor_dokumen' => 'PS-SMR-OBSOLETE-120',
+                'nomor_revisi' => '00.00',
+                'tanggal_obsolete' => '2026-08-28',
+                'obsolete_document' => UploadedFile::fake()->create('existing-obsolete.pdf', 100, 'application/pdf'),
+                'relations' => [
+                    [
+                        'related_imported_existing_document_id' => $relatedLegacy->id,
+                        'relation_type' => ImportedExistingDocumentRelation::RELATED_TO,
+                        'keterangan' => 'Dokumen lama yang berkaitan.',
+                    ],
+                ],
+            ])
+            ->assertRedirect();
+
+        $document = ImportedExistingDocument::query()
+            ->where('nama_dokumen', 'Existing Obsolete Sesuai Ketentuan')
+            ->firstOrFail();
+
+        $this->assertSame(ImportedExistingDocument::STATE_OBSOLETE, $document->document_state);
+        $this->assertSame(ImportedExistingDocument::CURRENT_RULE, $document->obsolete_rule_type);
+        $this->assertSame($level->id, $document->m_document_level_id);
+        $this->assertSame($documentType->id, $document->m_document_types_id);
+        $this->assertTrue($document->departments()->whereKey($department->id)->exists());
+        $this->assertSame('2026-08-28', $document->tanggal_obsolete?->toDateString());
+        $this->assertSame(ImportedExistingDocumentFile::OBSOLETE_DOCUMENT, $document->files()->firstOrFail()->type_file);
+        $this->assertTrue($document->outgoingRelations()
+            ->where('related_imported_existing_document_id', $relatedLegacy->id)
+            ->where('relation_type', ImportedExistingDocumentRelation::RELATED_TO)
+            ->exists());
     }
 
     public function test_numbering_setup_blocks_v2_document_number_inside_reserved_range(): void
@@ -553,7 +620,10 @@ class ImportedExistingDocumentTest extends TestCase
                         'documents.master.imports.store' => 'documents.master.imports.store',
                         'documents.master.imports.store-level' => 'documents.master.imports.store.level',
                         'documents.obsolete.imports.create' => 'documents.obsolete.imports.create',
+                        'documents.obsolete.imports.create-legacy' => 'documents.obsolete.imports.create.legacy',
+                        'documents.obsolete.imports.create-level' => 'documents.obsolete.imports.create.level',
                         'documents.obsolete.imports.store' => 'documents.obsolete.imports.store',
+                        'documents.obsolete.imports.store-level' => 'documents.obsolete.imports.store.level',
                         'documents.existing.imports.revision' => 'documents.existing.imports.revisions.store',
                         'documents.existing.imports.numbering-setup' => 'documents.existing.imports.numbering-setups.store',
                         'documents.create.create' => 'documents.store',
