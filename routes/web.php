@@ -53,7 +53,13 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
         ->name('documents.autosave');
     Route::get('documents/master', DocumentMasterController::class)->name('documents.master');
     Route::get('documents/master/imports/create', [ImportedExistingDocumentController::class, 'createMaster'])->name('documents.master.imports.create');
+    Route::get('documents/master/imports/create/{level}', [ImportedExistingDocumentController::class, 'createMasterLevel'])
+        ->whereIn('level', ['level-1', 'level-2', 'level-3'])
+        ->name('documents.master.imports.create.level');
     Route::post('documents/master/imports', [ImportedExistingDocumentController::class, 'storeMaster'])->name('documents.master.imports.store');
+    Route::post('documents/master/imports/{level}', [ImportedExistingDocumentController::class, 'storeMasterLevel'])
+        ->whereIn('level', ['level-1', 'level-2', 'level-3'])
+        ->name('documents.master.imports.store.level');
     Route::get('documents/obsolete', DocumentObsoleteController::class)->name('documents.obsolete');
     Route::get('documents/obsolete/imports/create', [ImportedExistingDocumentController::class, 'createObsolete'])->name('documents.obsolete.imports.create');
     Route::post('documents/obsolete/imports', [ImportedExistingDocumentController::class, 'storeObsolete'])->name('documents.obsolete.imports.store');

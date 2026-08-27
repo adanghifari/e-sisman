@@ -33,8 +33,7 @@ class DashboardController extends Controller
         Request $request,
         DocumentInboxController $documentInboxController,
         DocumentDownloadActivityQuery $activityQuery,
-    ): View
-    {
+    ): View {
         $counts = $documentInboxController->dashboardCounts($request);
 
         return view('main.dashboard', [

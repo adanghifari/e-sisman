@@ -2,9 +2,9 @@
 
 namespace App\Support;
 
-use App\Models\Document;
 use App\Models\Approval;
 use App\Models\ApprovalStatus;
+use App\Models\Document;
 use Illuminate\Support\Collection;
 
 class DocumentHistory
@@ -179,8 +179,7 @@ class DocumentHistory
         string $tone,
         ?int $sourceId = null,
         ?string $note = null,
-    ): array
-    {
+    ): array {
         return [
             'document_id' => $document->id,
             'document_number' => $this->documentNumber($document),

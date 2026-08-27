@@ -48,7 +48,7 @@ class ImportedExistingDocumentTest extends TestCase
             ->assertSee('Legacy Render');
 
         $this->actingAs($user)
-            ->get(route('documents.existing.imports.create'))
+            ->get(route('documents.obsolete.imports.create'))
             ->assertOk()
             ->assertSee('Tambah Arsip Dokumen Existing')
             ->assertSee('Sesuai Ketentuan Saat Ini');
@@ -66,7 +66,7 @@ class ImportedExistingDocumentTest extends TestCase
         Storage::fake('local');
 
         $user = $this->userWithPermissions([
-            'documents.existing.imports.store',
+            'documents.obsolete.imports.store',
         ]);
 
         ImportedExistingDocument::create([
@@ -77,7 +77,7 @@ class ImportedExistingDocumentTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->post(route('documents.existing.imports.store'), [
+            ->post(route('documents.obsolete.imports.store'), [
                 'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
                 'nama_dokumen' => 'Instruksi Legacy Obsolete',
                 'nomor_dokumen' => 'LEG-SAME-001',
@@ -114,7 +114,7 @@ class ImportedExistingDocumentTest extends TestCase
         Storage::fake('local');
 
         $user = $this->userWithPermissions([
-            'documents.existing.imports.store',
+            'documents.obsolete.imports.store',
         ]);
         $targetImported = ImportedExistingDocument::create([
             'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
@@ -125,7 +125,7 @@ class ImportedExistingDocumentTest extends TestCase
         $targetDocument = $this->createExistingDocument($user);
 
         $this->actingAs($user)
-            ->post(route('documents.existing.imports.store'), [
+            ->post(route('documents.obsolete.imports.store'), [
                 'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
                 'nama_dokumen' => 'Legacy Source',
                 'nomor_revisi' => '00.01',
@@ -167,18 +167,18 @@ class ImportedExistingDocumentTest extends TestCase
     {
         Storage::fake('local');
 
-        [$user, $level, $documentType, $businessProcess, $businessFunction] = $this->existingMasterFixture([
-            'documents.existing.imports.store',
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.master.imports.store-level',
+            'documents.master.imports.create-level',
         ]);
 
         $this->actingAs($user)
-            ->post(route('documents.existing.imports.store'), [
-                'document_state' => ImportedExistingDocument::STATE_MASTER,
-                'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
+            ->post(route('documents.master.imports.store.level', 'level-2'), [
                 'm_document_level_id' => $level->id,
                 'm_document_types_id' => $documentType->id,
                 'm_proses_bisnis_id' => $businessProcess->id,
                 'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
                 'nama_dokumen' => 'Existing Master Sebelum Go Live',
                 'nomor_dokumen' => 'PS-SMR-120',
                 'nomor_revisi' => '00',
@@ -192,6 +192,7 @@ class ImportedExistingDocumentTest extends TestCase
 
         $this->assertSame(ImportedExistingDocument::STATE_MASTER, $document->document_state);
         $this->assertSame(ImportedExistingDocument::CURRENT_RULE, $document->obsolete_rule_type);
+        $this->assertTrue($document->departments()->whereKey($department->id)->exists());
         $this->assertDatabaseHas('document_number_registry', [
             'document_number' => 'PS-SMR-120',
             'source_type' => DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING,
@@ -243,8 +244,9 @@ class ImportedExistingDocumentTest extends TestCase
     {
         Storage::fake('local');
 
-        [$user, $level, $documentType, $businessProcess, $businessFunction] = $this->existingMasterFixture([
-            'documents.existing.imports.store',
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.master.imports.store-level',
+            'documents.master.imports.create-level',
         ]);
         $status = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
 
@@ -262,19 +264,18 @@ class ImportedExistingDocumentTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->from(route('documents.existing.imports.create'))
-            ->post(route('documents.existing.imports.store'), [
-                'document_state' => ImportedExistingDocument::STATE_MASTER,
-                'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            ->from(route('documents.master.imports.create.level', 'level-2'))
+            ->post(route('documents.master.imports.store.level', 'level-2'), [
                 'm_document_level_id' => $level->id,
                 'm_document_types_id' => $documentType->id,
                 'm_proses_bisnis_id' => $businessProcess->id,
                 'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
                 'nama_dokumen' => 'Late Import Bentrok',
                 'nomor_dokumen' => 'PS-SMR-128',
                 'existing_document' => UploadedFile::fake()->create('late-import.pdf', 100, 'application/pdf'),
             ])
-            ->assertRedirect(route('documents.existing.imports.create'))
+            ->assertRedirect(route('documents.master.imports.create.level', 'level-2'))
             ->assertSessionHasErrors('nomor_dokumen');
 
         $this->assertFalse(ImportedExistingDocument::query()->where('nama_dokumen', 'Late Import Bentrok')->exists());
@@ -284,7 +285,7 @@ class ImportedExistingDocumentTest extends TestCase
     {
         Storage::fake('local');
 
-        [$user, $level, $documentType, $businessProcess, $businessFunction] = $this->existingMasterFixture([
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
             'documents.existing.imports.revision',
             'documents.approval.approve',
             'documents.approval.show',
@@ -310,6 +311,7 @@ class ImportedExistingDocumentTest extends TestCase
             'nomor_dokumen' => 'PS-SMR-120',
             'nomor_revisi' => '00',
         ]);
+        $source->departments()->sync([$department->id]);
 
         $response = $this->actingAs($user)
             ->post(route('documents.existing.imports.revisions.store', $source), [
@@ -328,6 +330,7 @@ class ImportedExistingDocumentTest extends TestCase
         $this->assertSame($proposedStatus->id, $revision->m_status_document_id);
         $this->assertNull($revision->revised_from);
         $this->assertSame('revision', $revision->request_type);
+        $this->assertTrue($revision->departments()->whereKey($department->id)->exists());
 
         $revision->approvals()->create([
             'm_approval_status_id' => $pendingStatus->id,
@@ -357,17 +360,17 @@ class ImportedExistingDocumentTest extends TestCase
         Storage::fake('local');
 
         $user = $this->userWithPermissions([
-            'documents.existing.imports.store',
+            'documents.obsolete.imports.store',
         ]);
 
         $this->actingAs($user)
-            ->from(route('documents.existing.imports.create'))
-            ->post(route('documents.existing.imports.store'), [
+            ->from(route('documents.obsolete.imports.create'))
+            ->post(route('documents.obsolete.imports.store'), [
                 'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
                 'nama_dokumen' => 'Current Rule Tanpa Master Data',
                 'obsolete_document' => UploadedFile::fake()->create('current-rule.pdf', 100, 'application/pdf'),
             ])
-            ->assertRedirect(route('documents.existing.imports.create'))
+            ->assertRedirect(route('documents.obsolete.imports.create'))
             ->assertSessionHasErrors([
                 'm_document_level_id',
                 'm_document_types_id',
@@ -383,7 +386,7 @@ class ImportedExistingDocumentTest extends TestCase
         Storage::fake('local');
 
         $user = $this->userWithPermissions([
-            'documents.existing.imports.store',
+            'documents.obsolete.imports.store',
         ]);
         $targetImported = ImportedExistingDocument::create([
             'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
@@ -393,8 +396,8 @@ class ImportedExistingDocumentTest extends TestCase
         $targetDocument = $this->createExistingDocument($user);
 
         $this->actingAs($user)
-            ->from(route('documents.existing.imports.create'))
-            ->post(route('documents.existing.imports.store'), [
+            ->from(route('documents.obsolete.imports.create'))
+            ->post(route('documents.obsolete.imports.store'), [
                 'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
                 'nama_dokumen' => 'Legacy Invalid No Target',
                 'obsolete_document' => UploadedFile::fake()->create('legacy-no-target.pdf', 100, 'application/pdf'),
@@ -404,12 +407,12 @@ class ImportedExistingDocumentTest extends TestCase
                     ],
                 ],
             ])
-            ->assertRedirect(route('documents.existing.imports.create'))
+            ->assertRedirect(route('documents.obsolete.imports.create'))
             ->assertSessionHasErrors('relations.0.related_imported_existing_document_id');
 
         $this->actingAs($user)
-            ->from(route('documents.existing.imports.create'))
-            ->post(route('documents.existing.imports.store'), [
+            ->from(route('documents.obsolete.imports.create'))
+            ->post(route('documents.obsolete.imports.store'), [
                 'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
                 'nama_dokumen' => 'Legacy Invalid Two Targets',
                 'obsolete_document' => UploadedFile::fake()->create('legacy-two-targets.pdf', 100, 'application/pdf'),
@@ -421,7 +424,7 @@ class ImportedExistingDocumentTest extends TestCase
                     ],
                 ],
             ])
-            ->assertRedirect(route('documents.existing.imports.create'))
+            ->assertRedirect(route('documents.obsolete.imports.create'))
             ->assertSessionHasErrors('relations.0.related_imported_existing_document_id');
 
         $this->assertFalse(ImportedExistingDocument::query()->where('nama_dokumen', 'Legacy Invalid No Target')->exists());
@@ -485,8 +488,12 @@ class ImportedExistingDocumentTest extends TestCase
                     'name' => $permissionCode,
                     'module' => 'Manajemen Dokumen',
                     'route' => match ($permissionCode) {
-                        'documents.existing.imports.create' => 'documents.existing.imports.create',
-                        'documents.existing.imports.store' => 'documents.existing.imports.store',
+                        'documents.master.imports.create' => 'documents.master.imports.create',
+                        'documents.master.imports.create-level' => 'documents.master.imports.create.level',
+                        'documents.master.imports.store' => 'documents.master.imports.store',
+                        'documents.master.imports.store-level' => 'documents.master.imports.store.level',
+                        'documents.obsolete.imports.create' => 'documents.obsolete.imports.create',
+                        'documents.obsolete.imports.store' => 'documents.obsolete.imports.store',
                         'documents.existing.imports.revision' => 'documents.existing.imports.revisions.store',
                         'documents.existing.imports.numbering-setup' => 'documents.existing.imports.numbering-setups.store',
                         'documents.create.create' => 'documents.store',

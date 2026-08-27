@@ -139,10 +139,24 @@ return [
             'action' => 'create',
         ],
         [
+            'code' => 'documents.master.imports.create-level',
+            'name' => 'Pilih Level Import Dokumen Master',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.master.imports.create.level',
+            'action' => 'create',
+        ],
+        [
             'code' => 'documents.master.imports.store',
             'name' => 'Simpan Import Dokumen Master',
             'module' => 'Manajemen Dokumen',
             'route' => 'documents.master.imports.store',
+            'action' => 'create',
+        ],
+        [
+            'code' => 'documents.master.imports.store-level',
+            'name' => 'Simpan Import Dokumen Master per Level',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.master.imports.store.level',
             'action' => 'create',
         ],
         [

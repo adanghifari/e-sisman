@@ -1,0 +1,515 @@
+<x-layouts::app :title="__('Import Dokumen Master')">
+    @php
+        $levelNumbers = [
+            'level-1' => 'I',
+            'level-2' => 'II',
+            'level-3' => 'III',
+        ];
+        $documentTitle = \Illuminate\Support\Str::after($levelConfig['name'], ': ');
+        $levelDisplayValue = $documentLevelRecord
+            ? $documentLevelRecord->nama_level.' : '.\Illuminate\Support\Str::after($documentLevelRecord->nama_dokumen, ': ')
+            : $levelConfig['badge'].' : '.$documentTitle;
+        $selectedBusinessProcessId = old('m_proses_bisnis_id');
+        $selectedBusinessFunctionId = old('m_proses_fungsi_id');
+        $selectedDepartmentIds = $selectedDepartmentIds ?? [];
+    @endphp
+
+    <div class="space-y-8">
+        <nav class="flex items-center gap-3 text-sm font-medium text-slate-500" aria-label="Breadcrumb">
+            <a href="{{ route('dashboard') }}" class="transition hover:text-sky-700" wire:navigate>Home</a>
+            <flux:icon name="chevron-right" class="size-4 text-slate-400" />
+            <a href="{{ route('documents.master') }}" class="transition hover:text-sky-700" wire:navigate>Dokumen Master</a>
+            <flux:icon name="chevron-right" class="size-4 text-slate-400" />
+            <a href="{{ route('documents.master.imports.create') }}" class="transition hover:text-sky-700" wire:navigate>Import Dokumen Master</a>
+            <flux:icon name="chevron-right" class="size-4 text-slate-400" />
+            <span class="text-slate-700">{{ $levelConfig['badge'] }}</span>
+        </nav>
+
+        <div>
+            <h1 class="text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
+                Import Dokumen Level {{ $levelNumbers[$level] }} : {{ $documentTitle }}
+            </h1>
+            <p class="mt-2 text-sm font-medium text-slate-500">
+                Upload manual dokumen master existing sebelum go-live tanpa masuk approval awal.
+            </p>
+        </div>
+
+        <form
+            method="POST"
+            action="{{ route('documents.master.imports.store.level', $level) }}"
+            enctype="multipart/form-data"
+            class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]"
+        >
+            @csrf
+
+            <div class="space-y-6">
+                @if ($errors->any())
+                    <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">
+                        <p>Import dokumen belum berhasil. Cek isian berikut:</p>
+                        <ul class="mt-2 list-disc space-y-1 pl-5">
+                            @foreach ($errors->all() as $error)
+                                <li>{{ $error }}</li>
+                            @endforeach
+                        </ul>
+                    </div>
+                @endif
+
+                {{-- Informasi Dokumen --}}
+                <x-documents.form-section title="Informasi Dokumen">
+                    <div class="grid gap-5 px-6 py-6 md:grid-cols-2">
+                        <label class="block md:col-span-2">
+                            <span class="mb-2 block text-base font-medium text-slate-500">Nama Dokumen</span>
+                            <input
+                                type="text"
+                                name="nama_dokumen"
+                                value="{{ old('nama_dokumen') }}"
+                                placeholder="Masukkan nama dokumen"
+                                required
+                                @class([
+                                    'h-14 w-full rounded-lg bg-white px-4 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:ring-2',
+                                    'border border-red-300 focus:border-red-400 focus:ring-red-100' => $errors->has('nama_dokumen'),
+                                    'border border-slate-300 focus:border-sky-400 focus:ring-sky-100' => ! $errors->has('nama_dokumen'),
+                                ])
+                            >
+                        </label>
+
+                        <input type="hidden" name="m_document_level_id" value="{{ $documentLevelRecord?->id }}">
+
+                        <label class="block">
+                            <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
+                            <select
+                                name="m_proses_bisnis_id"
+                                required
+                                class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                            >
+                                @foreach ($processOptions as $value => $label)
+                                    <option value="{{ $value }}" @selected((string) $selectedBusinessProcessId === (string) $value)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                            @error('m_proses_bisnis_id')
+                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                            @enderror
+                        </label>
+
+                        <label class="block">
+                            <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
+                            <select
+                                name="m_proses_fungsi_id"
+                                required
+                                class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                            >
+                                @foreach ($functionOptions as $value => $label)
+                                    <option value="{{ $value }}" @selected((string) $selectedBusinessFunctionId === (string) $value)>{{ $label }}</option>
+                                @endforeach
+                            </select>
+                            @error('m_proses_fungsi_id')
+                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                            @enderror
+                        </label>
+
+                        <x-ui.multi-select
+                            label="Department Terkait"
+                            name="department_ids"
+                            :options="$departmentOptions"
+                            :selected="$selectedDepartmentIds"
+                            selected-placeholder="Tambah Department"
+                            required
+                        />
+
+                        @if ($level === 'level-3')
+                            <label class="block">
+                                <span class="mb-2 block text-base font-medium text-slate-500">Pilih Dokumen Level II: Prosedur</span>
+                                <select
+                                    name="reference"
+                                    required
+                                    class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                                >
+                                    <option value="">-Pilih-</option>
+                                    @if ($importedProcedures->isNotEmpty())
+                                        <optgroup label="Prosedur Existing / Imported">
+                                            @foreach ($importedProcedures as $proc)
+                                                <option
+                                                    value="imported-{{ $proc->id }}"
+                                                    data-business-process-id="{{ $proc->m_proses_bisnis_id }}"
+                                                    data-business-function-id="{{ $proc->m_proses_fungsi_id }}"
+                                                    @selected((string) old('reference') === "imported-{$proc->id}")
+                                                >
+                                                    {{ $proc->nomor_dokumen ?: '-' }} - {{ $proc->nama_dokumen }}
+                                                </option>
+                                            @endforeach
+                                        </optgroup>
+                                    @endif
+                                    @if ($workflowProcedures->isNotEmpty())
+                                        <optgroup label="Prosedur Master V2">
+                                            @foreach ($workflowProcedures as $proc)
+                                                <option
+                                                    value="existing-{{ $proc->id }}"
+                                                    data-business-process-id="{{ $proc->m_proses_bisnis_id }}"
+                                                    data-business-function-id="{{ $proc->m_proses_fungsi_id }}"
+                                                    @selected((string) old('reference') === "existing-{$proc->id}")
+                                                >
+                                                    {{ $proc->nomor_dokumen ?: '-' }} - {{ $proc->nama_dokumen }}
+                                                </option>
+                                            @endforeach
+                                        </optgroup>
+                                    @endif
+                                </select>
+                                @error('reference')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                            </label>
+                        @endif
+                    </div>
+                </x-documents.form-section>
+
+                {{-- Isi Dokumen --}}
+                <x-documents.form-section title="Isi Dokumen" icon="cloud-arrow-up">
+                    <div class="space-y-6 px-6 py-6">
+                        <x-ui.file-upload
+                            label="File Dokumen Utama"
+                            name="existing_document"
+                            accept=".pdf,.doc,.docx,.xls,.xlsx"
+                            hint="Format PDF, Word, atau Excel. Maks 10 MB."
+                            :max-files="1"
+                            :max-file-size-kb="10240"
+                            required
+                        />
+                        @error('existing_document')
+                            <span class="-mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                        @enderror
+
+                        <x-ui.file-upload
+                            label="Lampiran"
+                            name="attachments[]"
+                            accept=".pdf,.doc,.docx,.xls,.xlsx"
+                            hint="Opsional. Bisa lebih dari satu file."
+                            multiple
+                            :max-files="10"
+                            :max-file-size-kb="10240"
+                        />
+                        @error('attachments')
+                            <span class="-mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                        @enderror
+                    </div>
+                </x-documents.form-section>
+
+                {{-- Dokumen Terkait --}}
+                <x-documents.form-section title="Dokumen Terkait" :padded="false">
+                    @php $oldRelations = collect(old('relations', []))->values(); @endphp
+
+                    <div class="space-y-4 px-5 py-5" data-imported-existing-relations>
+                        @error('relations.0.related_imported_existing_document_id')
+                            <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{{ $message }}</div>
+                        @enderror
+
+                        <div class="space-y-4" data-imported-existing-relation-list>
+                            @foreach ($oldRelations as $index => $relation)
+                                @php $targetType = filled($relation['related_document_id'] ?? null) ? 'existing' : 'imported'; @endphp
+                                <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-imported-existing-relation-row>
+                                    <div class="mb-4 flex items-start justify-between gap-3">
+                                        <div>
+                                            <p class="text-sm font-semibold text-slate-800">Relasi Dokumen</p>
+                                            <p class="mt-1 text-xs font-medium text-slate-500">Pilih tepat satu target relasi.</p>
+                                        </div>
+                                        <button type="button" class="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-imported-existing-relation-remove aria-label="Hapus relasi">
+                                            <flux:icon name="x-mark" class="size-4" />
+                                        </button>
+                                    </div>
+                                    <div class="grid gap-4 lg:grid-cols-2">
+                                        <x-ui.select label="Jenis Relasi" name="relations[{{ $index }}][relation_type]" :value="$relation['relation_type'] ?? \App\Models\ImportedExistingDocumentRelation::SUPERSEDED_BY" :options="$relationTypeOptions" />
+                                        <x-ui.select label="Target Relasi" name="relations[{{ $index }}][target_type]" :value="$targetType" :options="['imported' => 'Arsip Obsolete Legacy', 'existing' => 'Dokumen Existing / Master']" data-imported-existing-target-type />
+                                        <div data-imported-existing-imported-target>
+                                            <x-ui.select label="Arsip Obsolete Legacy" name="relations[{{ $index }}][related_imported_existing_document_id]" :value="$relation['related_imported_existing_document_id'] ?? null" :options="['' => 'Pilih arsip obsolete legacy'] + $importedDocumentOptions->mapWithKeys(fn ($d) => [$d->id => trim(($d->nomor_dokumen ? $d->nomor_dokumen.' - ' : '').$d->nama_dokumen)])->all()" />
+                                        </div>
+                                        <div data-imported-existing-existing-target>
+                                            <x-ui.select label="Dokumen Existing / Master" name="relations[{{ $index }}][related_document_id]" :value="$relation['related_document_id'] ?? null" :options="['' => 'Pilih dokumen existing'] + $existingDocumentOptions->mapWithKeys(fn ($d) => [$d->id => trim(($d->nomor_dokumen ? $d->nomor_dokumen.' - ' : '').$d->nama_dokumen)])->all()" />
+                                        </div>
+                                        <div class="lg:col-span-2">
+                                            <x-ui.textarea label="Keterangan Relasi" name="relations[{{ $index }}][keterangan]" :value="$relation['keterangan'] ?? null" rows="3" placeholder="Keterangan khusus untuk hubungan antar dokumen." />
+                                        </div>
+                                    </div>
+                                </div>
+                            @endforeach
+                        </div>
+
+                        <button type="button" class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" data-imported-existing-relation-add>
+                            <flux:icon name="plus" class="size-4" />
+                            Tambah Relasi
+                        </button>
+                    </div>
+
+                    <template data-imported-existing-relation-template>
+                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-imported-existing-relation-row>
+                            <div class="mb-4 flex items-start justify-between gap-3">
+                                <div>
+                                    <p class="text-sm font-semibold text-slate-800">Relasi Dokumen</p>
+                                    <p class="mt-1 text-xs font-medium text-slate-500">Pilih tepat satu target relasi.</p>
+                                </div>
+                                <button type="button" class="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-imported-existing-relation-remove aria-label="Hapus relasi">
+                                    <flux:icon name="x-mark" class="size-4" />
+                                </button>
+                            </div>
+                            <div class="grid gap-4 lg:grid-cols-2">
+                                <label class="block">
+                                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Jenis Relasi</span>
+                                    <select name="relations[__INDEX__][relation_type]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                        @foreach ($relationTypeOptions as $value => $label)
+                                            <option value="{{ $value }}">{{ $label }}</option>
+                                        @endforeach
+                                    </select>
+                                </label>
+                                <label class="block">
+                                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Target Relasi</span>
+                                    <select name="relations[__INDEX__][target_type]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" data-imported-existing-target-type>
+                                        <option value="imported">Arsip Obsolete Legacy</option>
+                                        <option value="existing">Dokumen Existing / Master</option>
+                                    </select>
+                                </label>
+                                <div data-imported-existing-imported-target>
+                                    <label class="block">
+                                        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Arsip Obsolete Legacy</span>
+                                        <select name="relations[__INDEX__][related_imported_existing_document_id]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                            <option value="">Pilih arsip obsolete legacy</option>
+                                            @foreach ($importedDocumentOptions as $d)
+                                                <option value="{{ $d->id }}">{{ trim(($d->nomor_dokumen ? $d->nomor_dokumen.' - ' : '').$d->nama_dokumen) }}</option>
+                                            @endforeach
+                                        </select>
+                                    </label>
+                                </div>
+                                <div data-imported-existing-existing-target>
+                                    <label class="block">
+                                        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Dokumen Existing / Master</span>
+                                        <select name="relations[__INDEX__][related_document_id]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                            <option value="">Pilih dokumen existing</option>
+                                            @foreach ($existingDocumentOptions as $d)
+                                                <option value="{{ $d->id }}">{{ trim(($d->nomor_dokumen ? $d->nomor_dokumen.' - ' : '').$d->nama_dokumen) }}</option>
+                                            @endforeach
+                                        </select>
+                                    </label>
+                                </div>
+                                <div class="lg:col-span-2">
+                                    <label class="block">
+                                        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Keterangan Relasi</span>
+                                        <textarea name="relations[__INDEX__][keterangan]" rows="3" placeholder="Keterangan khusus untuk hubungan antar dokumen." class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"></textarea>
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+                    </template>
+                </x-documents.form-section>
+            </div>
+
+            {{-- Sidebar --}}
+            <aside class="space-y-6 xl:sticky xl:top-8">
+                <section class="h-fit overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                    <div class="border-b border-slate-200 px-6 py-5">
+                        <h2 class="text-lg font-bold text-slate-900">Rincian Dokumen</h2>
+                    </div>
+
+                    <div class="space-y-5 px-6 py-6">
+                        <div>
+                            <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen</span>
+                            <input
+                                type="text"
+                                name="nomor_dokumen"
+                                value="{{ old('nomor_dokumen') }}"
+                                placeholder="Contoh: SM-001"
+                                required
+                                @class([
+                                    'h-14 w-full rounded-lg px-4 text-base font-semibold outline-none transition',
+                                    'border border-red-300 bg-white text-slate-700 focus:border-red-400 focus:ring-2 focus:ring-red-100' => $errors->has('nomor_dokumen'),
+                                    'border border-slate-300 bg-white text-slate-700 focus:border-sky-400 focus:ring-2 focus:ring-sky-100' => ! $errors->has('nomor_dokumen'),
+                                ])
+                            >
+                            @error('nomor_dokumen')
+                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                            @enderror
+                        </div>
+
+                        <div>
+                            <span class="mb-2 block text-base font-medium text-slate-500">Nomor Revisi</span>
+                            <input
+                                type="text"
+                                name="nomor_revisi"
+                                value="{{ old('nomor_revisi', '00.00') }}"
+                                placeholder="Contoh: 00.00, 00.01"
+                                class="h-14 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                            >
+                            @error('nomor_revisi')
+                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                            @enderror
+                        </div>
+
+                        <x-ui.date-input
+                            label="Tanggal Terbit"
+                            name="tanggal_terbit"
+                            :value="old('tanggal_terbit')"
+                        />
+                        @error('tanggal_terbit')
+                            <span class="-mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                        @enderror
+
+                        <div>
+                            <span class="mb-2 block text-base font-medium text-slate-500">Catatan</span>
+                            <textarea
+                                name="catatan"
+                                rows="4"
+                                placeholder="Catatan bebas terkait imported master ini."
+                                class="w-full resize-none rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                            >{{ old('catatan') }}</textarea>
+                        </div>
+
+                        <div class="space-y-3 text-sm font-medium text-slate-500">
+                            <div class="flex items-center gap-3">
+                                <flux:icon name="document-check" class="size-5 text-slate-700" />
+                                <span>Level</span>
+                                <span class="ml-auto rounded-full bg-sky-100 px-3 py-1 text-xs font-bold text-sky-700">{{ $levelConfig['badge'] }}</span>
+                            </div>
+                            <div class="flex items-center gap-3">
+                                <flux:icon name="arrow-path" class="size-5 text-slate-700" />
+                                <span>Status</span>
+                                <span class="ml-auto rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Master</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="border-t border-dashed border-slate-200 px-6 py-5">
+                        <div class="flex gap-3">
+                            <a
+                                href="{{ route('documents.master.imports.create') }}"
+                                class="inline-flex h-12 flex-1 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:bg-slate-50"
+                                wire:navigate
+                            >
+                                Batal
+                            </a>
+                            <button
+                                type="submit"
+                                class="inline-flex h-12 flex-1 items-center justify-center rounded-lg bg-sky-600 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-sky-700"
+                            >
+                                Simpan Master
+                            </button>
+                        </div>
+                    </div>
+                </section>
+            </aside>
+        </form>
+    </div>
+
+    <script>
+        (() => {
+            // Sync filter procedure reference by process & function
+            const syncProcedureReferenceOptions = (form) => {
+                const processSelect = form.querySelector('select[name="m_proses_bisnis_id"]');
+                const functionSelect = form.querySelector('select[name="m_proses_fungsi_id"]');
+                const referenceSelect = form.querySelector('select[name="reference"]');
+
+                if (!processSelect || !functionSelect || !referenceSelect) {
+                    return;
+                }
+
+                const processId = processSelect.value;
+                const functionId = functionSelect.value;
+                let selectedReferenceStillValid = referenceSelect.value === '';
+
+                // Loop options & optgroups
+                Array.from(referenceSelect.querySelectorAll('option')).forEach((option) => {
+                    if (!option.value) {
+                        option.hidden = false;
+                        return;
+                    }
+
+                    const matches = processId !== ''
+                        && option.dataset.businessProcessId === processId
+                        && (functionId === '' || option.dataset.businessFunctionId === functionId);
+
+                    option.hidden = !matches;
+                    option.disabled = !matches;
+
+                    if (option.selected && matches) {
+                        selectedReferenceStillValid = true;
+                    }
+                });
+
+                // Toggle visibility of optgroups
+                Array.from(referenceSelect.querySelectorAll('optgroup')).forEach((group) => {
+                    const visibleOptions = Array.from(group.querySelectorAll('option')).filter(opt => !opt.hidden);
+                    group.hidden = visibleOptions.length === 0;
+                });
+
+                referenceSelect.disabled = processId === '';
+
+                if (!selectedReferenceStillValid) {
+                    referenceSelect.value = '';
+                }
+            };
+
+            document.querySelectorAll('form').forEach((form) => {
+                syncProcedureReferenceOptions(form);
+            });
+
+            document.addEventListener('change', (event) => {
+                if (!event.target.closest('select[name="m_proses_bisnis_id"], select[name="m_proses_fungsi_id"]')) {
+                    return;
+                }
+                const form = event.target.closest('form');
+                if (form) {
+                    syncProcedureReferenceOptions(form);
+                }
+            });
+
+            // Relations JS (reuse dari existing/imports/create)
+            const root = document.querySelector('[data-imported-existing-relations]');
+
+            if (!root) {
+                return;
+            }
+
+            const list = root.querySelector('[data-imported-existing-relation-list]');
+            const template = document.querySelector('[data-imported-existing-relation-template]');
+            let nextIndex = list?.querySelectorAll('[data-imported-existing-relation-row]').length || 0;
+
+            const syncTargetVisibility = (row) => {
+                const type = row.querySelector('[data-imported-existing-target-type]')?.value || 'imported';
+                const importedTarget = row.querySelector('[data-imported-existing-imported-target]');
+                const existingTarget = row.querySelector('[data-imported-existing-existing-target]');
+                const importedSelect = importedTarget?.querySelector('select');
+                const existingSelect = existingTarget?.querySelector('select');
+
+                importedTarget?.classList.toggle('hidden', type !== 'imported');
+                existingTarget?.classList.toggle('hidden', type !== 'existing');
+
+                if (importedSelect) importedSelect.disabled = type !== 'imported';
+                if (existingSelect) existingSelect.disabled = type !== 'existing';
+            };
+
+            const syncAllRows = () => {
+                list?.querySelectorAll('[data-imported-existing-relation-row]').forEach(syncTargetVisibility);
+            };
+
+            document.addEventListener('click', (event) => {
+                if (event.target.closest('[data-imported-existing-relation-add]')) {
+                    const content = template?.innerHTML.replaceAll('__INDEX__', String(nextIndex));
+                    if (!content || !list) return;
+                    list.insertAdjacentHTML('beforeend', content);
+                    nextIndex += 1;
+                    syncAllRows();
+                    return;
+                }
+
+                const removeButton = event.target.closest('[data-imported-existing-relation-remove]');
+                if (removeButton) {
+                    removeButton.closest('[data-imported-existing-relation-row]')?.remove();
+                }
+            });
+
+            document.addEventListener('change', (event) => {
+                const targetType = event.target.closest('[data-imported-existing-target-type]');
+                if (!targetType) return;
+                const row = targetType.closest('[data-imported-existing-relation-row]');
+                if (row) syncTargetVisibility(row);
+            });
+
+            syncAllRows();
+        })();
+    </script>
+</x-layouts::app>

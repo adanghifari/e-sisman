@@ -56,15 +56,13 @@ class DocumentMasterTest extends TestCase
 
     public function test_master_page_shows_import_master_button_for_user_with_permission(): void
     {
-        $user = $this->userWithPermission('documents.existing.imports.create');
+        $user = $this->userWithPermission('documents.master.imports.create');
 
         $this->actingAs($user)
             ->get(route('documents.master'))
             ->assertOk()
             ->assertSee('Import Dokumen Master')
-            ->assertSee(route('documents.existing.imports.create', [
-                'document_state' => ImportedExistingDocument::STATE_MASTER,
-            ]), false);
+            ->assertSee(route('documents.master.imports.create'), false);
     }
 
     public function test_master_page_hides_import_master_button_without_permission(): void
@@ -485,13 +483,13 @@ class DocumentMasterTest extends TestCase
 
     public function test_obsolete_page_shows_add_button_for_user_with_create_permission(): void
     {
-        $user = $this->userWithPermission('documents.existing.imports.create');
+        $user = $this->userWithPermission('documents.obsolete.imports.create');
 
         $this->actingAs($user)
             ->get(route('documents.obsolete'))
             ->assertOk()
             ->assertSee('Tambah Dokumen Obsolete')
-            ->assertSee(route('documents.existing.imports.create'), false);
+            ->assertSee(route('documents.obsolete.imports.create'), false);
     }
 
     public function test_user_role_can_read_obsolete_list_and_detail(): void
@@ -1223,14 +1221,15 @@ class DocumentMasterTest extends TestCase
                     'documents.master.view' => 'documents.master',
                     'documents.master.detail' => 'documents.master.show',
                     'documents.master.imported.detail' => 'documents.master.imported.show',
+                    'documents.master.imports.create' => 'documents.master.imports.create',
                     'documents.obsolete.detail' => 'documents.obsolete.show',
-                    'documents.existing.imports.create' => 'documents.existing.imports.create',
+                    'documents.obsolete.imports.create' => 'documents.obsolete.imports.create',
                     'documents.existing.imports.revision' => 'documents.existing.imports.revisions.store',
                     'documents.obsolete.restore' => 'documents.obsolete.restore',
                     default => 'documents.obsolete',
                 },
                 'action' => match ($permissionCode) {
-                    'documents.obsolete.create', 'documents.existing.imports.create', 'documents.existing.imports.revision' => 'create',
+                    'documents.master.imports.create', 'documents.obsolete.create', 'documents.obsolete.imports.create', 'documents.existing.imports.revision' => 'create',
                     'documents.obsolete.restore' => 'restore',
                     default => 'view',
                 },
@@ -1252,7 +1251,7 @@ class DocumentMasterTest extends TestCase
 
         $role->permissions()->syncWithoutDetaching([$masterDetailPermission->id]);
 
-        if (in_array($permissionCode, ['documents.obsolete.create', 'documents.existing.imports.create', 'documents.obsolete.restore'], true)) {
+        if (in_array($permissionCode, ['documents.obsolete.create', 'documents.obsolete.imports.create', 'documents.obsolete.restore'], true)) {
             $viewPermission = Permission::query()->firstOrCreate(
                 ['code' => 'documents.obsolete.view'],
                 [
@@ -1266,7 +1265,7 @@ class DocumentMasterTest extends TestCase
             $role->permissions()->syncWithoutDetaching([$viewPermission->id]);
         }
 
-        if (in_array($permissionCode, ['documents.existing.imports.create', 'documents.master.imported.detail'], true)) {
+        if (in_array($permissionCode, ['documents.master.imports.create', 'documents.master.imported.detail'], true)) {
             $masterViewPermission = Permission::query()->firstOrCreate(
                 ['code' => 'documents.master.view'],
                 [

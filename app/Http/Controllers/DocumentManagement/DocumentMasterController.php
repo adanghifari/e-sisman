@@ -199,6 +199,7 @@ class DocumentMasterController extends Controller
             'documentType',
             'businessProcess',
             'businessFunction',
+            'departments',
             'uploader',
             'files.uploader',
             'incomingImportedRelations.sourceDocument',
@@ -208,7 +209,6 @@ class DocumentMasterController extends Controller
         abort_unless($importedExistingDocument->document_state === ImportedExistingDocument::STATE_MASTER, 404);
         abort_unless($request->user()?->hasPermission('documents.master.detail'), 403);
 
-        $importedExistingDocument->setRelation('departments', collect());
         $importedExistingDocument->setRelation('approvals', collect());
         $importedExistingDocument->setAttribute('formatted_revision', $this->formatImportedRevision($importedExistingDocument));
 
@@ -480,7 +480,7 @@ class DocumentMasterController extends Controller
     private function importedMasterQuery(array $filters)
     {
         $query = ImportedExistingDocument::query()
-            ->with(['documentLevel', 'documentType', 'businessProcess', 'businessFunction', 'uploader'])
+            ->with(['documentLevel', 'documentType', 'businessProcess', 'businessFunction', 'departments', 'uploader'])
             ->where('document_state', ImportedExistingDocument::STATE_MASTER);
 
         if ($filters['search'] !== '') {
@@ -493,7 +493,8 @@ class DocumentMasterController extends Controller
                     ->orWhere('nomor_revisi', 'like', "%{$search}%")
                     ->orWhereHas('documentLevel', fn ($query) => $query->where('nama_dokumen', 'like', "%{$search}%"))
                     ->orWhereHas('businessProcess', fn ($query) => $query->where('nama_proses_bisnis', 'like', "%{$search}%"))
-                    ->orWhereHas('businessFunction', fn ($query) => $query->where('nama_proses_fungsi', 'like', "%{$search}%"));
+                    ->orWhereHas('businessFunction', fn ($query) => $query->where('nama_proses_fungsi', 'like', "%{$search}%"))
+                    ->orWhereHas('departments', fn ($query) => $query->where('nama_department', 'like', "%{$search}%"));
             });
         }
 
@@ -580,7 +581,7 @@ class DocumentMasterController extends Controller
             'nama_dokumen' => $document->nama_dokumen,
             'nomor_dokumen' => $document->nomor_dokumen ?: '-',
             'nomor_revisi' => $this->formatImportedRevision($document),
-            'department' => 'Tidak tersedia',
+            'department' => $document->departments->pluck('nama_department')->implode(', ') ?: 'Tanpa department',
             'proses_bisnis' => $document->businessProcess?->nama_proses_bisnis,
             'proses_fungsi' => $document->businessFunction?->nama_proses_fungsi,
             'tanggal_terbit' => $document->tanggal_terbit,
