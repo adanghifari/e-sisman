@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 #[Fillable([
+    'document_state',
     'obsolete_rule_type',
     'm_document_level_id',
     'm_document_types_id',
@@ -21,8 +22,17 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
     'tanggal_obsolete',
     'catatan',
 ])]
-class ImportedObsoleteDocument extends Model
+class ImportedExistingDocument extends Model
 {
+    public const STATE_MASTER = 'master';
+
+    public const STATE_OBSOLETE = 'obsolete';
+
+    public const DOCUMENT_STATES = [
+        self::STATE_MASTER,
+        self::STATE_OBSOLETE,
+    ];
+
     public const CURRENT_RULE = 'current_rule';
 
     public const LEGACY_RULE = 'legacy_rule';
@@ -31,6 +41,16 @@ class ImportedObsoleteDocument extends Model
         self::CURRENT_RULE,
         self::LEGACY_RULE,
     ];
+
+    public function isMaster(): bool
+    {
+        return $this->document_state === self::STATE_MASTER;
+    }
+
+    public function isObsolete(): bool
+    {
+        return $this->document_state === self::STATE_OBSOLETE;
+    }
 
     protected function casts(): array
     {
@@ -67,16 +87,21 @@ class ImportedObsoleteDocument extends Model
 
     public function files(): HasMany
     {
-        return $this->hasMany(ImportedObsoleteDocumentFile::class)->orderByDesc('id');
+        return $this->hasMany(ImportedExistingDocumentFile::class)->orderByDesc('id');
     }
 
     public function outgoingRelations(): HasMany
     {
-        return $this->hasMany(ImportedObsoleteDocumentRelation::class);
+        return $this->hasMany(ImportedExistingDocumentRelation::class);
     }
 
     public function incomingImportedRelations(): HasMany
     {
-        return $this->hasMany(ImportedObsoleteDocumentRelation::class, 'related_imported_obsolete_document_id');
+        return $this->hasMany(ImportedExistingDocumentRelation::class, 'related_imported_existing_document_id');
+    }
+
+    public function tDocumentRevisions(): HasMany
+    {
+        return $this->hasMany(Document::class, 'imported_existing_source_id');
     }
 }

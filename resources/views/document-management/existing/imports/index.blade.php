@@ -1,11 +1,11 @@
-<x-layouts::app :title="__('Arsip Dokumen Obsolete Legacy')">
+<x-layouts::app :title="__('Arsip Dokumen Existing')">
     <div class="space-y-6">
         <x-ui.page-header
-            title="Arsip Dokumen Obsolete Legacy"
+            title="Arsip Dokumen Existing"
             description="Daftar dokumen obsolete hasil import manual."
         />
 
-        <x-ui.filter-bar :action="route('documents.obsolete.imports.index')">
+        <x-ui.filter-bar :action="route('documents.existing.imports.index')">
             <x-ui.input
                 label="Cari"
                 name="search"
@@ -19,16 +19,16 @@
                 <button type="submit" class="inline-flex h-10 items-center justify-center rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">
                     Terapkan
                 </button>
-                <a href="{{ route('documents.obsolete.imports.index') }}" class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
+                <a href="{{ route('documents.existing.imports.index') }}" class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
                     Reset
                 </a>
             </div>
         </x-ui.filter-bar>
 
-        @if ($canCreateImportedObsolete)
+        @if ($canCreateImportedExisting)
             <div class="flex justify-end">
                 <a
-                    href="{{ route('documents.obsolete.imports.create') }}"
+                    href="{{ route('documents.existing.imports.create') }}"
                     class="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
                     wire:navigate
                 >
@@ -74,13 +74,13 @@
                             <td class="px-3 py-4 text-slate-600">{{ $ruleOptions[$document->obsolete_rule_type] ?? $document->obsolete_rule_type }}</td>
                             <td class="px-3 py-4 text-slate-600">{{ $document->tanggal_obsolete?->format('d/m/Y') ?: '-' }}</td>
                             <td class="px-2 py-4">
-                                <x-ui.icon-button :href="route('documents.obsolete.imports.show', $document)" icon="eye" label="Lihat detail" size="sm" />
+                                <x-ui.icon-button :href="route('documents.existing.imports.show', $document)" icon="eye" label="Lihat detail" size="sm" />
                             </td>
                         </tr>
                     @empty
                         <tr>
                             <td colspan="6" class="px-5 py-10 text-center text-sm text-slate-500">
-                                Belum ada arsip dokumen obsolete legacy.
+                                Belum ada Arsip Dokumen Existing.
                             </td>
                         </tr>
                     @endforelse
@@ -89,3 +89,4 @@
         </x-ui.panel>
     </div>
 </x-layouts::app>
+

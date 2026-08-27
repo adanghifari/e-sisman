@@ -124,8 +124,8 @@ class DocumentObsoleteController extends Controller
             'typeOptions' => $typeOptions,
             'processOptions' => $processOptions,
             'canCreateObsolete' => $request->user()?->hasPermission('documents.obsolete.create') ?? false,
-            'canViewImportedObsolete' => $request->user()?->hasPermission('documents.obsolete.imports.view') ?? false,
-            'canCreateImportedObsolete' => $request->user()?->hasPermission('documents.obsolete.imports.create') ?? false,
+            'canViewImportedExisting' => $request->user()?->hasPermission('documents.existing.imports.view') ?? false,
+            'canCreateImportedExisting' => $request->user()?->hasPermission('documents.existing.imports.create') ?? false,
             'sortOptions' => [
                 'newest' => 'Terbaru',
                 'oldest' => 'Terlama',

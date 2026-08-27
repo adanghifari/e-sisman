@@ -1,11 +1,11 @@
-<x-layouts::app :title="__('Tambah Arsip Dokumen Obsolete Legacy')">
+<x-layouts::app :title="__('Tambah Arsip Dokumen Existing')">
     <div class="space-y-6">
         <x-ui.page-header
-            title="Tambah Arsip Dokumen Obsolete Legacy"
+            title="Tambah Arsip Dokumen Existing"
             description="Upload manual dokumen obsolete tanpa mengubah lifecycle dokumen master."
         />
 
-        <form method="POST" action="{{ route('documents.obsolete.imports.store') }}" enctype="multipart/form-data" class="space-y-6">
+        <form method="POST" action="{{ route('documents.existing.imports.store') }}" enctype="multipart/form-data" class="space-y-6">
             @csrf
 
             @if ($errors->any())
@@ -19,7 +19,7 @@
                     $selectedRuleType = old('obsolete_rule_type');
                 @endphp
 
-                <div class="space-y-5" data-imported-obsolete-rule-form>
+                <div class="space-y-5" data-imported-existing-rule-form>
                     <div>
                         <x-ui.input label="Nama Dokumen" name="nama_dokumen" :value="old('nama_dokumen')" required />
                         @error('nama_dokumen')
@@ -34,10 +34,10 @@
                                 <input
                                     type="radio"
                                     name="obsolete_rule_type"
-                                    value="{{ \App\Models\ImportedObsoleteDocument::CURRENT_RULE }}"
+                                    value="{{ \App\Models\ImportedExistingDocument::CURRENT_RULE }}"
                                     class="sr-only"
-                                    data-imported-obsolete-rule-option
-                                    @checked($selectedRuleType === \App\Models\ImportedObsoleteDocument::CURRENT_RULE)
+                                    data-imported-existing-rule-option
+                                    @checked($selectedRuleType === \App\Models\ImportedExistingDocument::CURRENT_RULE)
                                 >
                                 <span class="flex items-start gap-3">
                                     <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-sky-100 text-sky-700">
@@ -54,10 +54,10 @@
                                 <input
                                     type="radio"
                                     name="obsolete_rule_type"
-                                    value="{{ \App\Models\ImportedObsoleteDocument::LEGACY_RULE }}"
+                                    value="{{ \App\Models\ImportedExistingDocument::LEGACY_RULE }}"
                                     class="sr-only"
-                                    data-imported-obsolete-rule-option
-                                    @checked($selectedRuleType === \App\Models\ImportedObsoleteDocument::LEGACY_RULE)
+                                    data-imported-existing-rule-option
+                                    @checked($selectedRuleType === \App\Models\ImportedExistingDocument::LEGACY_RULE)
                                 >
                                 <span class="flex items-start gap-3">
                                     <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700">
@@ -147,24 +147,24 @@
                     $oldRelations = collect(old('relations', []))->values();
                 @endphp
 
-                <div class="space-y-4 px-5 py-5" data-imported-obsolete-relations>
-                    @error('relations.0.related_imported_obsolete_document_id')
+                <div class="space-y-4 px-5 py-5" data-imported-existing-relations>
+                    @error('relations.0.related_imported_existing_document_id')
                         <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{{ $message }}</div>
                     @enderror
 
-                    <div class="space-y-4" data-imported-obsolete-relation-list>
+                    <div class="space-y-4" data-imported-existing-relation-list>
                         @foreach ($oldRelations as $index => $relation)
                             @php
                                 $targetType = filled($relation['related_document_id'] ?? null) ? 'existing' : 'imported';
                             @endphp
 
-                            <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-imported-obsolete-relation-row>
+                            <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-imported-existing-relation-row>
                                 <div class="mb-4 flex items-start justify-between gap-3">
                                     <div>
                                         <p class="text-sm font-semibold text-slate-800">Relasi Dokumen</p>
                                         <p class="mt-1 text-xs font-medium text-slate-500">Pilih tepat satu target relasi.</p>
                                     </div>
-                                    <button type="button" class="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-imported-obsolete-relation-remove aria-label="Hapus relasi">
+                                    <button type="button" class="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-imported-existing-relation-remove aria-label="Hapus relasi">
                                         <flux:icon name="x-mark" class="size-4" />
                                     </button>
                                 </div>
@@ -173,7 +173,7 @@
                                     <x-ui.select
                                         label="Jenis Relasi"
                                         name="relations[{{ $index }}][relation_type]"
-                                        :value="$relation['relation_type'] ?? \App\Models\ImportedObsoleteDocumentRelation::SUPERSEDED_BY"
+                                        :value="$relation['relation_type'] ?? \App\Models\ImportedExistingDocumentRelation::SUPERSEDED_BY"
                                         :options="$relationTypeOptions"
                                     />
                                     <x-ui.select
@@ -181,17 +181,17 @@
                                         name="relations[{{ $index }}][target_type]"
                                         :value="$targetType"
                                         :options="['imported' => 'Arsip Obsolete Legacy', 'existing' => 'Dokumen Existing / Master']"
-                                        data-imported-obsolete-target-type
+                                        data-imported-existing-target-type
                                     />
-                                    <div data-imported-obsolete-imported-target>
+                                    <div data-imported-existing-imported-target>
                                         <x-ui.select
                                             label="Arsip Obsolete Legacy"
-                                            name="relations[{{ $index }}][related_imported_obsolete_document_id]"
-                                            :value="$relation['related_imported_obsolete_document_id'] ?? null"
+                                            name="relations[{{ $index }}][related_imported_existing_document_id]"
+                                            :value="$relation['related_imported_existing_document_id'] ?? null"
                                             :options="['' => 'Pilih arsip obsolete legacy'] + $importedDocumentOptions->mapWithKeys(fn ($document) => [$document->id => trim(($document->nomor_dokumen ? $document->nomor_dokumen.' - ' : '').$document->nama_dokumen)])->all()"
                                         />
                                     </div>
-                                    <div data-imported-obsolete-existing-target>
+                                    <div data-imported-existing-existing-target>
                                         <x-ui.select
                                             label="Dokumen Existing / Master"
                                             name="relations[{{ $index }}][related_document_id]"
@@ -213,20 +213,20 @@
                         @endforeach
                     </div>
 
-                    <button type="button" class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" data-imported-obsolete-relation-add>
+                    <button type="button" class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" data-imported-existing-relation-add>
                         <flux:icon name="plus" class="size-4" />
                         Tambah Relasi
                     </button>
                 </div>
 
-                <template data-imported-obsolete-relation-template>
-                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-imported-obsolete-relation-row>
+                <template data-imported-existing-relation-template>
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-imported-existing-relation-row>
                         <div class="mb-4 flex items-start justify-between gap-3">
                             <div>
                                 <p class="text-sm font-semibold text-slate-800">Relasi Dokumen</p>
                                 <p class="mt-1 text-xs font-medium text-slate-500">Pilih tepat satu target relasi.</p>
                             </div>
-                            <button type="button" class="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-imported-obsolete-relation-remove aria-label="Hapus relasi">
+                            <button type="button" class="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-imported-existing-relation-remove aria-label="Hapus relasi">
                                 <flux:icon name="x-mark" class="size-4" />
                             </button>
                         </div>
@@ -242,15 +242,15 @@
                             </label>
                             <label class="block">
                                 <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Target Relasi</span>
-                                <select name="relations[__INDEX__][target_type]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" data-imported-obsolete-target-type>
+                                <select name="relations[__INDEX__][target_type]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" data-imported-existing-target-type>
                                     <option value="imported">Arsip Obsolete Legacy</option>
                                     <option value="existing">Dokumen Existing / Master</option>
                                 </select>
                             </label>
-                            <div data-imported-obsolete-imported-target>
+                            <div data-imported-existing-imported-target>
                                 <label class="block">
                                     <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Arsip Obsolete Legacy</span>
-                                    <select name="relations[__INDEX__][related_imported_obsolete_document_id]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                    <select name="relations[__INDEX__][related_imported_existing_document_id]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                                         <option value="">Pilih arsip obsolete legacy</option>
                                         @foreach ($importedDocumentOptions as $optionDocument)
                                             <option value="{{ $optionDocument->id }}">{{ trim(($optionDocument->nomor_dokumen ? $optionDocument->nomor_dokumen.' - ' : '').$optionDocument->nama_dokumen) }}</option>
@@ -258,7 +258,7 @@
                                     </select>
                                 </label>
                             </div>
-                            <div data-imported-obsolete-existing-target>
+                            <div data-imported-existing-existing-target>
                                 <label class="block">
                                     <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Dokumen Existing / Master</span>
                                     <select name="relations[__INDEX__][related_document_id]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
@@ -281,7 +281,7 @@
             </x-ui.panel>
 
             <div class="flex justify-end gap-3">
-                <a href="{{ route('documents.obsolete.imports.index') }}" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
+                <a href="{{ route('documents.existing.imports.index') }}" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
                     Batal
                 </a>
                 <button type="submit" class="inline-flex h-11 items-center justify-center rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700">
@@ -293,17 +293,17 @@
 
     <script>
         (() => {
-            const ruleForm = document.querySelector('[data-imported-obsolete-rule-form]');
+            const ruleForm = document.querySelector('[data-imported-existing-rule-form]');
 
             if (ruleForm) {
                 const syncRuleFields = () => {
-                    const selectedRule = ruleForm.querySelector('[data-imported-obsolete-rule-option]:checked')?.value;
+                    const selectedRule = ruleForm.querySelector('[data-imported-existing-rule-option]:checked')?.value;
                     const currentRuleFields = ruleForm.querySelector('[data-current-rule-fields]');
                     const legacyRuleNote = ruleForm.querySelector('[data-legacy-rule-note]');
                     const dependentFields = document.querySelectorAll('[data-rule-dependent-fields]');
                     const dependentSections = document.querySelectorAll('[data-rule-dependent-section]');
                     const hasSelectedRule = Boolean(selectedRule);
-                    const isCurrentRule = selectedRule === '{{ \App\Models\ImportedObsoleteDocument::CURRENT_RULE }}';
+                    const isCurrentRule = selectedRule === '{{ \App\Models\ImportedExistingDocument::CURRENT_RULE }}';
 
                     dependentFields.forEach((section) => {
                         section.classList.toggle('hidden', !hasSelectedRule);
@@ -321,7 +321,7 @@
                 };
 
                 document.addEventListener('change', (event) => {
-                    if (event.target.closest('[data-imported-obsolete-rule-option]')) {
+                    if (event.target.closest('[data-imported-existing-rule-option]')) {
                         syncRuleFields();
                     }
                 });
@@ -329,20 +329,20 @@
                 syncRuleFields();
             }
 
-            const root = document.querySelector('[data-imported-obsolete-relations]');
+            const root = document.querySelector('[data-imported-existing-relations]');
 
             if (!root) {
                 return;
             }
 
-            const list = root.querySelector('[data-imported-obsolete-relation-list]');
-            const template = document.querySelector('[data-imported-obsolete-relation-template]');
-            let nextIndex = list?.querySelectorAll('[data-imported-obsolete-relation-row]').length || 0;
+            const list = root.querySelector('[data-imported-existing-relation-list]');
+            const template = document.querySelector('[data-imported-existing-relation-template]');
+            let nextIndex = list?.querySelectorAll('[data-imported-existing-relation-row]').length || 0;
 
             const syncTargetVisibility = (row) => {
-                const type = row.querySelector('[data-imported-obsolete-target-type]')?.value || 'imported';
-                const importedTarget = row.querySelector('[data-imported-obsolete-imported-target]');
-                const existingTarget = row.querySelector('[data-imported-obsolete-existing-target]');
+                const type = row.querySelector('[data-imported-existing-target-type]')?.value || 'imported';
+                const importedTarget = row.querySelector('[data-imported-existing-imported-target]');
+                const existingTarget = row.querySelector('[data-imported-existing-existing-target]');
                 const importedSelect = importedTarget?.querySelector('select');
                 const existingSelect = existingTarget?.querySelector('select');
 
@@ -359,11 +359,11 @@
             };
 
             const syncAllRows = () => {
-                list?.querySelectorAll('[data-imported-obsolete-relation-row]').forEach(syncTargetVisibility);
+                list?.querySelectorAll('[data-imported-existing-relation-row]').forEach(syncTargetVisibility);
             };
 
             document.addEventListener('click', (event) => {
-                if (event.target.closest('[data-imported-obsolete-relation-add]')) {
+                if (event.target.closest('[data-imported-existing-relation-add]')) {
                     const content = template?.innerHTML.replaceAll('__INDEX__', String(nextIndex));
 
                     if (!content || !list) {
@@ -376,21 +376,21 @@
                     return;
                 }
 
-                const removeButton = event.target.closest('[data-imported-obsolete-relation-remove]');
+                const removeButton = event.target.closest('[data-imported-existing-relation-remove]');
 
                 if (removeButton) {
-                    removeButton.closest('[data-imported-obsolete-relation-row]')?.remove();
+                    removeButton.closest('[data-imported-existing-relation-row]')?.remove();
                 }
             });
 
             document.addEventListener('change', (event) => {
-                const targetType = event.target.closest('[data-imported-obsolete-target-type]');
+                const targetType = event.target.closest('[data-imported-existing-target-type]');
 
                 if (!targetType) {
                     return;
                 }
 
-                const row = targetType.closest('[data-imported-obsolete-relation-row]');
+                const row = targetType.closest('[data-imported-existing-relation-row]');
 
                 if (row) {
                     syncTargetVisibility(row);
@@ -401,3 +401,4 @@
         })();
     </script>
 </x-layouts::app>
+

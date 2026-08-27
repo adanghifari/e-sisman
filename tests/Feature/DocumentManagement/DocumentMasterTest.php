@@ -342,13 +342,13 @@ class DocumentMasterTest extends TestCase
 
     public function test_obsolete_page_shows_add_button_for_user_with_create_permission(): void
     {
-        $user = $this->userWithPermission('documents.obsolete.imports.create');
+        $user = $this->userWithPermission('documents.existing.imports.create');
 
         $this->actingAs($user)
             ->get(route('documents.obsolete'))
             ->assertOk()
             ->assertSee('Tambah Dokumen Obsolete')
-            ->assertSee(route('documents.obsolete.imports.create'), false);
+            ->assertSee(route('documents.existing.imports.create'), false);
     }
 
     public function test_user_role_can_read_obsolete_list_and_detail(): void
@@ -1080,12 +1080,12 @@ class DocumentMasterTest extends TestCase
                     'documents.master.view' => 'documents.master',
                     'documents.master.detail' => 'documents.master.show',
                     'documents.obsolete.detail' => 'documents.obsolete.show',
-                    'documents.obsolete.imports.create' => 'documents.obsolete.imports.create',
+                    'documents.existing.imports.create' => 'documents.existing.imports.create',
                     'documents.obsolete.restore' => 'documents.obsolete.restore',
                     default => 'documents.obsolete',
                 },
                 'action' => match ($permissionCode) {
-                    'documents.obsolete.create', 'documents.obsolete.imports.create' => 'create',
+                    'documents.obsolete.create', 'documents.existing.imports.create' => 'create',
                     'documents.obsolete.restore' => 'restore',
                     default => 'view',
                 },
@@ -1107,7 +1107,7 @@ class DocumentMasterTest extends TestCase
 
         $role->permissions()->syncWithoutDetaching([$masterDetailPermission->id]);
 
-        if (in_array($permissionCode, ['documents.obsolete.create', 'documents.obsolete.imports.create', 'documents.obsolete.restore'], true)) {
+        if (in_array($permissionCode, ['documents.obsolete.create', 'documents.existing.imports.create', 'documents.obsolete.restore'], true)) {
             $viewPermission = Permission::query()->firstOrCreate(
                 ['code' => 'documents.obsolete.view'],
                 [

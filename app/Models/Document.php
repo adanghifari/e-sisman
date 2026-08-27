@@ -19,6 +19,7 @@ use Illuminate\Support\Collection;
     'official_preparer_id',
     'reference',
     'revised_from',
+    'imported_existing_source_id',
     'resubmitted_from',
     'request_type',
     'nama_dokumen',
@@ -95,6 +96,11 @@ class Document extends Model
     public function revisedFrom(): BelongsTo
     {
         return $this->belongsTo(self::class, 'revised_from');
+    }
+
+    public function importedExistingSource(): BelongsTo
+    {
+        return $this->belongsTo(ImportedExistingDocument::class, 'imported_existing_source_id');
     }
 
     public function resubmittedFrom(): BelongsTo

@@ -7,14 +7,14 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'imported_obsolete_document_id',
-    'related_imported_obsolete_document_id',
+    'imported_existing_document_id',
+    'related_imported_existing_document_id',
     'related_document_id',
     'relation_type',
     'keterangan',
     'created_by',
 ])]
-class ImportedObsoleteDocumentRelation extends Model
+class ImportedExistingDocumentRelation extends Model
 {
     public const SUPERSEDED_BY = 'superseded_by';
 
@@ -30,12 +30,12 @@ class ImportedObsoleteDocumentRelation extends Model
 
     public function sourceDocument(): BelongsTo
     {
-        return $this->belongsTo(ImportedObsoleteDocument::class, 'imported_obsolete_document_id');
+        return $this->belongsTo(ImportedExistingDocument::class, 'imported_existing_document_id');
     }
 
     public function relatedImportedDocument(): BelongsTo
     {
-        return $this->belongsTo(ImportedObsoleteDocument::class, 'related_imported_obsolete_document_id');
+        return $this->belongsTo(ImportedExistingDocument::class, 'related_imported_existing_document_id');
     }
 
     public function relatedDocument(): BelongsTo

@@ -11,6 +11,7 @@ use App\Models\Document;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
+use App\Models\ImportedExistingDocument;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentHistory;
@@ -297,9 +298,9 @@ class DocumentApprovalController extends Controller
         abort_unless(is_file($path), 404);
 
         $recordDocumentDownload->handle($request, $downloadDocument, $file, [
-            'name' =>$downloadDocument->nama_dokumen,
+            'name' => $downloadDocument->nama_dokumen,
             'number' => $this->approvalDownloadNumber($document, $downloadDocument),
-            'revision'=> $downloadDocument->nomor_revisi,
+            'revision' => $downloadDocument->nomor_revisi,
             'context' => 'approval',
         ]);
 
@@ -640,6 +641,12 @@ class DocumentApprovalController extends Controller
 
         $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
 
+        if ($document->imported_existing_source_id !== null && $document->request_type === 'revision') {
+            $this->finalizeImportedExistingRevisionApproval($document, $approvedStatus);
+
+            return;
+        }
+
         if ($document->revised_from !== null && $document->request_type !== 'obsolete') {
             $this->finalizeRevisionApproval($document, $approvedStatus);
 
@@ -745,6 +752,42 @@ class DocumentApprovalController extends Controller
             ->update([
                 'm_status_document_id' => $obsoleteStatus->id,
             ]);
+    }
+
+    private function finalizeImportedExistingRevisionApproval(Document $document, StatusDocument $approvedStatus): void
+    {
+        if ($document->imported_existing_source_id === null || $document->request_type !== 'revision') {
+            return;
+        }
+
+        $lockedDocument = Document::query()
+            ->whereKey($document->id)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $source = ImportedExistingDocument::query()
+            ->whereKey($document->imported_existing_source_id)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        if ($source->document_state !== ImportedExistingDocument::STATE_MASTER) {
+            throw new ConflictHttpException('Imported existing master sumber sudah berubah.');
+        }
+
+        $lockedDocument->update([
+            'm_document_level_id' => $source->m_document_level_id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $source->m_document_types_id,
+            'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
+            'nomor_dokumen' => $source->nomor_dokumen,
+            'approved_at' => now(),
+            'rejected_at' => null,
+        ]);
+
+        $source->update([
+            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
+            'tanggal_obsolete' => $lockedDocument->tanggal_terbit ?? now()->toDateString(),
+        ]);
     }
 
     private function revisionFormNumber(Document $source, int $revision): string
