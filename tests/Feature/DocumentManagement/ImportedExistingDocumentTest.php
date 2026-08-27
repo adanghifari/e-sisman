@@ -181,7 +181,7 @@ class ImportedExistingDocumentTest extends TestCase
                 'department_ids' => [$department->id],
                 'nama_dokumen' => 'Existing Master Sebelum Go Live',
                 'nomor_dokumen' => 'PS-SMR-120',
-                'nomor_revisi' => '00',
+                'nomor_revisi' => '00.00',
                 'existing_document' => UploadedFile::fake()->create('existing-master.pdf', 100, 'application/pdf'),
             ])
             ->assertRedirect();
@@ -198,6 +198,34 @@ class ImportedExistingDocumentTest extends TestCase
             'source_type' => DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING,
             'source_id' => $document->id,
         ]);
+    }
+
+    public function test_imported_existing_master_revision_number_must_use_two_digit_dot_format(): void
+    {
+        Storage::fake('local');
+
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.master.imports.store-level',
+            'documents.master.imports.create-level',
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('documents.master.imports.create.level', 'level-2'))
+            ->post(route('documents.master.imports.store.level', 'level-2'), [
+                'm_document_level_id' => $level->id,
+                'm_document_types_id' => $documentType->id,
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'nama_dokumen' => 'Existing Master Format Revisi Salah',
+                'nomor_dokumen' => 'PS-SMR-121',
+                'nomor_revisi' => '00',
+                'existing_document' => UploadedFile::fake()->create('existing-master.pdf', 100, 'application/pdf'),
+            ])
+            ->assertRedirect(route('documents.master.imports.create.level', 'level-2'))
+            ->assertSessionHasErrors('nomor_revisi');
+
+        $this->assertFalse(ImportedExistingDocument::query()->where('nama_dokumen', 'Existing Master Format Revisi Salah')->exists());
     }
 
     public function test_numbering_setup_blocks_v2_document_number_inside_reserved_range(): void
@@ -273,6 +301,7 @@ class ImportedExistingDocumentTest extends TestCase
                 'department_ids' => [$department->id],
                 'nama_dokumen' => 'Late Import Bentrok',
                 'nomor_dokumen' => 'PS-SMR-128',
+                'nomor_revisi' => '00.00',
                 'existing_document' => UploadedFile::fake()->create('late-import.pdf', 100, 'application/pdf'),
             ])
             ->assertRedirect(route('documents.master.imports.create.level', 'level-2'))
@@ -289,6 +318,7 @@ class ImportedExistingDocumentTest extends TestCase
             'documents.existing.imports.revision',
             'documents.approval.approve',
             'documents.approval.show',
+            'documents.master.view',
         ]);
         $proposedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::PROPOSED]);
         $approvedStatus = ApprovalStatus::query()->firstOrCreate(['kode_status' => ApprovalStatus::APPROVED], ['nama_status' => 'Disetujui']);
@@ -309,9 +339,24 @@ class ImportedExistingDocumentTest extends TestCase
             'uploaded_by' => $user->id,
             'nama_dokumen' => 'Imported Master Source',
             'nomor_dokumen' => 'PS-SMR-120',
-            'nomor_revisi' => '00',
+            'nomor_revisi' => '00.01',
         ]);
         $source->departments()->sync([$department->id]);
+        $olderObsolete = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
+            'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Master Source Versi Lama',
+            'nomor_dokumen' => 'PS-SMR-120-OLD',
+            'nomor_revisi' => '00.00',
+            'tanggal_obsolete' => now()->subDay()->toDateString(),
+        ]);
+        ImportedExistingDocumentRelation::create([
+            'imported_existing_document_id' => $olderObsolete->id,
+            'related_imported_existing_document_id' => $source->id,
+            'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+            'created_by' => $user->id,
+        ]);
 
         $response = $this->actingAs($user)
             ->post(route('documents.existing.imports.revisions.store', $source), [
@@ -330,6 +375,8 @@ class ImportedExistingDocumentTest extends TestCase
         $this->assertSame($proposedStatus->id, $revision->m_status_document_id);
         $this->assertNull($revision->revised_from);
         $this->assertSame('revision', $revision->request_type);
+        $this->assertSame(2, $revision->nomor_revisi);
+        $this->assertSame('00.02', $revision->formatted_revision);
         $this->assertTrue($revision->departments()->whereKey($department->id)->exists());
 
         $revision->approvals()->create([
@@ -352,7 +399,20 @@ class ImportedExistingDocumentTest extends TestCase
         $this->assertSame(StatusDocument::APPROVED, $revision->status->nama_status);
         $this->assertSame('PS-SMR-120', $revision->nomor_dokumen);
         $this->assertSame(ImportedExistingDocument::STATE_OBSOLETE, $source->document_state);
+        $this->assertDatabaseHas('imported_existing_document_relations', [
+            'imported_existing_document_id' => $source->id,
+            'related_imported_existing_document_id' => null,
+            'related_document_id' => $revision->id,
+            'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+        ]);
         $this->assertSame($approvedStatus->id, $revision->approvals()->first()->m_approval_status_id);
+
+        $this->actingAs($user)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertSee('Imported Master Source Rev 1')
+            ->assertSee('PS-SMR-120-OLD')
+            ->assertSee('Imported Master Source Versi Lama');
     }
 
     public function test_current_rule_requires_all_modern_master_data(): void
@@ -497,6 +557,7 @@ class ImportedExistingDocumentTest extends TestCase
                         'documents.existing.imports.revision' => 'documents.existing.imports.revisions.store',
                         'documents.existing.imports.numbering-setup' => 'documents.existing.imports.numbering-setups.store',
                         'documents.create.create' => 'documents.store',
+                        'documents.master.view' => 'documents.master',
                         'documents.approval.approve' => 'documents.approval.approve',
                         'documents.approval.show' => 'documents.approval.show',
                         'documents.existing.imports.detail' => 'documents.existing.imports.show',

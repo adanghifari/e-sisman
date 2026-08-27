@@ -151,9 +151,6 @@ class ImportedExistingDocumentController extends Controller
             'selectedDepartmentIds' => $selectedDepartmentIds,
             'workflowProcedures' => $workflowProcedures,
             'importedProcedures' => $importedProcedures,
-            'importedDocumentOptions' => ImportedExistingDocument::query()->orderBy('nama_dokumen')->get(['id', 'nama_dokumen', 'nomor_dokumen']),
-            'existingDocumentOptions' => Document::query()->orderBy('nama_dokumen')->get(['id', 'nama_dokumen', 'nomor_dokumen']),
-            'relationTypeOptions' => $this->relationTypeOptions(),
         ]);
     }
 
@@ -373,6 +370,7 @@ class ImportedExistingDocumentController extends Controller
 
         DB::transaction(function () use ($request, $validated, $importedExistingDocument, &$document): void {
             $status = StatusDocument::findByName(StatusDocument::PROPOSED);
+            $nextRevision = $this->nextImportedExistingRevisionNumber($importedExistingDocument);
 
             $relation = $importedExistingDocument->outgoingRelations()
                 ->where('relation_type', ImportedExistingDocumentRelation::REFERENCES)
@@ -404,7 +402,7 @@ class ImportedExistingDocumentController extends Controller
                 'request_type' => 'revision',
                 'nama_dokumen' => $validated['nama_dokumen'] ?? $importedExistingDocument->nama_dokumen,
                 'nomor_dokumen' => $importedExistingDocument->nomor_dokumen,
-                'nomor_revisi' => 1,
+                'nomor_revisi' => $nextRevision,
                 'catatan_revisi' => $validated['catatan_revisi'] ?? null,
                 'tanggal_terbit' => $validated['tanggal_terbit'] ?? null,
                 'submitted_at' => now(),
@@ -500,6 +498,7 @@ class ImportedExistingDocumentController extends Controller
                 'm_proses_bisnis_id',
                 'm_proses_fungsi_id',
                 'nomor_dokumen',
+                'nomor_revisi',
                 'department_ids',
             ];
             $masterErrors = [];
@@ -516,6 +515,13 @@ class ImportedExistingDocumentController extends Controller
                 if (! filled($validated[$field] ?? null)) {
                     $masterErrors[$field] = 'Field ini wajib diisi untuk imported existing master.';
                 }
+            }
+
+            if (
+                filled($validated['nomor_revisi'] ?? null)
+                && ! preg_match('/^\d{2}\.\d{2}$/', (string) $validated['nomor_revisi'])
+            ) {
+                $masterErrors['nomor_revisi'] = 'Nomor revisi untuk imported master wajib menggunakan format 00.00.';
             }
 
             if ($masterErrors !== []) {
@@ -647,6 +653,29 @@ class ImportedExistingDocumentController extends Controller
         $segments->pop();
 
         return $segments->implode('-');
+    }
+
+    private function nextImportedExistingRevisionNumber(ImportedExistingDocument $document): int
+    {
+        $baseRevision = $this->normalizeImportedExistingRevision($document->nomor_revisi);
+        $latestWorkflowRevision = (int) Document::query()
+            ->where('imported_existing_source_id', $document->id)
+            ->max('nomor_revisi');
+
+        return max($baseRevision, $latestWorkflowRevision) + 1;
+    }
+
+    private function normalizeImportedExistingRevision(?string $revision): int
+    {
+        if (! filled($revision)) {
+            return 0;
+        }
+
+        $parts = explode('.', $revision, 2);
+        $major = (int) preg_replace('/\D+/', '', $parts[0] ?? '0');
+        $minor = (int) preg_replace('/\D+/', '', $parts[1] ?? '0');
+
+        return ($major * 100) + $minor;
     }
 
     /**

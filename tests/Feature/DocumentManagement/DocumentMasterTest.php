@@ -93,7 +93,7 @@ class DocumentMasterTest extends TestCase
             'm_proses_fungsi_id' => $businessFunction->id,
             'nama_dokumen' => 'Imported Master Go Live',
             'nomor_dokumen' => 'PS-SMR-IMPORT',
-            'nomor_revisi' => '00',
+            'nomor_revisi' => '00.00',
         ]);
 
         $this->actingAs($user)
@@ -1403,7 +1403,7 @@ class DocumentMasterTest extends TestCase
             'uploaded_by' => $user->id,
             'nama_dokumen' => 'Imported Existing Master',
             'nomor_dokumen' => 'PS-SMR-IMP',
-            'nomor_revisi' => '00',
+            'nomor_revisi' => '00.00',
             'tanggal_terbit' => now()->toDateString(),
         ]);
     }

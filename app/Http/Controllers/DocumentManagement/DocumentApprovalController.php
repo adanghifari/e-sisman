@@ -12,6 +12,7 @@ use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
 use App\Models\ImportedExistingDocument;
+use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentHistory;
@@ -788,6 +789,19 @@ class DocumentApprovalController extends Controller
             'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
             'tanggal_obsolete' => $lockedDocument->tanggal_terbit ?? now()->toDateString(),
         ]);
+
+        ImportedExistingDocumentRelation::query()->updateOrCreate(
+            [
+                'imported_existing_document_id' => $source->id,
+                'related_document_id' => $lockedDocument->id,
+                'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+            ],
+            [
+                'related_imported_existing_document_id' => null,
+                'keterangan' => 'Digantikan oleh revisi V2 hasil approval.',
+                'created_by' => $lockedDocument->user_id,
+            ],
+        );
     }
 
     private function revisionFormNumber(Document $source, int $revision): string

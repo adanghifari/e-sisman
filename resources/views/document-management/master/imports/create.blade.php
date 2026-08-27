@@ -29,9 +29,6 @@
             <h1 class="text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">
                 Import Dokumen Level {{ $levelNumbers[$level] }} : {{ $documentTitle }}
             </h1>
-            <p class="mt-2 text-sm font-medium text-slate-500">
-                Upload manual dokumen master existing sebelum go-live tanpa masuk approval awal.
-            </p>
         </div>
 
         <form
@@ -192,111 +189,6 @@
                         @enderror
                     </div>
                 </x-documents.form-section>
-
-                {{-- Dokumen Terkait --}}
-                <x-documents.form-section title="Dokumen Terkait" :padded="false">
-                    @php $oldRelations = collect(old('relations', []))->values(); @endphp
-
-                    <div class="space-y-4 px-5 py-5" data-imported-existing-relations>
-                        @error('relations.0.related_imported_existing_document_id')
-                            <div class="rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{{ $message }}</div>
-                        @enderror
-
-                        <div class="space-y-4" data-imported-existing-relation-list>
-                            @foreach ($oldRelations as $index => $relation)
-                                @php $targetType = filled($relation['related_document_id'] ?? null) ? 'existing' : 'imported'; @endphp
-                                <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-imported-existing-relation-row>
-                                    <div class="mb-4 flex items-start justify-between gap-3">
-                                        <div>
-                                            <p class="text-sm font-semibold text-slate-800">Relasi Dokumen</p>
-                                            <p class="mt-1 text-xs font-medium text-slate-500">Pilih tepat satu target relasi.</p>
-                                        </div>
-                                        <button type="button" class="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-imported-existing-relation-remove aria-label="Hapus relasi">
-                                            <flux:icon name="x-mark" class="size-4" />
-                                        </button>
-                                    </div>
-                                    <div class="grid gap-4 lg:grid-cols-2">
-                                        <x-ui.select label="Jenis Relasi" name="relations[{{ $index }}][relation_type]" :value="$relation['relation_type'] ?? \App\Models\ImportedExistingDocumentRelation::SUPERSEDED_BY" :options="$relationTypeOptions" />
-                                        <x-ui.select label="Target Relasi" name="relations[{{ $index }}][target_type]" :value="$targetType" :options="['imported' => 'Arsip Obsolete Legacy', 'existing' => 'Dokumen Existing / Master']" data-imported-existing-target-type />
-                                        <div data-imported-existing-imported-target>
-                                            <x-ui.select label="Arsip Obsolete Legacy" name="relations[{{ $index }}][related_imported_existing_document_id]" :value="$relation['related_imported_existing_document_id'] ?? null" :options="['' => 'Pilih arsip obsolete legacy'] + $importedDocumentOptions->mapWithKeys(fn ($d) => [$d->id => trim(($d->nomor_dokumen ? $d->nomor_dokumen.' - ' : '').$d->nama_dokumen)])->all()" />
-                                        </div>
-                                        <div data-imported-existing-existing-target>
-                                            <x-ui.select label="Dokumen Existing / Master" name="relations[{{ $index }}][related_document_id]" :value="$relation['related_document_id'] ?? null" :options="['' => 'Pilih dokumen existing'] + $existingDocumentOptions->mapWithKeys(fn ($d) => [$d->id => trim(($d->nomor_dokumen ? $d->nomor_dokumen.' - ' : '').$d->nama_dokumen)])->all()" />
-                                        </div>
-                                        <div class="lg:col-span-2">
-                                            <x-ui.textarea label="Keterangan Relasi" name="relations[{{ $index }}][keterangan]" :value="$relation['keterangan'] ?? null" rows="3" placeholder="Keterangan khusus untuk hubungan antar dokumen." />
-                                        </div>
-                                    </div>
-                                </div>
-                            @endforeach
-                        </div>
-
-                        <button type="button" class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" data-imported-existing-relation-add>
-                            <flux:icon name="plus" class="size-4" />
-                            Tambah Relasi
-                        </button>
-                    </div>
-
-                    <template data-imported-existing-relation-template>
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-imported-existing-relation-row>
-                            <div class="mb-4 flex items-start justify-between gap-3">
-                                <div>
-                                    <p class="text-sm font-semibold text-slate-800">Relasi Dokumen</p>
-                                    <p class="mt-1 text-xs font-medium text-slate-500">Pilih tepat satu target relasi.</p>
-                                </div>
-                                <button type="button" class="inline-flex size-8 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-imported-existing-relation-remove aria-label="Hapus relasi">
-                                    <flux:icon name="x-mark" class="size-4" />
-                                </button>
-                            </div>
-                            <div class="grid gap-4 lg:grid-cols-2">
-                                <label class="block">
-                                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Jenis Relasi</span>
-                                    <select name="relations[__INDEX__][relation_type]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                        @foreach ($relationTypeOptions as $value => $label)
-                                            <option value="{{ $value }}">{{ $label }}</option>
-                                        @endforeach
-                                    </select>
-                                </label>
-                                <label class="block">
-                                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Target Relasi</span>
-                                    <select name="relations[__INDEX__][target_type]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" data-imported-existing-target-type>
-                                        <option value="imported">Arsip Obsolete Legacy</option>
-                                        <option value="existing">Dokumen Existing / Master</option>
-                                    </select>
-                                </label>
-                                <div data-imported-existing-imported-target>
-                                    <label class="block">
-                                        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Arsip Obsolete Legacy</span>
-                                        <select name="relations[__INDEX__][related_imported_existing_document_id]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                            <option value="">Pilih arsip obsolete legacy</option>
-                                            @foreach ($importedDocumentOptions as $d)
-                                                <option value="{{ $d->id }}">{{ trim(($d->nomor_dokumen ? $d->nomor_dokumen.' - ' : '').$d->nama_dokumen) }}</option>
-                                            @endforeach
-                                        </select>
-                                    </label>
-                                </div>
-                                <div data-imported-existing-existing-target>
-                                    <label class="block">
-                                        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Dokumen Existing / Master</span>
-                                        <select name="relations[__INDEX__][related_document_id]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                            <option value="">Pilih dokumen existing</option>
-                                            @foreach ($existingDocumentOptions as $d)
-                                                <option value="{{ $d->id }}">{{ trim(($d->nomor_dokumen ? $d->nomor_dokumen.' - ' : '').$d->nama_dokumen) }}</option>
-                                            @endforeach
-                                        </select>
-                                    </label>
-                                </div>
-                                <div class="lg:col-span-2">
-                                    <label class="block">
-                                        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Keterangan Relasi</span>
-                                        <textarea name="relations[__INDEX__][keterangan]" rows="3" placeholder="Keterangan khusus untuk hubungan antar dokumen." class="w-full rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"></textarea>
-                                    </label>
-                                </div>
-                            </div>
-                        </div>
-                    </template>
-                </x-documents.form-section>
             </div>
 
             {{-- Sidebar --}}
@@ -331,9 +223,19 @@
                             <input
                                 type="text"
                                 name="nomor_revisi"
-                                value="{{ old('nomor_revisi', '00.00') }}"
-                                placeholder="Contoh: 00.00, 00.01"
-                                class="h-14 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                                value="{{ old('nomor_revisi') }}"
+                                placeholder="__.__"
+                                inputmode="numeric"
+                                pattern="\d{2}\.\d{2}"
+                                title="Gunakan format 00.00"
+                                autocomplete="off"
+                                required
+                                data-import-master-revision-mask
+                                @class([
+                                    'h-14 w-full rounded-lg bg-white px-4 font-mono text-base font-semibold tracking-normal outline-none transition placeholder:text-slate-400',
+                                    'border border-red-300 text-red-700 focus:border-red-400 focus:ring-2 focus:ring-red-100' => $errors->has('nomor_revisi'),
+                                    'border border-slate-300 text-slate-700 focus:border-sky-400 focus:ring-2 focus:ring-sky-100' => ! $errors->has('nomor_revisi'),
+                                ])
                             >
                             @error('nomor_revisi')
                                 <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -457,59 +359,118 @@
                 }
             });
 
-            // Relations JS (reuse dari existing/imports/create)
-            const root = document.querySelector('[data-imported-existing-relations]');
+            const revisionPattern = /^\d{2}\.\d{2}$/;
+            const revisionPlaceholder = '__.__';
 
-            if (!root) {
-                return;
-            }
-
-            const list = root.querySelector('[data-imported-existing-relation-list]');
-            const template = document.querySelector('[data-imported-existing-relation-template]');
-            let nextIndex = list?.querySelectorAll('[data-imported-existing-relation-row]').length || 0;
-
-            const syncTargetVisibility = (row) => {
-                const type = row.querySelector('[data-imported-existing-target-type]')?.value || 'imported';
-                const importedTarget = row.querySelector('[data-imported-existing-imported-target]');
-                const existingTarget = row.querySelector('[data-imported-existing-existing-target]');
-                const importedSelect = importedTarget?.querySelector('select');
-                const existingSelect = existingTarget?.querySelector('select');
-
-                importedTarget?.classList.toggle('hidden', type !== 'imported');
-                existingTarget?.classList.toggle('hidden', type !== 'existing');
-
-                if (importedSelect) importedSelect.disabled = type !== 'imported';
-                if (existingSelect) existingSelect.disabled = type !== 'existing';
-            };
-
-            const syncAllRows = () => {
-                list?.querySelectorAll('[data-imported-existing-relation-row]').forEach(syncTargetVisibility);
-            };
-
-            document.addEventListener('click', (event) => {
-                if (event.target.closest('[data-imported-existing-relation-add]')) {
-                    const content = template?.innerHTML.replaceAll('__INDEX__', String(nextIndex));
-                    if (!content || !list) return;
-                    list.insertAdjacentHTML('beforeend', content);
-                    nextIndex += 1;
-                    syncAllRows();
-                    return;
+            const revisionDigits = (value) => value.replace(/\D/g, '').slice(0, 4);
+            const revisionPositionForDigitCount = (digitCount) => {
+                if (digitCount <= 0) {
+                    return 0;
                 }
 
-                const removeButton = event.target.closest('[data-imported-existing-relation-remove]');
-                if (removeButton) {
-                    removeButton.closest('[data-imported-existing-relation-row]')?.remove();
+                if (digitCount <= 2) {
+                    return digitCount;
                 }
-            });
 
-            document.addEventListener('change', (event) => {
-                const targetType = event.target.closest('[data-imported-existing-target-type]');
-                if (!targetType) return;
-                const row = targetType.closest('[data-imported-existing-relation-row]');
-                if (row) syncTargetVisibility(row);
-            });
+                return digitCount + 1;
+            };
 
-            syncAllRows();
+            const revisionDigitCountBeforePosition = (value, position) => {
+                return revisionDigits(value.slice(0, position)).length;
+            };
+
+            const formatRevision = (value, padded = true) => {
+                const digits = revisionDigits(value);
+                const chars = revisionPlaceholder.split('');
+                let digitIndex = 0;
+
+                for (let index = 0; index < chars.length && digitIndex < digits.length; index += 1) {
+                    if (chars[index] === '_') {
+                        chars[index] = digits[digitIndex];
+                        digitIndex += 1;
+                    }
+                }
+
+                if (padded) {
+                    return chars.join('');
+                }
+
+                return digits.length > 2
+                    ? `${digits.slice(0, 2)}.${digits.slice(2)}`
+                    : digits;
+            };
+
+            const setRevisionValidity = (input) => {
+                input.setCustomValidity(
+                    revisionPattern.test(input.value)
+                        ? ''
+                        : 'Nomor revisi wajib menggunakan format 00.00.'
+                );
+            };
+
+            const syncRevisionInput = (input, nextDigitPosition = null) => {
+                const cursorPosition = input.selectionStart ?? input.value.length;
+                const digitPosition = nextDigitPosition ?? revisionDigitCountBeforePosition(input.value, cursorPosition);
+
+                input.value = formatRevision(input.value);
+                setRevisionValidity(input);
+
+                window.requestAnimationFrame(() => {
+                    const nextCursorPosition = revisionPositionForDigitCount(digitPosition);
+                    input.setSelectionRange(nextCursorPosition, nextCursorPosition);
+                });
+            };
+
+            document.querySelectorAll('[data-import-master-revision-mask]').forEach((input) => {
+                syncRevisionInput(input, revisionDigits(input.value).length);
+
+                input.addEventListener('focus', () => {
+                    syncRevisionInput(input, revisionDigits(input.value).length);
+                });
+
+                input.addEventListener('click', () => {
+                    syncRevisionInput(input);
+                });
+
+                input.addEventListener('keydown', (event) => {
+                    if (!['Backspace', 'Delete'].includes(event.key)) {
+                        return;
+                    }
+
+                    const cursorStart = input.selectionStart ?? 0;
+                    const cursorEnd = input.selectionEnd ?? cursorStart;
+                    const digits = revisionDigits(input.value);
+                    const digitStart = revisionDigitCountBeforePosition(input.value, cursorStart);
+                    const digitEnd = revisionDigitCountBeforePosition(input.value, cursorEnd);
+
+                    let nextDigits = digits;
+                    let nextDigitPosition = digitStart;
+
+                    if (cursorStart !== cursorEnd && digitStart !== digitEnd) {
+                        nextDigits = digits.slice(0, digitStart) + digits.slice(digitEnd);
+                    } else if (event.key === 'Backspace' && digitStart > 0) {
+                        nextDigits = digits.slice(0, digitStart - 1) + digits.slice(digitStart);
+                        nextDigitPosition = digitStart - 1;
+                    } else if (event.key === 'Delete' && digitStart < digits.length) {
+                        nextDigits = digits.slice(0, digitStart) + digits.slice(digitStart + 1);
+                    } else {
+                        return;
+                    }
+
+                    event.preventDefault();
+                    input.value = nextDigits;
+                    syncRevisionInput(input, nextDigitPosition);
+                });
+
+                input.addEventListener('input', () => {
+                    syncRevisionInput(input);
+                });
+
+                input.addEventListener('blur', () => {
+                    input.value = formatRevision(input.value);
+                    setRevisionValidity(input);
+                });
+            });
         })();
     </script>
 </x-layouts::app>

@@ -619,25 +619,52 @@ class DocumentMasterController extends Controller
 
     private function relatedImportedObsoleteForWorkflowMaster(Document $document): Collection
     {
-        return ImportedExistingDocumentRelation::query()
-            ->with(['sourceDocument.businessProcess', 'sourceDocument.businessFunction'])
-            ->where('related_document_id', $document->id)
-            ->where('relation_type', ImportedExistingDocumentRelation::SUPERSEDED_BY)
-            ->whereHas('sourceDocument', fn ($query) => $query->where('document_state', ImportedExistingDocument::STATE_OBSOLETE))
-            ->get()
-            ->map(fn (ImportedExistingDocumentRelation $relation): object => $this->presentImportedObsoleteRow($relation->sourceDocument));
+        return $this->importedObsoleteChainForTarget(relatedDocumentId: $document->id);
     }
 
     private function relatedImportedObsoleteForImportedMaster(ImportedExistingDocument $document): Collection
     {
-        return ImportedExistingDocumentRelation::query()
+        return $this->importedObsoleteChainForTarget(relatedImportedExistingDocumentId: $document->id);
+    }
+
+    private function importedObsoleteChainForTarget(
+        ?int $relatedDocumentId = null,
+        ?int $relatedImportedExistingDocumentId = null,
+        array $visitedImportedDocumentIds = [],
+    ): Collection {
+        if ($relatedDocumentId === null && $relatedImportedExistingDocumentId === null) {
+            return collect();
+        }
+
+        $relations = ImportedExistingDocumentRelation::query()
             ->with(['sourceDocument.businessProcess', 'sourceDocument.businessFunction'])
-            ->where('related_imported_existing_document_id', $document->id)
             ->where('relation_type', ImportedExistingDocumentRelation::SUPERSEDED_BY)
             ->whereHas('sourceDocument', fn ($query) => $query->where('document_state', ImportedExistingDocument::STATE_OBSOLETE))
-            ->get()
-            ->map(fn (ImportedExistingDocumentRelation $relation): object => $this->presentImportedObsoleteRow($relation->sourceDocument))
-            ->unique('source_id')
+            ->when(
+                $relatedDocumentId !== null,
+                fn ($query) => $query->where('related_document_id', $relatedDocumentId),
+                fn ($query) => $query->where('related_imported_existing_document_id', $relatedImportedExistingDocumentId),
+            )
+            ->get();
+
+        return $relations
+            ->flatMap(function (ImportedExistingDocumentRelation $relation) use ($visitedImportedDocumentIds): Collection {
+                $sourceDocument = $relation->sourceDocument;
+
+                if ($sourceDocument === null || in_array($sourceDocument->id, $visitedImportedDocumentIds, true)) {
+                    return collect();
+                }
+
+                $visitedImportedDocumentIds[] = $sourceDocument->id;
+
+                return collect([$this->presentImportedObsoleteRow($sourceDocument)])
+                    ->merge($this->importedObsoleteChainForTarget(
+                        relatedImportedExistingDocumentId: $sourceDocument->id,
+                        visitedImportedDocumentIds: $visitedImportedDocumentIds,
+                    ));
+            })
+            ->unique(fn (object $obsolete): string => $obsolete->source_type.'-'.$obsolete->source_id)
+            ->sortByDesc(fn (object $obsolete): int => $obsolete->tanggal_obsolete?->timestamp ?? $obsolete->tanggal_terbit?->timestamp ?? 0)
             ->values();
     }
 
