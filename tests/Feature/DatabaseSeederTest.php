@@ -2,12 +2,12 @@
 
 namespace Tests\Feature;
 
+use App\Models\BusinessFunction;
+use App\Models\BusinessProcess;
 use App\Models\Department;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\User;
-use App\Models\BusinessFunction;
-use App\Models\BusinessProcess;
 use Database\Seeders\DatabaseSeeder;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Tests\TestCase;

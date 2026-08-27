@@ -4,7 +4,6 @@ namespace Tests\Feature\Administration;
 
 use App\Livewire\Administration\ApprovalFlow\Index;
 use App\Models\ApprovalFlow;
-use App\Models\ApprovalFlowStage;
 use App\Models\DocumentLevel;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;

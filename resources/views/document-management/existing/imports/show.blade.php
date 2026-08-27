@@ -1,7 +1,7 @@
-<x-layouts::app :title="__('Detail Arsip Dokumen Obsolete Legacy')">
+<x-layouts::app :title="__('Detail Arsip Dokumen Existing')">
     <div class="space-y-6">
         <x-ui.page-header
-            title="Detail Arsip Dokumen Obsolete Legacy"
+            title="Detail Arsip Dokumen Existing"
             :description="$document->nama_dokumen"
         />
 
@@ -65,13 +65,13 @@
                             <div class="flex items-center justify-between gap-4 px-6 py-4">
                                 <div class="min-w-0">
                                     <p class="truncate font-semibold text-slate-800">{{ $file->original_file_name }}</p>
-                                    <p class="mt-1 text-xs font-medium text-slate-500">{{ $file->type_file === \App\Models\ImportedObsoleteDocumentFile::OBSOLETE_DOCUMENT ? 'File Dokumen' : 'Lampiran' }}</p>
+                                    <p class="mt-1 text-xs font-medium text-slate-500">{{ $file->type_file === \App\Models\ImportedExistingDocumentFile::OBSOLETE_DOCUMENT ? 'File Dokumen' : 'Lampiran' }}</p>
                                 </div>
                                 <div class="flex shrink-0 gap-2">
                                     @if (\Illuminate\Support\Str::of($file->original_file_name)->lower()->endsWith('.pdf'))
-                                        <x-ui.icon-button :href="route('documents.obsolete.imports.files.preview', [$document, $file])" icon="eye" label="Preview file" size="sm" />
+                                        <x-ui.icon-button :href="route('documents.existing.imports.files.preview', [$document, $file])" icon="eye" label="Preview file" size="sm" />
                                     @endif
-                                    <x-ui.icon-button :href="route('documents.obsolete.imports.files.show', [$document, $file])" icon="arrow-down-tray" label="Buka file" size="sm" />
+                                    <x-ui.icon-button :href="route('documents.existing.imports.files.show', [$document, $file])" icon="arrow-down-tray" label="Buka file" size="sm" />
                                 </div>
                             </div>
                         @empty
@@ -109,7 +109,7 @@
                         @forelse ($document->incomingImportedRelations as $relation)
                             <div class="rounded-lg border border-slate-200 px-4 py-3">
                                 <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    {{ $relation->relation_type === \App\Models\ImportedObsoleteDocumentRelation::SUPERSEDED_BY ? 'Menggantikan' : ($relationTypeOptions[$relation->relation_type] ?? $relation->relation_type) }}
+                                    {{ $relation->relation_type === \App\Models\ImportedExistingDocumentRelation::SUPERSEDED_BY ? 'Menggantikan' : ($relationTypeOptions[$relation->relation_type] ?? $relation->relation_type) }}
                                 </p>
                                 <p class="mt-1 font-semibold text-slate-800">{{ $relation->sourceDocument?->nama_dokumen ?: '-' }}</p>
                                 <p class="mt-1 text-sm text-slate-500">{{ $relation->sourceDocument?->nomor_dokumen ?: '-' }}</p>
@@ -123,3 +123,4 @@
         </div>
     </div>
 </x-layouts::app>
+

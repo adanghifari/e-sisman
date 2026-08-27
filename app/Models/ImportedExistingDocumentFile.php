@@ -7,7 +7,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
 #[Fillable([
-    'imported_obsolete_document_id',
+    'imported_existing_document_id',
     'type_file',
     'path_file',
     'uploaded_by',
@@ -15,14 +15,16 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'stored_file_name',
     'file_size',
 ])]
-class ImportedObsoleteDocumentFile extends Model
+class ImportedExistingDocumentFile extends Model
 {
-    public const OBSOLETE_DOCUMENT = 'obsolete_document';
+    public const EXISTING_DOCUMENT = 'existing_document';
+
+    public const OBSOLETE_DOCUMENT = self::EXISTING_DOCUMENT;
 
     public const ATTACHMENT = 'attachment';
 
     public const FILE_TYPES = [
-        self::OBSOLETE_DOCUMENT,
+        self::EXISTING_DOCUMENT,
         self::ATTACHMENT,
     ];
 
@@ -33,9 +35,9 @@ class ImportedObsoleteDocumentFile extends Model
         ];
     }
 
-    public function importedObsoleteDocument(): BelongsTo
+    public function importedExistingDocument(): BelongsTo
     {
-        return $this->belongsTo(ImportedObsoleteDocument::class);
+        return $this->belongsTo(ImportedExistingDocument::class);
     }
 
     public function uploader(): BelongsTo

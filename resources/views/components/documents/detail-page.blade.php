@@ -13,6 +13,11 @@
     'contentFiles' => collect(),
     'attachmentFiles' => collect(),
     'documentHistory' => collect(),
+    'relatedObsoleteDocuments' => collect(),
+    'showOwnerSection' => true,
+    'showApprovalHistory' => true,
+    'originNotice' => null,
+    'actionsNotice' => null,
 ])
 
 @php
@@ -25,11 +30,12 @@
         $document->businessFunction?->nama_proses_fungsi,
     ])->filter()->implode(' / ');
     $fileTypeLabels = [
-        'filled_template' => 'Template Dokumen',
-        'imported_document' => 'Dokumen Import',
-        'revision_content' => 'Isi Dokumen Versi Revisi',
-        'revision_form' => 'Lembar Revisi',
-        'attachment' => 'Lampiran',
+                        'filled_template' => 'Template Dokumen',
+                        'imported_document' => 'Dokumen Import',
+                        'existing_document' => 'Dokumen Existing',
+                        'revision_content' => 'Isi Dokumen Versi Revisi',
+                        'revision_form' => 'Lembar Revisi',
+                        'attachment' => 'Lampiran',
     ];
     $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
 @endphp
@@ -88,41 +94,49 @@
                             <dd class="text-sm font-bold text-slate-900">{{ $document->departments->map(fn ($department) => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department)->implode(', ') ?: '-' }}</dd>
                         </div>
                     </dl>
+
+                    @if (filled($originNotice))
+                        <div class="mx-6 mb-6 rounded-lg border border-sky-100 bg-sky-50 px-4 py-3 text-sm font-medium leading-6 text-sky-800">
+                            {{ $originNotice }}
+                        </div>
+                    @endif
                 </x-documents.form-section>
 
-                <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                    <div class="border-b border-slate-200 px-6 py-5">
-                        <h2 class="text-lg font-bold text-slate-900">{{ $ownerLabel }}</h2>
-                    </div>
-
-                    <div class="grid gap-4 px-6 py-6 md:grid-cols-2">
-                        <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                            <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pengisi Form</span>
-                            <div class="mt-2 flex items-center gap-2.5">
-                                <span class="grid size-9 shrink-0 place-items-center rounded-full bg-sky-100 text-xs font-bold text-sky-700">
-                                    {{ $document->creator?->initials() ?? '-' }}
-                                </span>
-                                <span class="min-w-0">
-                                    <span class="block truncate text-sm font-bold leading-tight text-slate-900">{{ $document->creator?->name ?? '-' }}</span>
-                                    <span class="mt-0.5 block truncate text-xs font-medium leading-tight text-slate-500">{{ $document->creator?->jabatan ?: $document->creator?->email }}</span>
-                                </span>
-                            </div>
+                @if ($showOwnerSection)
+                    <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                        <div class="border-b border-slate-200 px-6 py-5">
+                            <h2 class="text-lg font-bold text-slate-900">{{ $ownerLabel }}</h2>
                         </div>
 
-                        <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
-                            <span class="block text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Penyusun Resmi</span>
-                            <div class="mt-2 flex items-center gap-2.5">
-                                <span class="grid size-9 shrink-0 place-items-center rounded-full bg-white text-xs font-bold text-emerald-700 ring-1 ring-emerald-200">
-                                    {{ $document->officialPreparer?->initials() ?? '-' }}
-                                </span>
-                                <span class="min-w-0">
-                                    <span class="block truncate text-sm font-bold leading-tight text-slate-900">{{ $document->officialPreparer?->name ?? '-' }}</span>
-                                    <span class="mt-0.5 block truncate text-xs font-medium leading-tight text-slate-500">{{ $document->officialPreparer?->jabatan ?: $document->officialPreparer?->email }}</span>
-                                </span>
+                        <div class="grid gap-4 px-6 py-6 md:grid-cols-2">
+                            <div class="rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+                                <span class="block text-[11px] font-semibold uppercase tracking-wide text-slate-500">Pengisi Form</span>
+                                <div class="mt-2 flex items-center gap-2.5">
+                                    <span class="grid size-9 shrink-0 place-items-center rounded-full bg-sky-100 text-xs font-bold text-sky-700">
+                                        {{ $document->creator?->initials() ?? '-' }}
+                                    </span>
+                                    <span class="min-w-0">
+                                        <span class="block truncate text-sm font-bold leading-tight text-slate-900">{{ $document->creator?->name ?? '-' }}</span>
+                                        <span class="mt-0.5 block truncate text-xs font-medium leading-tight text-slate-500">{{ $document->creator?->jabatan ?: $document->creator?->email }}</span>
+                                    </span>
+                                </div>
+                            </div>
+
+                            <div class="rounded-lg border border-emerald-200 bg-emerald-50 px-3 py-3">
+                                <span class="block text-[11px] font-semibold uppercase tracking-wide text-emerald-700">Penyusun Resmi</span>
+                                <div class="mt-2 flex items-center gap-2.5">
+                                    <span class="grid size-9 shrink-0 place-items-center rounded-full bg-white text-xs font-bold text-emerald-700 ring-1 ring-emerald-200">
+                                        {{ $document->officialPreparer?->initials() ?? '-' }}
+                                    </span>
+                                    <span class="min-w-0">
+                                        <span class="block truncate text-sm font-bold leading-tight text-slate-900">{{ $document->officialPreparer?->name ?? '-' }}</span>
+                                        <span class="mt-0.5 block truncate text-xs font-medium leading-tight text-slate-500">{{ $document->officialPreparer?->jabatan ?: $document->officialPreparer?->email }}</span>
+                                    </span>
+                                </div>
                             </div>
                         </div>
-                    </div>
-                </section>
+                    </section>
+                @endif
 
                 <x-documents.form-section title="Isi Dokumen" icon="document-text">
                     <div class="space-y-4 px-6 py-6">
@@ -138,10 +152,16 @@
                                     </a>
                                 </div>
 
-                                <iframe
-                                    src="{{ route($fileRoutePrefix.'.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
-                                    class="min-h-[760px] w-full bg-white xl:h-[82vh]"
-                                ></iframe>
+                                @if (\Illuminate\Support\Str::of($file->original_file_name)->lower()->endsWith('.pdf'))
+                                    <iframe
+                                        src="{{ route($fileRoutePrefix.'.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                        class="min-h-[760px] w-full bg-white xl:h-[82vh]"
+                                    ></iframe>
+                                @else
+                                    <div class="px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                        Preview hanya tersedia untuk PDF. Gunakan tombol Buka untuk melihat file ini.
+                                    </div>
+                                @endif
                             </section>
                         @empty
                             <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
@@ -170,6 +190,26 @@
                         @endforelse
                     </div>
                 </x-documents.form-section>
+
+                @if ($relatedObsoleteDocuments->isNotEmpty())
+                    <x-documents.form-section title="Dokumen Obsolete Terkait" icon="archive-box-x-mark">
+                        <div class="space-y-3 px-6 py-6">
+                            @foreach ($relatedObsoleteDocuments as $obsolete)
+                                <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
+                                    <div class="min-w-0">
+                                        <p class="truncate text-sm font-bold uppercase tracking-wide text-slate-900">{{ $obsolete->nama_dokumen }}</p>
+                                        <p class="mt-1 text-xs font-medium text-slate-500">
+                                            {{ $obsolete->nomor_dokumen }} - Revisi {{ $obsolete->nomor_revisi }}
+                                        </p>
+                                    </div>
+                                    <a href="{{ $obsolete->detail_url }}" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50" wire:navigate>
+                                        Lihat
+                                    </a>
+                                </div>
+                            @endforeach
+                        </div>
+                    </x-documents.form-section>
+                @endif
             </div>
 
             <aside class="space-y-6 xl:sticky xl:top-8">
@@ -216,60 +256,70 @@
                     </div>
 
                     {{ $actions ?? '' }}
+
+                    @if (filled($actionsNotice))
+                        <div class="border-t border-dashed border-slate-200 px-6 py-5">
+                            <p class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-3 text-sm font-medium leading-6 text-slate-600">
+                                {{ $actionsNotice }}
+                            </p>
+                        </div>
+                    @endif
                 </section>
 
-                <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
-                    <div class="border-b border-slate-100 px-6 py-5">
-                        <h3 class="text-sm font-bold text-slate-900">Riwayat Approver</h3>
-                    </div>
-                    @php
-                        $approvalStageOrders = $approvalFlowStages
-                            ->mapWithKeys(fn ($stage) => [($stage->display_label ?: 'Approval') => $stage->stage_order]);
-                        $approvalHistory = $document->approvals
-                            ->reject(fn ($approval) => $approval->stages === 'TTD Penyusun Resmi')
-                            ->sortBy(fn ($approval) => sprintf(
-                                '%04d-%010d-%04d',
-                                $approvalStageOrders->get($approval->stages, 9999),
-                                $approval->assigned_at?->timestamp ?? 0,
-                                $approval->id,
-                            ))
-                            ->values();
-                    @endphp
-                    <div class="space-y-2 px-6 py-5">
-                        @forelse ($approvalHistory as $approval)
-                            @php
-                                $approvalStatusCode = $approval->status?->kode_status;
-                                $approvalTimestamp = $approval->responded_at;
-                                $approvalStatusTone = match ($approvalStatusCode) {
-                                    \App\Models\ApprovalStatus::PENDING => 'amber',
-                                    \App\Models\ApprovalStatus::WAITING => 'sky',
-                                    \App\Models\ApprovalStatus::APPROVED => 'emerald',
-                                    \App\Models\ApprovalStatus::REJECTED => 'red',
-                                    default => 'slate',
-                                };
-                            @endphp
-                            <div class="rounded-lg bg-slate-50 px-3 py-2">
-                                <div class="flex items-center justify-between gap-3">
-                                    <p class="truncate text-sm font-semibold text-slate-800">{{ $approval->approver?->name ?? '-' }}</p>
-                                    <x-ui.status-badge :label="$approval->status?->nama_status ?? '-'" :tone="$approvalStatusTone" />
+                @if ($showApprovalHistory)
+                    <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+                        <div class="border-b border-slate-100 px-6 py-5">
+                            <h3 class="text-sm font-bold text-slate-900">Riwayat Approver</h3>
+                        </div>
+                        @php
+                            $approvalStageOrders = $approvalFlowStages
+                                ->mapWithKeys(fn ($stage) => [($stage->display_label ?: 'Approval') => $stage->stage_order]);
+                            $approvalHistory = $document->approvals
+                                ->reject(fn ($approval) => $approval->stages === 'TTD Penyusun Resmi')
+                                ->sortBy(fn ($approval) => sprintf(
+                                    '%04d-%010d-%04d',
+                                    $approvalStageOrders->get($approval->stages, 9999),
+                                    $approval->assigned_at?->timestamp ?? 0,
+                                    $approval->id,
+                                ))
+                                ->values();
+                        @endphp
+                        <div class="space-y-2 px-6 py-5">
+                            @forelse ($approvalHistory as $approval)
+                                @php
+                                    $approvalStatusCode = $approval->status?->kode_status;
+                                    $approvalTimestamp = $approval->responded_at;
+                                    $approvalStatusTone = match ($approvalStatusCode) {
+                                        \App\Models\ApprovalStatus::PENDING => 'amber',
+                                        \App\Models\ApprovalStatus::WAITING => 'sky',
+                                        \App\Models\ApprovalStatus::APPROVED => 'emerald',
+                                        \App\Models\ApprovalStatus::REJECTED => 'red',
+                                        default => 'slate',
+                                    };
+                                @endphp
+                                <div class="rounded-lg bg-slate-50 px-3 py-2">
+                                    <div class="flex items-center justify-between gap-3">
+                                        <p class="truncate text-sm font-semibold text-slate-800">{{ $approval->approver?->name ?? '-' }}</p>
+                                        <x-ui.status-badge :label="$approval->status?->nama_status ?? '-'" :tone="$approvalStatusTone" />
+                                    </div>
+                                    <p class="mt-1 text-xs font-medium text-slate-500">{{ $approval->stages ?: 'Approval' }}</p>
+                                    @if ($approvalTimestamp)
+                                        <p class="mt-1 text-xs font-medium text-slate-500">
+                                            Diproses pada {{ $approvalTimestamp->translatedFormat('d M Y H:i:s') }}
+                                        </p>
+                                    @endif
+                                    @if ($approval->catatan)
+                                        <p class="mt-2 rounded-md bg-white px-2 py-1 text-xs text-slate-600">{{ $approval->catatan }}</p>
+                                    @endif
                                 </div>
-                                <p class="mt-1 text-xs font-medium text-slate-500">{{ $approval->stages ?: 'Approval' }}</p>
-                                @if ($approvalTimestamp)
-                                    <p class="mt-1 text-xs font-medium text-slate-500">
-                                        Diproses pada {{ $approvalTimestamp->translatedFormat('d M Y H:i:s') }}
-                                    </p>
-                                @endif
-                                @if ($approval->catatan)
-                                    <p class="mt-2 rounded-md bg-white px-2 py-1 text-xs text-slate-600">{{ $approval->catatan }}</p>
-                                @endif
-                            </div>
-                        @empty
-                            <p class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-6 text-center text-sm font-semibold text-slate-500">
-                                Belum ada riwayat approver.
-                            </p>
-                        @endforelse
-                    </div>
-                </section>
+                            @empty
+                                <p class="rounded-lg border border-dashed border-slate-200 bg-slate-50 px-3 py-6 text-center text-sm font-semibold text-slate-500">
+                                    Belum ada riwayat approver.
+                                </p>
+                            @endforelse
+                        </div>
+                    </section>
+                @endif
 
                 <x-documents.history-section :document-history="$documentHistory" />
             </aside>

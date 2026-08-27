@@ -7,6 +7,8 @@ use App\Models\ApprovalStatus;
 use App\Models\BusinessProcess;
 use App\Models\Document;
 use App\Models\DocumentLevel;
+use App\Models\DocumentNumberingSetup;
+use App\Models\DocumentNumberRegistry;
 use App\Models\DocumentType;
 use App\Models\StatusDocument;
 use Illuminate\Contracts\View\View;
@@ -223,6 +225,10 @@ class DocumentController extends Controller
                     $documentAttributes['reference'] = $lockedRevisionSource->reference;
                     $documentAttributes['nama_dokumen'] = $documentAttributes['nama_dokumen'] ?? $lockedRevisionSource->nama_dokumen;
                 } elseif ($currentDocumentNumber !== null) {
+                    if (($documentAttributes['submit_action'] ?? null) === 'submit') {
+                        $this->assertDocumentNumberAllowedForV2($currentDocumentNumber);
+                    }
+
                     $documentNumberLockAcquired = $this->acquireDocumentNumberLock($currentDocumentNumber);
                     $sameNumberDocuments = $this->lockedDocumentsForNumber($currentDocumentNumber);
                     $resubmittedFromId = $this->resubmittedFromIdForReusableNumber($sameNumberDocuments, $draft);
@@ -288,6 +294,7 @@ class DocumentController extends Controller
                 }
 
                 if ($submittedAt !== null) {
+                    $this->claimTDocumentNumber($document, $request->user()->id);
                     $this->recordOfficialPreparerApproval($document, $request->user()->id, $submittedAt);
                 }
 
@@ -744,6 +751,85 @@ class DocumentController extends Controller
                 StatusDocument::APPROVED,
                 StatusDocument::OBSOLETE,
             ], true);
+    }
+
+    private function assertDocumentNumberAllowedForV2(string $documentNumber): void
+    {
+        $numberParts = $this->numberParts($documentNumber);
+
+        if ($numberParts === null) {
+            return;
+        }
+
+        $setup = DocumentNumberingSetup::query()
+            ->where('scope_identifier', $numberParts['scope'])
+            ->lockForUpdate()
+            ->first();
+
+        if ($setup === null) {
+            return;
+        }
+
+        if ($numberParts['sequence'] < $setup->v2_start_number) {
+            throw ValidationException::withMessages([
+                'nomor_dokumen_suffix' => "Nomor dokumen berada pada reserved range existing. Mulai gunakan nomor {$setup->v2_start_number} untuk scope {$setup->scope_identifier}.",
+            ]);
+        }
+    }
+
+    private function claimTDocumentNumber(Document $document, int $userId): void
+    {
+        if (! filled($document->nomor_dokumen)) {
+            return;
+        }
+
+        $registry = DocumentNumberRegistry::query()
+            ->where('document_number', $document->nomor_dokumen)
+            ->lockForUpdate()
+            ->first();
+
+        if ($registry !== null && $registry->source_type !== DocumentNumberRegistry::SOURCE_T_DOCUMENT) {
+            throw ValidationException::withMessages([
+                'nomor_dokumen_suffix' => 'Nomor dokumen sudah terdaftar sebagai imported existing.',
+            ]);
+        }
+
+        DocumentNumberRegistry::updateOrCreate(
+            ['document_number' => $document->nomor_dokumen],
+            [
+                'scope_identifier' => $this->numberParts($document->nomor_dokumen)['scope'] ?? null,
+                'source_type' => DocumentNumberRegistry::SOURCE_T_DOCUMENT,
+                'source_id' => $document->id,
+                'registered_by' => $userId,
+                'registered_at' => now(),
+            ],
+        );
+    }
+
+    /**
+     * @return array{scope: string, sequence: int}|null
+     */
+    private function numberParts(string $documentNumber): ?array
+    {
+        $segments = collect(explode('-', $documentNumber))
+            ->map(fn (string $segment): string => trim($segment))
+            ->filter()
+            ->values();
+
+        if ($segments->count() < 2) {
+            return null;
+        }
+
+        $sequence = $segments->pop();
+
+        if (! ctype_digit($sequence)) {
+            return null;
+        }
+
+        return [
+            'scope' => $segments->implode('-'),
+            'sequence' => (int) $sequence,
+        ];
     }
 
     private function isReusableRejectedInitialAttempt(Document $document): bool
