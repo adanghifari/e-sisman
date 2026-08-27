@@ -4,7 +4,6 @@ namespace App\Http\Controllers\DocumentManagement;
 
 use App\Http\Controllers\Controller;
 use App\Models\ApprovalStatus;
-use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
 use App\Models\Document;
 use App\Models\DocumentLevel;
@@ -129,7 +128,6 @@ class DocumentController extends Controller
         abort_if($draft !== null && $draft->documentLevel?->kode !== $level, 404);
 
         if ($level === 'level-1') {
-            $validated = array_merge($validated, $this->defaultDocumentContext());
             $validated['submit_action'] = 'draft';
         }
 
@@ -142,14 +140,10 @@ class DocumentController extends Controller
         }
 
         if (($validated['submit_action'] ?? null) === 'draft') {
-            $defaultContext = $this->defaultDocumentContext();
             $validated['nama_dokumen'] = filled($validated['nama_dokumen'] ?? null)
                 ? $validated['nama_dokumen']
                 : 'Draft tanpa judul';
-            $validated['m_proses_bisnis_id'] = $validated['m_proses_bisnis_id'] ?? $defaultContext['m_proses_bisnis_id'];
-            $validated['m_proses_fungsi_id'] = $validated['m_proses_fungsi_id'] ?? $defaultContext['m_proses_fungsi_id'];
             $validated['department_ids'] = $validated['department_ids'] ?? [];
-            $validated['official_preparer_id'] = $validated['official_preparer_id'] ?? $request->user()->id;
         }
 
         $documentRevision = $revisionSource !== null
@@ -239,8 +233,8 @@ class DocumentController extends Controller
                     'm_document_level_id' => $documentLevel->id,
                     'm_status_document_id' => $status->id,
                     'm_document_types_id' => $documentType->id,
-                    'm_proses_bisnis_id' => $documentAttributes['m_proses_bisnis_id'],
-                    'm_proses_fungsi_id' => $documentAttributes['m_proses_fungsi_id'],
+                    'm_proses_bisnis_id' => $documentAttributes['m_proses_bisnis_id'] ?? null,
+                    'm_proses_fungsi_id' => $documentAttributes['m_proses_fungsi_id'] ?? null,
                     'user_id' => $request->user()->id,
                     'official_preparer_id' => $documentAttributes['official_preparer_id'] ?? null,
                     'reference' => $level === 'level-3' ? ($documentAttributes['reference'] ?? null) : null,
@@ -355,10 +349,6 @@ class DocumentController extends Controller
             ]);
         }
 
-        if ($level === 'level-1') {
-            $validated = array_merge($validated, $this->defaultDocumentContext());
-        }
-
         if ($revisionSource !== null) {
             $validated['m_proses_bisnis_id'] = $revisionSource->m_proses_bisnis_id;
             $validated['m_proses_fungsi_id'] = $revisionSource->m_proses_fungsi_id;
@@ -367,14 +357,10 @@ class DocumentController extends Controller
             $validated['nama_dokumen'] = $validated['nama_dokumen'] ?? $revisionSource->nama_dokumen;
         }
 
-        $defaultContext = $this->defaultDocumentContext();
         $validated['nama_dokumen'] = filled($validated['nama_dokumen'] ?? null)
             ? $validated['nama_dokumen']
             : 'Draft tanpa judul';
-        $validated['m_proses_bisnis_id'] = $validated['m_proses_bisnis_id'] ?? $defaultContext['m_proses_bisnis_id'];
-        $validated['m_proses_fungsi_id'] = $validated['m_proses_fungsi_id'] ?? $defaultContext['m_proses_fungsi_id'];
         $validated['department_ids'] = $validated['department_ids'] ?? [];
-        $validated['official_preparer_id'] = $validated['official_preparer_id'] ?? $request->user()->id;
 
         $documentNumber = $revisionSource !== null
             ? $this->revisionSourceMasterNumber($revisionSource)
@@ -394,8 +380,8 @@ class DocumentController extends Controller
                 'm_document_level_id' => $documentLevel->id,
                 'm_status_document_id' => $status->id,
                 'm_document_types_id' => $documentType->id,
-                'm_proses_bisnis_id' => $validated['m_proses_bisnis_id'],
-                'm_proses_fungsi_id' => $validated['m_proses_fungsi_id'],
+                'm_proses_bisnis_id' => $validated['m_proses_bisnis_id'] ?? null,
+                'm_proses_fungsi_id' => $validated['m_proses_fungsi_id'] ?? null,
                 'user_id' => $request->user()->id,
                 'official_preparer_id' => $validated['official_preparer_id'] ?? null,
                 'reference' => $documentLevel->kode === 'level-3' ? ($validated['reference'] ?? null) : null,
@@ -602,14 +588,19 @@ class DocumentController extends Controller
             }
         }
 
-        if (! filled($documentNumber)) {
-            return $draft;
-        }
-
-        return $this->draftQuery($request)
+        $query = $this->draftQuery($request)
             ->where('m_document_level_id', $documentLevel->id)
             ->where('revised_from', $revisionSource?->id)
-            ->where('request_type', $revisionSource !== null ? 'revision' : null)
+            ->where('request_type', $revisionSource !== null ? 'revision' : null);
+
+        if (! filled($documentNumber)) {
+            return $query
+                ->whereNull('nomor_dokumen')
+                ->latest('id')
+                ->first();
+        }
+
+        return $query
             ->where('nomor_dokumen', $documentNumber)
             ->latest('id')
             ->first();
@@ -906,17 +897,6 @@ class DocumentController extends Controller
         return $root;
     }
 
-    protected function defaultDocumentContext(): array
-    {
-        return [
-            'm_proses_bisnis_id' => BusinessProcess::query()->active()->orderBy('id')->value('id')
-                ?? BusinessProcess::query()->orderBy('id')->value('id'),
-            'm_proses_fungsi_id' => BusinessFunction::query()->active()->orderBy('id')->value('id')
-                ?? BusinessFunction::query()->orderBy('id')->value('id'),
-            'department_ids' => [],
-        ];
-    }
-
     protected function buildDocumentNumber(DocumentLevel $documentLevel, array $validated): ?string
     {
         $suffix = $validated['nomor_dokumen_suffix'] ?? null;
@@ -930,15 +910,27 @@ class DocumentController extends Controller
         if ($documentLevel->kode === 'level-1') {
             $segments[] = Str::upper(trim($suffix));
         } elseif ($documentLevel->kode === 'level-2') {
+            if (! filled($validated['m_proses_bisnis_id'] ?? null)) {
+                return null;
+            }
+
             $businessProcessCode = BusinessProcess::query()
                 ->whereKey($validated['m_proses_bisnis_id'])
                 ->value('kode');
 
-            $segments[] = $businessProcessCode ?: 'SMR';
+            if (! filled($businessProcessCode)) {
+                return null;
+            }
+
+            $segments[] = $businessProcessCode;
             $segments[] = Str::upper(trim($suffix));
         } elseif ($documentLevel->kode === 'level-4') {
             $segments[] = Str::upper(trim($suffix));
         } elseif ($documentLevel->kode === 'level-3') {
+            if (! filled($validated['reference'] ?? null)) {
+                return null;
+            }
+
             $segments = collect([$documentLevel->prefix])
                 ->merge($this->procedureNumberSegments((int) ($validated['reference'] ?? 0)))
                 ->push(Str::upper(trim($suffix)))

@@ -16,6 +16,61 @@ class DocumentAutosaveTest extends TestCase
 {
     use RefreshDatabase;
 
+    public function test_autosave_keeps_incomplete_draft_without_auto_picked_context_or_number(): void
+    {
+        [$user] = $this->autosaveFixture();
+
+        $response = $this->actingAs($user)
+            ->postJson(route('documents.autosave', 'level-2'), [
+                'nama_dokumen' => 'D',
+            ])
+            ->assertOk()
+            ->assertJson(['saved' => true]);
+
+        $draft = Document::query()->findOrFail($response->json('draft_id'));
+
+        $this->assertSame(StatusDocument::DRAFT, $draft->status->nama_status);
+        $this->assertSame('D', $draft->nama_dokumen);
+        $this->assertNull($draft->m_proses_bisnis_id);
+        $this->assertNull($draft->m_proses_fungsi_id);
+        $this->assertNull($draft->official_preparer_id);
+        $this->assertNull($draft->nomor_dokumen);
+    }
+
+    public function test_autosave_reuses_latest_incomplete_draft_when_browser_cannot_send_draft_id(): void
+    {
+        [$user] = $this->autosaveFixture();
+
+        $firstResponse = $this->actingAs($user)
+            ->postJson(route('documents.autosave', 'level-2'), [
+                'nama_dokumen' => 'Draft awal',
+            ])
+            ->assertOk()
+            ->assertJson(['saved' => true]);
+
+        $secondResponse = $this->actingAs($user)
+            ->postJson(route('documents.autosave', 'level-2'), [
+                'nama_dokumen' => 'Draft diperbarui',
+            ])
+            ->assertOk()
+            ->assertJson([
+                'saved' => true,
+                'draft_id' => $firstResponse->json('draft_id'),
+            ]);
+
+        $this->assertSame($firstResponse->json('draft_id'), $secondResponse->json('draft_id'));
+        $this->assertSame(1, Document::query()
+            ->where('user_id', $user->id)
+            ->whereNull('nomor_dokumen')
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::DRAFT))
+            ->count());
+        $this->assertDatabaseHas('t_document', [
+            'id' => $firstResponse->json('draft_id'),
+            'nama_dokumen' => 'Draft diperbarui',
+            'nomor_dokumen' => null,
+        ]);
+    }
+
     public function test_autosave_creates_and_updates_draft_for_same_document_number(): void
     {
         [$user, $businessProcess, $businessFunction, $department] = $this->autosaveFixture();
