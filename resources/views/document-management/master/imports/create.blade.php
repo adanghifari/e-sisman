@@ -204,16 +204,15 @@
                 </x-documents.form-section>
 
                 @if ($isObsoleteImport)
-                    <x-documents.form-section title="Dokumen Master Pengganti" icon="link">
+                    <x-documents.form-section title="Dokumen Pengganti" icon="link">
                         <div class="px-6 py-6">
                             <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Digantikan Oleh</span>
                             <x-ui.document-search-select
                                 name="replacement_reference"
-                                :documents="$masterReplacementDocumentOptions"
+                                :documents="$relationDocumentOptions"
                                 :value="old('replacement_reference')"
                                 placeholder="Belum ditentukan"
-                                empty-label="Tidak ada dokumen master pada proses/fungsi ini."
-                                filter-by-context
+                                empty-label="Dokumen tidak ditemukan."
                             />
                             @error('replacement_reference')
                                 <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -420,10 +419,12 @@
                 form.querySelectorAll('[data-document-search-select]').forEach((root) => {
                     const processSelect = form.querySelector('select[name="m_proses_bisnis_id"]');
                     const functionSelect = form.querySelector('select[name="m_proses_fungsi_id"]');
+                    const levelInput = form.querySelector('[name="m_document_level_id"]');
                     const input = root.querySelector('[data-document-search-input]');
                     const value = root.querySelector('[data-document-search-value]');
                     const trigger = root.querySelector('[data-document-search-trigger]');
                     const query = (input?.value || '').trim().toLowerCase();
+                    const levelId = levelInput?.value || '';
                     const processId = processSelect?.value || '';
                     const functionId = functionSelect?.value || '';
                     const filterByContext = root.dataset.filterByContext === 'true';
@@ -432,8 +433,10 @@
 
                     root.querySelectorAll('[data-document-search-option]').forEach((option) => {
                         const matchesContext = !filterByContext
-                            || (processId !== ''
+                            || (levelId !== ''
+                                && processId !== ''
                                 && functionId !== ''
+                                && option.dataset.documentLevelId === levelId
                                 && option.dataset.businessProcessId === processId
                                 && option.dataset.businessFunctionId === functionId);
                         const matchesSearch = query === '' || (option.dataset.search || '').includes(query);
@@ -448,7 +451,7 @@
                     });
 
                     root.querySelector('[data-document-search-empty]')?.classList.toggle('hidden', visibleCount > 0);
-                    trigger.disabled = filterByContext && (processId === '' || functionId === '');
+                    trigger.disabled = filterByContext && (levelId === '' || processId === '' || functionId === '');
 
                     if (!selectedStillVisible) {
                         clearDocumentSearch(root);

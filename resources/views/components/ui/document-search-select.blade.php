@@ -59,6 +59,8 @@
                     data-value="{{ $document['value'] }}"
                     data-name="{{ $document['label'] }}"
                     data-meta="{{ $document['meta'] ?? '' }}"
+                    data-is-master="{{ ! empty($document['is_master']) ? 'true' : 'false' }}"
+                    data-document-level-id="{{ $document['document_level_id'] }}"
                     data-business-process-id="{{ $document['business_process_id'] }}"
                     data-business-function-id="{{ $document['business_function_id'] }}"
                     data-search="{{ \Illuminate\Support\Str::lower(($document['label'] ?? '').' '.($document['meta'] ?? '')) }}"

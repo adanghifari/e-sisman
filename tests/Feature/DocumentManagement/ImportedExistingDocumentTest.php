@@ -244,25 +244,39 @@ class ImportedExistingDocumentTest extends TestCase
         ]);
         $this->createExistingDocument($user);
         $replacementDocument = ImportedExistingDocument::create([
-            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
             'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
             'm_document_level_id' => $level->id,
             'm_document_types_id' => $documentType->id,
             'm_proses_bisnis_id' => $businessProcess->id,
             'm_proses_fungsi_id' => $businessFunction->id,
             'uploaded_by' => $user->id,
-            'nama_dokumen' => 'Imported Master Pengganti',
-            'nomor_dokumen' => 'PS-SMR-IMPORTED-MASTER',
+            'nama_dokumen' => 'Imported Obsolete Versi 00.01',
+            'nomor_dokumen' => 'PS-SMR-OBSOLETE-001',
+            'nomor_revisi' => '00.01',
+        ]);
+        $wrongLevel = DocumentLevel::query()->where('kode', 'level-1')->firstOrFail();
+        ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $wrongLevel->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Master Salah Level',
+            'nomor_dokumen' => 'MS-SMR-WRONG-LEVEL',
             'nomor_revisi' => '00.00',
         ]);
 
         $this->actingAs($user)
             ->get(route('documents.obsolete.imports.create.level', 'level-2'))
             ->assertOk()
-            ->assertSee('Dokumen Master Pengganti')
+            ->assertSee('Dokumen Pengganti')
             ->assertSee('Digantikan Oleh')
-            ->assertSee('PS-SMR-IMPORTED-MASTER - Imported Master Pengganti')
-            ->assertSee('Imported Master')
+            ->assertSee('PS-SMR-OBSOLETE-001 - Imported Obsolete Versi 00.01')
+            ->assertSee('Arsip Obsolete')
+            ->assertSee('MS-SMR-WRONG-LEVEL')
             ->assertDontSee('Tambah Relasi');
 
         $this->actingAs($user)
