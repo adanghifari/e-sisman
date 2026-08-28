@@ -13,11 +13,16 @@ return new class extends Migration
         }
 
         Schema::create('imported_existing_document_departments', function (Blueprint $table): void {
-            $table->foreignId('imported_existing_document_id')
-                ->constrained('imported_existing_documents')
+            $table->unsignedBigInteger('imported_existing_document_id');
+            $table->unsignedBigInteger('department_id');
+
+            $table->foreign('imported_existing_document_id', 'ied_depts_document_fk')
+                ->references('id')
+                ->on('imported_existing_documents')
                 ->cascadeOnDelete();
-            $table->foreignId('department_id')
-                ->constrained('departments')
+            $table->foreign('department_id', 'ied_depts_department_fk')
+                ->references('id')
+                ->on('departments')
                 ->restrictOnDelete();
 
             $table->primary(
