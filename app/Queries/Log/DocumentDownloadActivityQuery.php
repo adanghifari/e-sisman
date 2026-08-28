@@ -33,15 +33,23 @@ class DocumentDownloadActivityQuery
         return $this->builder()
             ->limit($limit)
             ->get()
-            ->map(fn ($activity): array => [
-                'text' => sprintf(
-                    '%s mengunduh %s - %s',
-                    $activity->downloaded_by ?: '-',
-                    $activity->number ?: '-',
-                    $activity->name,
-                ),
-                'time' => Carbon::parse($activity->downloaded_at)->format('d/m/Y H:i'),
-            ]);
+            ->map(function ($activity): array {
+                $number = $activity->number ?: '-';
+                $revision = $this->formatRevision((int) $activity->revision);
+                $displayNumber = $this->isRevisionFormNumber($number)
+                    ? $number
+                    : trim($number.' '.$revision);
+
+                return [
+                    'text' => sprintf(
+                        '%s mengunduh %s - %s',
+                        $activity->downloaded_by ?: '-',
+                        $displayNumber,
+                        $activity->name,
+                    ),
+                    'time' => Carbon::parse($activity->downloaded_at)->format('d/m/Y H:i'),
+                ];
+            });
     }
 
     /**
@@ -55,9 +63,9 @@ class DocumentDownloadActivityQuery
             ->select([
                 't_document_download_logs.id as log_id',
                 't_document.id as document_id',
-                't_document.nama_dokumen as name',
-                't_document.nomor_dokumen as number',
-                't_document.nomor_revisi as revision',
+                DB::raw('COALESCE(t_document_download_logs.document_name_snapshot, t_document.nama_dokumen) as name'),
+                DB::raw('COALESCE(t_document_download_logs.document_number_snapshot, t_document.nomor_dokumen) as number'),
+                DB::raw('COALESCE(t_document_download_logs.document_revision_snapshot, t_document.nomor_revisi) as revision'),
                 DB::raw("COALESCE(users.name, '-') as downloaded_by"),
                 't_document_download_logs.downloaded_at',
                 DB::raw('(
@@ -74,10 +82,16 @@ class DocumentDownloadActivityQuery
                 ) as count'),
             ])
             ->when(($filters['document_name'] ?? '') !== '', function ($query) use ($filters): void {
-                $query->where('t_document.nama_dokumen', 'like', '%'.$filters['document_name'].'%');
+                $query->whereRaw(
+                    'COALESCE(t_document_download_logs.document_name_snapshot, t_document.nama_dokumen) like ?',
+                    ['%'.$filters['document_name'].'%'],
+                );
             })
             ->when(($filters['document_number'] ?? '') !== '', function ($query) use ($filters): void {
-                $query->where('t_document.nomor_dokumen', 'like', '%'.$filters['document_number'].'%');
+                $query->whereRaw(
+                    'COALESCE(t_document_download_logs.document_number_snapshot, t_document.nomor_dokumen) like ?',
+                    ['%'.$filters['document_number'].'%'],
+                );
             })
             ->when(($filters['downloaded_by'] ?? '') !== '', function ($query) use ($filters): void {
                 $query->where('users.name', 'like', '%'.$filters['downloaded_by'].'%');
@@ -96,6 +110,13 @@ class DocumentDownloadActivityQuery
             'downloaded_at' => Carbon::parse($activity->downloaded_at)->format('d/m/Y H:i'),
             'count' => (int) $activity->count,
         ];
+    }
+
+    private function isRevisionFormNumber(string $number): bool
+    {
+        return str_starts_with($number, 'FMPS-')
+            || str_starts_with($number, 'FMIK-')
+            || str_starts_with($number, 'FMSM-');
     }
 
     private function formatRevision(int $revision): string

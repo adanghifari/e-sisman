@@ -19,6 +19,8 @@ use Illuminate\Support\Collection;
     'official_preparer_id',
     'reference',
     'revised_from',
+    'imported_existing_source_id',
+    'resubmitted_from',
     'request_type',
     'nama_dokumen',
     'nomor_dokumen',
@@ -94,6 +96,21 @@ class Document extends Model
     public function revisedFrom(): BelongsTo
     {
         return $this->belongsTo(self::class, 'revised_from');
+    }
+
+    public function importedExistingSource(): BelongsTo
+    {
+        return $this->belongsTo(ImportedExistingDocument::class, 'imported_existing_source_id');
+    }
+
+    public function resubmittedFrom(): BelongsTo
+    {
+        return $this->belongsTo(self::class, 'resubmitted_from');
+    }
+
+    public function resubmissions(): HasMany
+    {
+        return $this->hasMany(self::class, 'resubmitted_from');
     }
 
     public function revisions(): HasMany
@@ -173,6 +190,7 @@ class Document extends Model
 
     public function files(): HasMany
     {
-        return $this->hasMany(DocumentFile::class, 't_document_id');
+        // Newer file records win when legacy/concurrent data contains duplicates.
+        return $this->hasMany(DocumentFile::class, 't_document_id')->orderByDesc('id');
     }
 }

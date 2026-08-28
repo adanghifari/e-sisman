@@ -12,6 +12,10 @@ use Illuminate\Support\Carbon;
  * @property int $t_document_id
  * @property int|null $t_document_file_id
  * @property int|null $user_id
+ * @property string|null $document_name_snapshot
+ * @property string|null $document_number_snapshot
+ * @property int|null $document_revision_snapshot
+ * @property string|null $download_context
  * @property Carbon $downloaded_at
  * @property string|null $ip_address
  * @property string|null $user_agent
@@ -19,6 +23,10 @@ use Illuminate\Support\Carbon;
 #[Fillable([
     't_document_id',
     't_document_file_id',
+    'document_name_snapshot',
+    'document_number_snapshot',
+    'document_revision_snapshot',
+    'download_context',
     'user_id',
     'downloaded_at',
     'ip_address',

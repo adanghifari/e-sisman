@@ -35,7 +35,10 @@
         ];
         $revisionMainFiles = $levelKey === 'level-4'
             ? collect(['revision_content', 'revision_form'])
-                ->map(fn ($type) => $contentFiles->firstWhere('type_file', $type))
+                ->map(fn ($type) => $contentFiles
+                    ->where('type_file', $type)
+                    ->sortByDesc('id')
+                    ->first())
                 ->filter()
                 ->values()
             : collect();
@@ -177,6 +180,11 @@
                     <div class="space-y-4 px-6 py-6">
                         @if ($isObsoleteRequest)
                             @forelse ($obsoleteSourceContentFiles as $file)
+                                @php
+                                    $obsoleteSourceFileRoutePrefix = $document->revisedFrom?->status?->nama_status === \App\Models\StatusDocument::OBSOLETE
+                                        ? 'documents.obsolete'
+                                        : 'documents.master';
+                                @endphp
                                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                                     <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
                                         <div class="min-w-0">
@@ -531,8 +539,7 @@
                                             {{ $stage->stage_order }}
                                         </span>
                                         <div class="min-w-0">
-                                            <h3 class="text-base font-bold text-slate-900">{{ $stage->keterangan ?: 'Tahap Approval' }}</h3>
-                                            <p class="mt-1 text-sm font-semibold text-slate-500">{{ $stage->nama_tahap }}</p>
+                                            <h3 class="text-base font-bold text-slate-900">{{ $stage->nama_tahap ?: 'Tahap Approval' }}</h3>
                                         </div>
                                     </div>
 

@@ -9,6 +9,7 @@ use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
 use App\Models\Department;
 use App\Models\Document;
+use App\Models\DocumentDownloadLog;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
@@ -457,6 +458,145 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Pengaju Riwayat');
     }
 
+    public function test_needs_process_initial_load_only_shows_first_fifteen_documents(): void
+    {
+        $approver = User::factory()->create();
+        $submitter = User::factory()->create();
+
+        foreach (range(1, 16) as $index) {
+            $document = $this->createDocument($submitter, [
+                'nama_dokumen' => sprintf('Batch Task %02d', $index),
+                'nomor_dokumen' => sprintf('PS-SMR-BATCH-%02d', $index),
+            ]);
+            $this->createApproval($document, $approver, ApprovalStatus::PENDING, [
+                'assigned_at' => now()->subMinutes(16 - $index),
+            ]);
+        }
+
+        $this->actingAs($approver)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee('Menampilkan 15 dari 16 dokumen')
+            ->assertSee('Batch Task 16')
+            ->assertSee('Batch Task 02')
+            ->assertDontSee('Batch Task 01');
+    }
+
+    public function test_needs_process_load_more_returns_next_fifteen_without_duplicates(): void
+    {
+        $approver = User::factory()->create();
+        $submitter = User::factory()->create();
+
+        foreach (range(1, 31) as $index) {
+            $document = $this->createDocument($submitter, [
+                'nama_dokumen' => sprintf('Load More Task %02d', $index),
+                'nomor_dokumen' => sprintf('PS-SMR-LOAD-%02d', $index),
+            ]);
+            $this->createApproval($document, $approver, ApprovalStatus::PENDING, [
+                'assigned_at' => now()->subMinutes(31 - $index),
+            ]);
+        }
+
+        $firstBatch = $this->actingAs($approver)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']));
+        $secondBatch = $this->actingAs($approver)
+            ->get(route('documents.inbox', [
+                'tab' => 'needs-process',
+                'load_more' => 1,
+                'needs_page' => 2,
+            ]));
+        $thirdBatch = $this->actingAs($approver)
+            ->get(route('documents.inbox', [
+                'tab' => 'needs-process',
+                'load_more' => 1,
+                'needs_page' => 3,
+            ]));
+
+        $firstBatch->assertOk()->assertSee('Load More Task 31')->assertDontSee('Load More Task 16');
+        $secondRows = $secondBatch->assertOk()->json('rows');
+        $thirdRows = $thirdBatch->assertOk()->json('rows');
+
+        $this->assertSame(15, substr_count($secondRows, '<tr'));
+        $this->assertStringContainsString('Load More Task 16', $secondRows);
+        $this->assertStringContainsString('Load More Task 02', $secondRows);
+        $this->assertStringNotContainsString('Load More Task 31', $secondRows);
+        $this->assertStringNotContainsString('Load More Task 01', $secondRows);
+        $this->assertSame(1, substr_count($thirdRows, '<tr'));
+        $this->assertStringContainsString('Load More Task 01', $thirdRows);
+    }
+
+    public function test_search_filters_against_full_history_before_batching(): void
+    {
+        $approver = User::factory()->create();
+        $submitter = User::factory()->create();
+
+        foreach (range(1, 20) as $index) {
+            $document = $this->createDocument($submitter, [
+                'nama_dokumen' => sprintf('Riwayat Umum %02d', $index),
+                'nomor_dokumen' => sprintf('PS-SMR-HISTORY-%02d', $index),
+            ]);
+            $this->createApproval($document, $approver, ApprovalStatus::APPROVED, [
+                'responded_at' => now()->subMinutes(20 - $index),
+            ]);
+        }
+
+        $target = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Riwayat Target Khusus',
+            'nomor_dokumen' => 'IK-KSA-TARGET',
+        ]);
+        $this->createApproval($target, $approver, ApprovalStatus::APPROVED, [
+            'responded_at' => now()->subDays(5),
+        ]);
+
+        $this->actingAs($approver)
+            ->get(route('documents.inbox', [
+                'tab' => 'processed-history',
+                'search' => 'IK-KSA-TARGET',
+            ]))
+            ->assertOk()
+            ->assertSee('Menampilkan 1 dari 1 dokumen')
+            ->assertSee('Riwayat Target Khusus')
+            ->assertDontSee('Riwayat Umum 20');
+    }
+
+    public function test_processed_history_load_more_uses_independent_history_page_parameter(): void
+    {
+        $approver = User::factory()->create();
+        $submitter = User::factory()->create();
+
+        foreach (range(1, 16) as $index) {
+            $document = $this->createDocument($submitter, [
+                'nama_dokumen' => sprintf('History Batch %02d', $index),
+                'nomor_dokumen' => sprintf('PS-SMR-HB-%02d', $index),
+            ]);
+            $this->createApproval($document, $approver, ApprovalStatus::APPROVED, [
+                'responded_at' => now()->subMinutes(16 - $index),
+            ]);
+        }
+
+        $this->actingAs($approver)
+            ->get(route('documents.inbox', [
+                'tab' => 'processed-history',
+                'needs_page' => 2,
+            ]))
+            ->assertOk()
+            ->assertSee('History Batch 16')
+            ->assertDontSee('History Batch 01');
+
+        $rows = $this->actingAs($approver)
+            ->get(route('documents.inbox', [
+                'tab' => 'processed-history',
+                'load_more' => 1,
+                'needs_page' => 2,
+                'history_page' => 2,
+            ]))
+            ->assertOk()
+            ->json('rows');
+
+        $this->assertSame(1, substr_count($rows, '<tr'));
+        $this->assertStringContainsString('History Batch 01', $rows);
+    }
+
     public function test_submitter_sees_pending_revision_in_needs_process_when_only_official_signature_exists(): void
     {
         $this->ensureApprovalStatuses();
@@ -763,11 +903,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Isi Dokumen')
             ->assertSee('Lampiran')
             ->assertSee('Riwayat Dokumen')
-            ->assertSee('Dibuat')
             ->assertSee('Diajukan')
-            ->assertSee('Disetujui')
-            ->assertSee('Ditolak')
-            ->assertSee('Dibatalkan')
             ->assertSee('Approve')
             ->assertSee('Tolak')
             ->assertDontSee('Assign Approver')
@@ -1359,8 +1495,8 @@ class DocumentInboxTest extends TestCase
                 ->where('t_document_id', $document->id)
                 ->where('user_id', $approver->id)
                 ->firstOrFail()
-            ->status
-            ->kode_status,
+                ->status
+                ->kode_status,
         );
     }
 
@@ -1520,8 +1656,9 @@ class DocumentInboxTest extends TestCase
             'approved_at' => now()->subDay(),
         ]);
 
+        $levelFour = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
         $revision = Document::create([
-            'm_document_level_id' => $source->m_document_level_id,
+            'm_document_level_id' => $levelFour->id,
             'm_status_document_id' => StatusDocument::query()->where('nama_status', StatusDocument::PROPOSED)->firstOrFail()->id,
             'm_document_types_id' => $source->m_document_types_id,
             'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
@@ -1529,6 +1666,7 @@ class DocumentInboxTest extends TestCase
             'user_id' => $submitter->id,
             'official_preparer_id' => $submitter->id,
             'revised_from' => $source->id,
+            'request_type' => 'revision',
             'nama_dokumen' => 'Instruksi Revisi',
             'nomor_dokumen' => 'FMIK-SMR-OLD',
             'nomor_revisi' => 1,
@@ -1537,7 +1675,7 @@ class DocumentInboxTest extends TestCase
         $revision->departments()->sync($source->departments()->pluck('departments.id')->all());
 
         $flow = ApprovalFlow::create([
-            'm_document_level_id' => $revision->m_document_level_id,
+            'm_document_level_id' => $source->m_document_level_id,
             'nama_flow' => 'Flow Revisi',
         ]);
         $stage = $flow->stages()->create([
@@ -1676,7 +1814,7 @@ class DocumentInboxTest extends TestCase
             'revised_from' => $source->id,
             'request_type' => 'obsolete',
             'nama_dokumen' => 'Master Akan Obsolete',
-            'nomor_dokumen' => 'FMPS-SMR-OBSOLETE',
+            'nomor_dokumen' => 'PS-SMR-OBSOLETE',
             'nomor_revisi' => $source->nomor_revisi,
             'catatan_revisi' => 'Dokumen sudah tidak digunakan lagi.',
             'submitted_at' => now(),
@@ -1735,7 +1873,7 @@ class DocumentInboxTest extends TestCase
             ->get(route('documents.approval.show', $request))
             ->assertOk()
             ->assertSee('Riwayat Dokumen')
-            ->assertSee('Dokumen diobsoletekan lewat pengajuan FMPS-SMR-OBSOLETE')
+            ->assertSee('Dokumen diobsoletekan lewat pengajuan PS-SMR-OBSOLETE')
             ->assertSee('Obsolete')
             ->assertSee(route('documents.approval.files.preview', [$request, $sourceFile]), false);
 
@@ -1751,6 +1889,79 @@ class DocumentInboxTest extends TestCase
             ->assertSee('PS-SMR-OBSOLETE')
             ->assertSee('Prosedur')
             ->assertDontSee('FMPS-SMR-OBSOLETE');
+    }
+
+    public function test_approved_obsolete_request_obsoletes_revision_master_document(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create();
+        $obsoleteRequester = User::factory()->create();
+        $approver = User::factory()->create();
+        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::OBSOLETE]);
+        $obsoleteRequestStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::PROPOSED]);
+        $originalMaster = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Master Original',
+            'nomor_dokumen' => 'PS-SMR-REV-OBS',
+            'nomor_revisi' => 0,
+            'm_status_document_id' => $approvedStatus->id,
+            'approved_at' => now()->subDays(2),
+        ]);
+        $revisionMaster = $this->createDocument($submitter, [
+            'nama_dokumen' => 'Master Revisi Aktif',
+            'nomor_dokumen' => 'PS-SMR-REV-OBS',
+            'nomor_revisi' => 1,
+            'revised_from' => $originalMaster->id,
+            'request_type' => 'revision',
+            'm_status_document_id' => $approvedStatus->id,
+            'approved_at' => now()->subDay(),
+        ]);
+        $request = Document::create([
+            'm_document_level_id' => $revisionMaster->m_document_level_id,
+            'm_status_document_id' => $obsoleteRequestStatus->id,
+            'm_document_types_id' => $revisionMaster->m_document_types_id,
+            'm_proses_bisnis_id' => $revisionMaster->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $revisionMaster->m_proses_fungsi_id,
+            'user_id' => $obsoleteRequester->id,
+            'official_preparer_id' => $submitter->id,
+            'revised_from' => $revisionMaster->id,
+            'request_type' => 'obsolete',
+            'nama_dokumen' => 'Master Revisi Aktif',
+            'nomor_dokumen' => 'PS-SMR-REV-OBS',
+            'nomor_revisi' => $revisionMaster->nomor_revisi,
+            'catatan_revisi' => 'Dokumen revisi sudah tidak digunakan.',
+            'submitted_at' => now(),
+        ]);
+        $request->departments()->sync($revisionMaster->departments()->pluck('departments.id')->all());
+
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $request->m_document_level_id,
+            'nama_flow' => 'Flow Obsolete Revisi',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Disahkan oleh',
+            'nama_tahap' => 'Manager',
+        ]);
+        $role = Role::query()->firstOrCreate(['nama_role' => $stage->nama_tahap]);
+
+        Approval::create([
+            't_document_id' => $request->id,
+            'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::PENDING)->id,
+            'user_id' => $approver->id,
+            'role_id' => $role->id,
+            'assigned_by' => $submitter->id,
+            'assigned_at' => now(),
+            'stages' => $stage->display_label,
+        ]);
+
+        $this->actingAs($approver)
+            ->post(route('documents.approval.approve', $request))
+            ->assertRedirect(route('documents.approval.show', $request));
+
+        $this->assertSame(StatusDocument::APPROVED, $request->refresh()->status->nama_status);
+        $this->assertSame(StatusDocument::OBSOLETE, $revisionMaster->refresh()->status->nama_status);
     }
 
     public function test_first_flow_stage_requires_manual_approver_selection(): void
@@ -1956,10 +2167,49 @@ class DocumentInboxTest extends TestCase
             ->assertOk();
     }
 
+    public function test_approval_download_logs_revision_request_number_snapshot(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
+        $document = $this->createDocument($user, [
+            'nama_dokumen' => 'Dokumen Revisi Approval',
+            'nomor_dokumen' => 'FMPS-SMR-SNAP',
+            'nomor_revisi' => 1,
+            'request_type' => 'revision',
+        ]);
+
+        Storage::disk('local')->put("documents/{$document->id}/revision-approval.pdf", 'approval revision content');
+        $file = DocumentFile::create([
+            't_document_id' => $document->id,
+            'type_file' => 'revision_content',
+            'path_file' => "documents/{$document->id}/revision-approval.pdf",
+            'uploaded_by' => $user->id,
+            'updated_at' => now(),
+            'original_file_name' => 'revision-approval.pdf',
+            'stored_file_name' => 'revision-approval.pdf',
+            'file_size' => 25,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.approval.files.show', [$document, $file]))
+            ->assertOk();
+
+        $log = DocumentDownloadLog::query()->firstOrFail();
+
+        $this->assertSame('approval', $log->download_context);
+        $this->assertSame('FMPS-SMR-SNAP', $log->document_number_snapshot);
+        $this->assertSame('Dokumen Revisi Approval', $log->document_name_snapshot);
+        $this->assertSame(1, $log->document_revision_snapshot);
+    }
+
     private function createDocument(User $user, array $attributes = []): Document
     {
-        $status = StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
-        $documentType = DocumentType::create(['nama_types' => 'Prosedur']);
+        $status = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::PROPOSED]);
+        $documentType = DocumentType::query()->firstOrCreate(['nama_types' => 'Prosedur']);
         $businessProcess = BusinessProcess::create([
             'kode' => fake()->unique()->lexify('???'),
             'nama_proses_bisnis' => fake()->unique()->words(3, true),
@@ -1968,10 +2218,10 @@ class DocumentInboxTest extends TestCase
             'kode' => fake()->unique()->lexify('???'),
             'nama_proses_fungsi' => fake()->unique()->words(3, true),
         ]);
-        $department = Department::create([
-            'kode_department' => 'QA',
-            'nama_department' => 'Quality Assurance',
-        ]);
+        $department = Department::query()->firstOrCreate(
+            ['kode_department' => 'QA'],
+            ['nama_department' => 'Quality Assurance'],
+        );
         $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
 
         $document = Document::create($attributes + [

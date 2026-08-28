@@ -133,8 +133,19 @@
         $documentNumberPrefix = $revisionSource
             ? ($levelKey === 'level-4' ? $levelFourPrefix : ($revisionPrefixes[$levelKey] ?? 'FM'.$documentPrefixes[$levelKey]))
             : $documentPrefixes[$levelKey];
+        $rejectedRevisionAttempt = $revisionSource
+            ? \App\Models\Document::query()
+                ->where('revised_from', $revisionSource->id)
+                ->where('request_type', 'revision')
+                ->whereNull('approved_at')
+                ->whereHas('status', fn ($query) => $query->where('nama_status', \App\Models\StatusDocument::REJECTED))
+                ->orderByDesc('nomor_revisi')
+                ->orderByDesc('rejected_at')
+                ->orderByDesc('id')
+                ->first()
+            : null;
         $latestRevisionNumber = $revisionSource
-            ? (int) $revisionSource->revisionFamily()->max('nomor_revisi')
+            ? ($rejectedRevisionAttempt?->nomor_revisi ?? (int) $revisionSource->revisionFamily()->max('nomor_revisi'))
             : null;
         $documentNumberSuffixDefault = $draft?->nomor_dokumen
             ? \Illuminate\Support\Str::afterLast($draft->nomor_dokumen, '-')
@@ -148,7 +159,7 @@
         $nextRevisionValue = $draft
             ? $draft->formatted_revision
             : ($revisionSource
-            ? \App\Models\Document::formatRevisionNumber(($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1)
+            ? \App\Models\Document::formatRevisionNumber($rejectedRevisionAttempt?->nomor_revisi ?? (($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1))
             : '00.00');
         $selectedBusinessProcess = $businessProcesses->firstWhere('id', (int) $selectedBusinessProcessId);
         $documentNumberProcessCode = $selectedBusinessProcess?->kode ?: 'SMR';
@@ -200,11 +211,9 @@
         </div>
 
         @if ($levelKey === 'level-1')
-            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]" data-document-autosave-form data-autosave-url="{{ route('documents.autosave', $levelKey) }}">
                 @csrf
-                @if ($draft)
-                    <input type="hidden" name="draft_id" value="{{ $draft->id }}">
-                @endif
+                <input type="hidden" name="draft_id" value="{{ $draft?->id }}" data-autosave-draft-id>
                 @if ($revisionSource)
                     <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
                 @endif
@@ -313,6 +322,9 @@
                     </div>
 
                     <div class="border-t border-dashed border-slate-200 px-6 py-5">
+                        <p class="mb-3 text-center text-xs font-semibold text-slate-500" data-autosave-status>
+                            Draft akan tersimpan otomatis saat Anda mengisi form.
+                        </p>
                         <button type="submit" class="inline-flex h-12 w-full items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
                             Import Dokumen
                         </button>
@@ -320,11 +332,9 @@
                 </aside>
             </form>
         @else
-            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]" data-document-create-form data-max-total-file-size-kb="25600">
+            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]" data-document-create-form data-document-autosave-form data-autosave-url="{{ route('documents.autosave', $levelKey) }}" data-max-total-file-size-kb="25600">
                 @csrf
-                @if ($draft)
-                    <input type="hidden" name="draft_id" value="{{ $draft->id }}">
-                @endif
+                <input type="hidden" name="draft_id" value="{{ $draft?->id }}" data-autosave-draft-id>
                 @if ($revisionSource)
                     <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
                 @endif
@@ -634,6 +644,9 @@
                         </div>
 
                         <div class="grid gap-3 border-t border-dashed border-slate-200 px-6 py-5 sm:grid-cols-2">
+                            <p class="text-center text-xs font-semibold text-slate-500 sm:col-span-2" data-autosave-status>
+                                Draft akan tersimpan otomatis saat Anda mengisi form.
+                            </p>
                             <button type="submit" name="submit_action" value="draft" formnovalidate class="inline-flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:bg-slate-50">
                                 Simpan Draft
                             </button>
@@ -646,6 +659,185 @@
             </form>
         @endif
     </div>
+
+    @once
+        <script>
+            (() => {
+                const AUTOSAVE_DELAY = 1500;
+                const autosaveForms = document.querySelectorAll('[data-document-autosave-form]');
+
+                if (autosaveForms.length === 0) {
+                    return;
+                }
+
+                const setStatus = (form, message, tone = 'muted') => {
+                    const status = form.querySelector('[data-autosave-status]');
+
+                    if (!status) {
+                        return;
+                    }
+
+                    status.textContent = message;
+                    status.classList.toggle('text-emerald-600', tone === 'success');
+                    status.classList.toggle('text-red-600', tone === 'error');
+                    status.classList.toggle('text-slate-500', tone === 'muted');
+                };
+
+                const hasMeaningfulPayload = (form) => {
+                    const fields = Array.from(form.querySelectorAll('input, select, textarea'))
+                        .filter((field) => !['_token', 'draft_id', 'revised_from'].includes(field.name || ''))
+                        .filter((field) => field.type !== 'file')
+                        .filter((field) => field.type !== 'hidden' || field.value);
+
+                    return fields.some((field) => {
+                        if (field.type === 'checkbox' || field.type === 'radio') {
+                            return field.checked;
+                        }
+
+                        return String(field.value || '').trim() !== '';
+                    }) || Array.from(form.querySelectorAll('input[type="file"]')).some((input) => (input.files || []).length > 0);
+                };
+
+                const autosavePayload = (form, includeFiles = false) => {
+                    const formData = new FormData();
+
+                    Array.from(form.elements).forEach((field) => {
+                        if (!field.name || field.disabled) {
+                            return;
+                        }
+
+                        if (field.type === 'submit' || field.type === 'button') {
+                            return;
+                        }
+
+                        if (field.type === 'file') {
+                            if (!includeFiles) {
+                                return;
+                            }
+
+                            Array.from(field.files || []).forEach((file) => {
+                                formData.append(field.name, file);
+                            });
+
+                            return;
+                        }
+
+                        if ((field.type === 'checkbox' || field.type === 'radio') && !field.checked) {
+                            return;
+                        }
+
+                        formData.append(field.name, field.value);
+                    });
+
+                    formData.set('submit_action', 'draft');
+
+                    return formData;
+                };
+
+                const applyAutosaveResponse = async (form, response) => {
+                    if (!response.ok) {
+                        setStatus(form, 'Autosave gagal. Draft manual masih tersedia.', 'error');
+                        return;
+                    }
+
+                    const payload = await response.json();
+
+                    if (!payload.saved) {
+                        return;
+                    }
+
+                    const draftInput = form.querySelector('[data-autosave-draft-id]');
+
+                    if (draftInput && payload.draft_id) {
+                        draftInput.value = payload.draft_id;
+                    }
+
+                    setStatus(form, `Draft tersimpan otomatis ${payload.saved_at || ''}`.trim(), 'success');
+                };
+
+                const autosave = async (form, includeFiles = false) => {
+                    if (form.dataset.autosaveSubmitting === 'true' || !hasMeaningfulPayload(form)) {
+                        return;
+                    }
+
+                    setStatus(form, 'Menyimpan draft otomatis...', 'muted');
+
+                    try {
+                        const response = await fetch(form.dataset.autosaveUrl, {
+                            method: 'POST',
+                            body: autosavePayload(form, includeFiles),
+                            credentials: 'same-origin',
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'Accept': 'application/json',
+                            },
+                            keepalive: !includeFiles,
+                        });
+
+                        await applyAutosaveResponse(form, response);
+                    } catch (error) {
+                        setStatus(form, 'Autosave belum berhasil. Perubahan berikutnya akan dicoba lagi.', 'error');
+                    }
+                };
+
+                const autosaveWithBeacon = (form) => {
+                    if (!navigator.sendBeacon || !hasMeaningfulPayload(form)) {
+                        return;
+                    }
+
+                    navigator.sendBeacon(form.dataset.autosaveUrl, autosavePayload(form, false));
+                };
+
+                autosaveForms.forEach((form) => {
+                    let autosaveTimer = null;
+
+                    const scheduleAutosave = () => {
+                        window.clearTimeout(autosaveTimer);
+                        autosaveTimer = window.setTimeout(() => autosave(form), AUTOSAVE_DELAY);
+                    };
+
+                    form.addEventListener('input', (event) => {
+                        if (event.target.closest('input[type="file"]')) {
+                            return;
+                        }
+
+                        scheduleAutosave();
+                    });
+
+                    form.addEventListener('change', (event) => {
+                        if (event.target.closest('input[type="file"]')) {
+                            autosave(form, true);
+                            return;
+                        }
+
+                        scheduleAutosave();
+                    });
+
+                    form.addEventListener('submit', () => {
+                        form.dataset.autosaveSubmitting = 'true';
+                    });
+
+                    document.addEventListener('visibilitychange', () => {
+                        if (document.visibilityState === 'hidden') {
+                            autosaveWithBeacon(form);
+                        }
+                    });
+
+                    window.addEventListener('beforeunload', () => {
+                        autosaveWithBeacon(form);
+                    });
+
+                    document.addEventListener('click', (event) => {
+                        const link = event.target.closest('a[href]');
+
+                        if (link && !link.href.includes('#')) {
+                            autosaveWithBeacon(form);
+                        }
+                    }, { capture: true });
+                });
+            })();
+        </script>
+    @endonce
 
     @once
         <script>

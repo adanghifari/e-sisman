@@ -5,6 +5,7 @@
     index-label="Dokumen Obsolete"
     :document="$document"
     :master-display-number="$masterDisplayNumber"
+    :revision-request-display-number="$revisionRequestDisplayNumber"
     stamp-label="Obsolete"
     stamp-tone="red"
     file-route-prefix="documents.obsolete"

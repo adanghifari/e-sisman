@@ -2,22 +2,27 @@
 
 namespace Tests\Feature\DocumentManagement;
 
-use App\Models\BusinessFunction;
-use App\Models\BusinessProcess;
-use App\Models\Department;
-use App\Models\Document;
-use App\Models\DocumentFile;
-use App\Models\DocumentLevel;
-use App\Models\DocumentType;
 use App\Models\Approval;
 use App\Models\ApprovalFlow;
 use App\Models\ApprovalFlowStage;
 use App\Models\ApprovalStatus;
+use App\Models\BusinessFunction;
+use App\Models\BusinessProcess;
+use App\Models\Department;
+use App\Models\Document;
+use App\Models\DocumentDownloadLog;
+use App\Models\DocumentFile;
+use App\Models\DocumentLevel;
+use App\Models\DocumentType;
+use App\Models\ImportedExistingDocument;
+use App\Models\ImportedExistingDocumentFile;
+use App\Models\ImportedExistingDocumentRelation;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class DocumentMasterTest extends TestCase
@@ -47,6 +52,190 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Master')
             ->assertDontSee('Dokumen Masih Proposed')
             ->assertDontSee('PS-SMR-PROP');
+    }
+
+    public function test_master_page_shows_import_master_button_for_user_with_permission(): void
+    {
+        $user = $this->userWithPermission('documents.master.imports.create');
+
+        $this->actingAs($user)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertSee('Import Dokumen Master')
+            ->assertSee(route('documents.master.imports.create'), false);
+    }
+
+    public function test_master_page_hides_import_master_button_without_permission(): void
+    {
+        $user = $this->userWithPermission('documents.master.view');
+
+        $this->actingAs($user)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertDontSee('Import Dokumen Master');
+    }
+
+    public function test_imported_existing_master_appears_in_master_page_and_search(): void
+    {
+        $user = $this->userWithPermission('documents.master.view');
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        [$level, $documentType, $businessProcess, $businessFunction] = $this->masterMetadata();
+
+        $this->createDocument($user, $approvedStatus, [
+            'nama_dokumen' => 'Workflow Master Normal',
+            'nomor_dokumen' => 'PS-SMR-WORKFLOW',
+        ]);
+
+        $importedMaster = $this->createImportedExistingMaster($user, [
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'nama_dokumen' => 'Imported Master Go Live',
+            'nomor_dokumen' => 'PS-SMR-IMPORT',
+            'nomor_revisi' => '00.00',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertSee('Workflow Master Normal')
+            ->assertSee('Imported Master Go Live')
+            ->assertSee('PS-SMR-IMPORT')
+            ->assertSee('Master')
+            ->assertSee(route('documents.master.imported.show', $importedMaster), false);
+
+        $this->actingAs($user)
+            ->get(route('documents.master', ['search' => 'Go Live']))
+            ->assertOk()
+            ->assertSee('Imported Master Go Live')
+            ->assertDontSee('Workflow Master Normal');
+    }
+
+    public function test_imported_existing_master_uses_master_detail_layout_and_imported_file_routes(): void
+    {
+        Storage::fake('local');
+
+        $user = $this->userWithPermission('documents.master.imported.detail');
+        [$level, $documentType, $businessProcess, $businessFunction] = $this->masterMetadata();
+        $importedMaster = $this->createImportedExistingMaster($user, [
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'nama_dokumen' => 'Imported Master Detail',
+            'nomor_dokumen' => 'PS-SMR-IMD',
+        ]);
+        Storage::disk('local')->put('documents/imported-existing/master-detail.pdf', "%PDF-1.4\nfixture");
+        $file = $importedMaster->files()->create([
+            'type_file' => ImportedExistingDocumentFile::EXISTING_DOCUMENT,
+            'path_file' => 'documents/imported-existing/master-detail.pdf',
+            'uploaded_by' => $user->id,
+            'original_file_name' => 'master-detail.pdf',
+            'stored_file_name' => 'master-detail.pdf',
+            'file_size' => 16,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.imported.show', $importedMaster))
+            ->assertOk()
+            ->assertSee('Detail Dokumen Master')
+            ->assertSee('Imported Master Detail')
+            ->assertSee('PS-SMR-IMD')
+            ->assertSee('Dokumen ini berasal dari imported existing master sebelum go-live')
+            ->assertSee(route('documents.existing.imports.files.show', [$importedMaster, $file]), false)
+            ->assertSee(route('documents.existing.imports.files.preview', [$importedMaster, $file]), false)
+            ->assertSee('Revisi');
+
+        $this->actingAs($user)
+            ->get(route('documents.existing.imports.files.preview', [$importedMaster, $file]))
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
+    }
+
+    public function test_imported_obsolete_related_to_master_appears_once(): void
+    {
+        $user = $this->userWithPermission('documents.master.view');
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $master = $this->createDocument($user, $approvedStatus, [
+            'nama_dokumen' => 'Master Dengan Obsolete Imported',
+            'nomor_dokumen' => 'PS-SMR-REL',
+        ]);
+        $obsolete = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
+            'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Obsolete Terkait',
+            'nomor_dokumen' => 'PS-SMR-REL-OLD',
+            'nomor_revisi' => 'Rev A',
+        ]);
+
+        ImportedExistingDocumentRelation::create([
+            'imported_existing_document_id' => $obsolete->id,
+            'related_document_id' => $master->id,
+            'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+            'created_by' => $user->id,
+        ]);
+        ImportedExistingDocumentRelation::create([
+            'imported_existing_document_id' => $obsolete->id,
+            'related_document_id' => $master->id,
+            'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+            'created_by' => $user->id,
+        ]);
+
+        $response = $this->actingAs($user)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertSee('Imported Obsolete Terkait')
+            ->assertSee('PS-SMR-REL-OLD');
+
+        $this->assertSame(1, substr_count($response->getContent(), 'PS-SMR-REL-OLD'));
+    }
+
+    public function test_master_download_logs_master_document_number_snapshot(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+
+        $source = $this->createDocument($user, $approvedStatus, [
+            'nama_dokumen' => 'Prosedur Sumber Revisi',
+            'nomor_dokumen' => 'PS-SMR-SNAP',
+            'nomor_revisi' => 0,
+        ]);
+        $revision = $this->createDocument($user, $approvedStatus, [
+            'nama_dokumen' => 'Prosedur Sumber Revisi',
+            'nomor_dokumen' => 'PS-SMR-SNAP',
+            'nomor_revisi' => 1,
+            'revised_from' => $source->id,
+            'request_type' => null,
+        ]);
+
+        Storage::disk('local')->put('documents/revision-master.pdf', 'master revision content');
+        $file = DocumentFile::create([
+            't_document_id' => $revision->id,
+            'type_file' => 'revision_content',
+            'path_file' => 'documents/revision-master.pdf',
+            'uploaded_by' => $user->id,
+            'original_file_name' => 'revision-master.pdf',
+            'stored_file_name' => 'revision-master.pdf',
+            'file_size' => 23,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.files.show', [$revision, $file]))
+            ->assertOk();
+
+        $log = DocumentDownloadLog::query()->firstOrFail();
+
+        $this->assertSame('master', $log->download_context);
+        $this->assertSame('PS-SMR-SNAP', $log->document_number_snapshot);
+        $this->assertSame('Prosedur Sumber Revisi', $log->document_name_snapshot);
+        $this->assertSame(1, $log->document_revision_snapshot);
     }
 
     public function test_master_page_does_not_show_approved_obsolete_request_transaction(): void
@@ -255,6 +444,7 @@ class DocumentMasterTest extends TestCase
             'nomor_dokumen' => 'FMPS-SMR-OBS-GRP',
             'nomor_revisi' => 1,
             'revised_from' => $rootDocument->id,
+            'request_type' => 'revision',
             'approved_at' => now()->subDays(2),
         ]);
         $latestRevision = $this->createDocument($user, $obsoleteStatus, [
@@ -262,6 +452,7 @@ class DocumentMasterTest extends TestCase
             'nomor_dokumen' => 'FMPS-SMR-OBS-GRP',
             'nomor_revisi' => 2,
             'revised_from' => $rootDocument->id,
+            'request_type' => 'revision',
             'approved_at' => now()->subDay(),
         ]);
 
@@ -292,13 +483,13 @@ class DocumentMasterTest extends TestCase
 
     public function test_obsolete_page_shows_add_button_for_user_with_create_permission(): void
     {
-        $user = $this->userWithPermission('documents.obsolete.create');
+        $user = $this->userWithPermission('documents.obsolete.imports.create');
 
         $this->actingAs($user)
             ->get(route('documents.obsolete'))
             ->assertOk()
             ->assertSee('Tambah Dokumen Obsolete')
-            ->assertSee(route('documents.master'), false);
+            ->assertSee(route('documents.obsolete.imports.create'), false);
     }
 
     public function test_user_role_can_read_obsolete_list_and_detail(): void
@@ -476,6 +667,7 @@ class DocumentMasterTest extends TestCase
         $source->refresh();
 
         $this->assertSame(StatusDocument::APPROVED, $revision->status->nama_status);
+        $this->assertSame('revision', $revision->request_type);
         $this->assertSame(StatusDocument::OBSOLETE, $source->status->nama_status);
         $this->assertSame($source->m_document_level_id, $revision->m_document_level_id);
         $this->assertSame($source->m_document_types_id, $revision->m_document_types_id);
@@ -489,6 +681,7 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Prosedur Ikatan Dinas SSO')
             ->assertSee('PS-KSA-02')
             ->assertSee('00.01')
+            ->assertDontSee('FMPS-KSA-02')
             ->assertSee('Tgl Obsolete')
             ->assertSee('00.00')
             ->assertSee('Obsolete');
@@ -496,11 +689,24 @@ class DocumentMasterTest extends TestCase
         $this->actingAs($submitter)
             ->get(route('documents.master.show', $revision))
             ->assertOk()
+            ->assertSee('Nomor Lembar Revisi')
+            ->assertSee('FMPS-KSA-02-01')
             ->assertSee('Isi Dokumen Versi Revisi')
             ->assertSee('dokumen-revisi.pdf')
             ->assertSee('Lembar Revisi')
             ->assertSee('lembar-revisi.pdf')
             ->assertDontSee('Belum ada file isi dokumen.');
+
+        $this->actingAs($submitter)
+            ->get(route('documents.approval.show', $revision))
+            ->assertOk()
+            ->assertSee('Nomor Lembar Revisi')
+            ->assertSee('FMPS-KSA-02-01');
+
+        $this->actingAs($submitter)
+            ->get(route('documents.approval.show', $revision))
+            ->assertOk()
+            ->assertSee('FMPS-KSA-02');
     }
 
     public function test_master_detail_shows_approval_history_sorted_by_stage_with_response_timestamp(): void
@@ -709,6 +915,57 @@ class DocumentMasterTest extends TestCase
             ->assertNotFound();
     }
 
+    public function test_obsolete_revision_detail_and_preview_accept_revision_transaction(): void
+    {
+        Storage::fake('local');
+
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        $user = $this->userWithPermission('documents.obsolete.detail');
+        $previewPermission = Permission::query()->firstOrCreate(
+            ['code' => 'documents.obsolete.preview'],
+            [
+                'name' => 'documents.obsolete.preview',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.obsolete.files.preview',
+                'action' => 'view',
+            ],
+        );
+        $user->roles()->firstOrFail()->permissions()->syncWithoutDetaching([$previewPermission->id]);
+        $master = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Master Sebelum Revisi',
+            'nomor_dokumen' => 'PS-SMR-REVISION',
+            'nomor_revisi' => 0,
+        ]);
+        $revision = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Master Sebelum Revisi',
+            'nomor_dokumen' => 'PS-SMR-REVISION',
+            'nomor_revisi' => 1,
+            'revised_from' => $master->id,
+            'request_type' => 'revision',
+        ]);
+        $file = DocumentFile::create([
+            't_document_id' => $revision->id,
+            'type_file' => 'revision_content',
+            'path_file' => "documents/{$revision->id}/revision.pdf",
+            'uploaded_by' => $user->id,
+            'original_file_name' => 'revision.pdf',
+            'stored_file_name' => 'revision.pdf',
+            'file_size' => 3,
+        ]);
+        Storage::disk('local')->put($file->path_file, "%PDF-1.4\n% revision fixture");
+
+        $this->actingAs($user)
+            ->get(route('documents.obsolete.show', $revision))
+            ->assertOk()
+            ->assertSee('Detail Dokumen Obsolete')
+            ->assertSee('revision.pdf');
+
+        $this->actingAs($user)
+            ->get(route('documents.obsolete.files.preview', [$revision, $file]))
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
+    }
+
     public function test_regular_user_cannot_restore_obsolete_document_as_master(): void
     {
         $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
@@ -847,6 +1104,7 @@ class DocumentMasterTest extends TestCase
             'nomor_dokumen' => 'FMPS-SMR-BLOCK',
             'nomor_revisi' => 3,
             'revised_from' => $rootDocument->id,
+            'request_type' => 'revision',
         ]);
         $newerRevision = $this->createDocument($owner, $obsoleteStatus, [
             'nama_dokumen' => 'Prosedur Restore Blocked Revisi 5',
@@ -861,12 +1119,22 @@ class DocumentMasterTest extends TestCase
         $documentControlAdmin = $this->userWithPermission('documents.obsolete.restore');
 
         $this->actingAs($documentControlAdmin)
+            ->get(route('documents.obsolete.show', $olderRevision))
+            ->assertOk()
+            ->assertDontSee('Jadikan Master');
+
+        $this->actingAs($documentControlAdmin)
             ->post(route('documents.obsolete.restore', $olderRevision))
             ->assertRedirect(route('documents.obsolete.show', $olderRevision))
             ->assertSessionHas('restore_warning.message', 'Versi terbaru 00.03 masih menjadi master. Silakan obsolete-kan versi terbaru dulu.');
 
         $this->assertSame(StatusDocument::OBSOLETE, $olderRevision->refresh()->status->nama_status);
         $this->assertSame(StatusDocument::APPROVED, $activeMaster->refresh()->status->nama_status);
+
+        $this->actingAs($documentControlAdmin)
+            ->get(route('documents.obsolete.show', $newerRevision))
+            ->assertOk()
+            ->assertDontSee('Jadikan Master');
 
         $this->actingAs($documentControlAdmin)
             ->post(route('documents.obsolete.restore', $newerRevision))
@@ -917,7 +1185,6 @@ class DocumentMasterTest extends TestCase
             'nama_dokumen' => 'Master Jadi Obsolete',
             'nomor_dokumen' => 'PS-SMR-OBS',
         ]);
-        DocumentType::create(['nama_types' => 'Form']);
         $documentDepartment = $document->departments()->firstOrFail();
         $obsoleteUser = $this->userWithoutPermission('documents.obsolete.create', [
             'm_department_id' => $documentDepartment->id,
@@ -937,8 +1204,9 @@ class DocumentMasterTest extends TestCase
             ->firstOrFail();
 
         $this->assertSame(StatusDocument::PROPOSED, $request->status->nama_status);
-        $this->assertSame('Form', $request->documentType->nama_types);
-        $this->assertSame('level-4', $request->documentLevel->kode);
+        $this->assertSame($document->documentType->nama_types, $request->documentType->nama_types);
+        $this->assertSame($document->documentLevel->kode, $request->documentLevel->kode);
+        $this->assertSame('PS-SMR-OBS', $request->nomor_dokumen);
         $this->assertSame('Dokumen sudah tidak digunakan.', $request->catatan_revisi);
     }
 
@@ -952,12 +1220,16 @@ class DocumentMasterTest extends TestCase
                 'route' => match ($permissionCode) {
                     'documents.master.view' => 'documents.master',
                     'documents.master.detail' => 'documents.master.show',
+                    'documents.master.imported.detail' => 'documents.master.imported.show',
+                    'documents.master.imports.create' => 'documents.master.imports.create',
                     'documents.obsolete.detail' => 'documents.obsolete.show',
+                    'documents.obsolete.imports.create' => 'documents.obsolete.imports.create',
+                    'documents.existing.imports.revision' => 'documents.existing.imports.revisions.store',
                     'documents.obsolete.restore' => 'documents.obsolete.restore',
                     default => 'documents.obsolete',
                 },
                 'action' => match ($permissionCode) {
-                    'documents.obsolete.create' => 'create',
+                    'documents.master.imports.create', 'documents.obsolete.create', 'documents.obsolete.imports.create', 'documents.existing.imports.revision' => 'create',
                     'documents.obsolete.restore' => 'restore',
                     default => 'view',
                 },
@@ -979,7 +1251,7 @@ class DocumentMasterTest extends TestCase
 
         $role->permissions()->syncWithoutDetaching([$masterDetailPermission->id]);
 
-        if (in_array($permissionCode, ['documents.obsolete.create', 'documents.obsolete.restore'], true)) {
+        if (in_array($permissionCode, ['documents.obsolete.create', 'documents.obsolete.imports.create', 'documents.obsolete.restore'], true)) {
             $viewPermission = Permission::query()->firstOrCreate(
                 ['code' => 'documents.obsolete.view'],
                 [
@@ -991,6 +1263,40 @@ class DocumentMasterTest extends TestCase
             );
 
             $role->permissions()->syncWithoutDetaching([$viewPermission->id]);
+        }
+
+        if (in_array($permissionCode, ['documents.master.imports.create', 'documents.master.imported.detail'], true)) {
+            $masterViewPermission = Permission::query()->firstOrCreate(
+                ['code' => 'documents.master.view'],
+                [
+                    'name' => 'documents.master.view',
+                    'module' => 'Manajemen Dokumen',
+                    'route' => 'documents.master',
+                    'action' => 'view',
+                ],
+            );
+
+            $role->permissions()->syncWithoutDetaching([$masterViewPermission->id]);
+        }
+
+        if ($permissionCode === 'documents.master.imported.detail') {
+            foreach ([
+                ['documents.existing.imports.revision', 'documents.existing.imports.revisions.store', 'create'],
+                ['documents.existing.imports.download', 'documents.existing.imports.files.show', 'download'],
+                ['documents.existing.imports.preview', 'documents.existing.imports.files.preview', 'preview'],
+            ] as [$code, $route, $action]) {
+                $permission = Permission::query()->firstOrCreate(
+                    ['code' => $code],
+                    [
+                        'name' => $code,
+                        'module' => 'Manajemen Dokumen',
+                        'route' => $route,
+                        'action' => $action,
+                    ],
+                );
+
+                $role->permissions()->syncWithoutDetaching([$permission->id]);
+            }
         }
 
         if ($permissionCode === 'documents.obsolete.restore') {
@@ -1024,7 +1330,7 @@ class DocumentMasterTest extends TestCase
     }
 
     /**
-     * @param array<string, mixed> $attributes
+     * @param  array<string, mixed>  $attributes
      */
     private function userWithoutPermission(string $permissionCode, array $attributes = []): User
     {
@@ -1036,6 +1342,7 @@ class DocumentMasterTest extends TestCase
                 'route' => match ($permissionCode) {
                     'documents.master.view' => 'documents.master',
                     'documents.master.detail' => 'documents.master.show',
+                    'documents.master.imported.detail' => 'documents.master.imported.show',
                     'documents.obsolete.detail' => 'documents.obsolete.show',
                     'documents.obsolete.restore' => 'documents.obsolete.restore',
                     default => 'documents.obsolete',
@@ -1063,6 +1370,42 @@ class DocumentMasterTest extends TestCase
         $user->roles()->attach($role);
 
         return $user->refresh();
+    }
+
+    private function masterMetadata(): array
+    {
+        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+        $documentType = DocumentType::create(['nama_types' => fake()->unique()->word()]);
+        $businessProcess = BusinessProcess::create([
+            'kode' => fake()->unique()->lexify('???'),
+            'nama_proses_bisnis' => fake()->unique()->words(3, true),
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => fake()->unique()->lexify('???'),
+            'nama_proses_fungsi' => fake()->unique()->words(3, true),
+            'm_proses_bisnis_id' => $businessProcess->id,
+        ]);
+
+        return [$level, $documentType, $businessProcess, $businessFunction];
+    }
+
+    private function createImportedExistingMaster(User $user, array $attributes = []): ImportedExistingDocument
+    {
+        [$level, $documentType, $businessProcess, $businessFunction] = $this->masterMetadata();
+
+        return ImportedExistingDocument::create($attributes + [
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Existing Master',
+            'nomor_dokumen' => 'PS-SMR-IMP',
+            'nomor_revisi' => '00.00',
+            'tanggal_terbit' => now()->toDateString(),
+        ]);
     }
 
     private function createDocument(User $user, StatusDocument $status, array $attributes = []): Document

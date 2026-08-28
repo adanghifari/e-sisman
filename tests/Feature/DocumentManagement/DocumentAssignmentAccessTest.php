@@ -131,7 +131,7 @@ class DocumentAssignmentAccessTest extends TestCase
     }
 
     /**
-     * @param array<int, Department> $departments
+     * @param  array<int, Department>  $departments
      */
     private function proposedDocumentForDepartments(array $departments): Document
     {

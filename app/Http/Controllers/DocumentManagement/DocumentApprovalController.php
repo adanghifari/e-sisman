@@ -11,9 +11,11 @@ use App\Models\Document;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
+use App\Models\ImportedExistingDocument;
+use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
-use App\Support\DocumentHistory;
 use App\Models\User;
+use App\Support\DocumentHistory;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -60,6 +62,7 @@ class DocumentApprovalController extends Controller
         return view('document-management.approval-detail', [
             'document' => $document,
             'masterDisplayNumber' => $this->masterDisplayNumber($document),
+            'revisionRequestDisplayNumber' => $this->revisionRequestDisplayNumber($document),
             'activeApproval' => $this->activeApproval($request, $document),
             'approvalFlowStages' => $this->approvalFlowStages($document),
             'approvalFlowDocumentLevel' => $this->approvalFlowDocumentLevel($document),
@@ -295,7 +298,12 @@ class DocumentApprovalController extends Controller
         $path = Storage::disk('local')->path($file->path_file);
         abort_unless(is_file($path), 404);
 
-        $recordDocumentDownload->handle($request, $downloadDocument, $file);
+        $recordDocumentDownload->handle($request, $downloadDocument, $file, [
+            'name' => $downloadDocument->nama_dokumen,
+            'number' => $this->approvalDownloadNumber($document, $downloadDocument),
+            'revision' => $downloadDocument->nomor_revisi,
+            'context' => 'approval',
+        ]);
 
         return response()->file($path, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
@@ -313,6 +321,9 @@ class DocumentApprovalController extends Controller
 
         return response()->file($sourcePath, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
         ]);
     }
 
@@ -327,6 +338,15 @@ class DocumentApprovalController extends Controller
         }
 
         abort(404);
+    }
+
+    private function approvalDownloadNumber(Document $document, Document $downloadDocument): ?string
+    {
+        if (filled($document->nomor_lembar_revisi)) {
+            return $document->nomor_lembar_revisi;
+        }
+
+        return $downloadDocument->nomor_dokumen;
     }
 
     private function authorizeDocumentAccess(Request $request, Document $document): void
@@ -429,6 +449,34 @@ class DocumentApprovalController extends Controller
             ?: '-';
     }
 
+    private function revisionRequestDisplayNumber(Document $document): ?string
+    {
+        if ($document->revised_from === null) {
+            return null;
+        }
+
+        if ($document->request_type === 'revision') {
+            return $document->nomor_dokumen ?: null;
+        }
+
+        $revisionRequest = Document::query()
+            ->where('revised_from', $document->revised_from)
+            ->where('request_type', 'revision')
+            ->where('nomor_revisi', $document->nomor_revisi)
+            ->latest('id')
+            ->first();
+
+        if ($revisionRequest?->nomor_dokumen) {
+            return $revisionRequest->nomor_dokumen;
+        }
+
+        $masterDisplayNumber = $this->masterDisplayNumber($document);
+
+        return $document->nomor_dokumen !== $masterDisplayNumber
+            ? $document->nomor_dokumen
+            : null;
+    }
+
     private function isDocumentAssignmentLocked(Document $document): bool
     {
         $lockedStatuses = [StatusDocument::APPROVED, StatusDocument::REJECTED];
@@ -454,6 +502,7 @@ class DocumentApprovalController extends Controller
     private function stageApproverIds(Request $request, Document $document, ApprovalFlowStage $stage): Collection
     {
         $inputKey = "stage_approvers.{$stage->id}";
+
         return collect($request->input($inputKey, []))
             ->filter()
             ->map(fn ($userId) => (int) $userId)
@@ -593,6 +642,12 @@ class DocumentApprovalController extends Controller
 
         $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
 
+        if ($document->imported_existing_source_id !== null && $document->request_type === 'revision') {
+            $this->finalizeImportedExistingRevisionApproval($document, $approvedStatus);
+
+            return;
+        }
+
         if ($document->revised_from !== null && $document->request_type !== 'obsolete') {
             $this->finalizeRevisionApproval($document, $approvedStatus);
 
@@ -633,12 +688,17 @@ class DocumentApprovalController extends Controller
             ->pluck('id')
             ->all();
         $familyIds = $document->revisionFamily()->pluck('id')->all();
+        /** @var Collection<int, Document> $lockedFamily */
         $lockedFamily = Document::query()
             ->whereIn('id', $familyIds)
             ->orderBy('id')
             ->lockForUpdate()
             ->get();
+
+        /** @var Document|null $lockedDocument */
         $lockedDocument = $lockedFamily->firstWhere('id', $document->id);
+
+        /** @var Document|null $source */
         $source = $lockedDocument !== null
             ? $lockedFamily->firstWhere('id', $lockedDocument->revised_from)
             : null;
@@ -667,12 +727,16 @@ class DocumentApprovalController extends Controller
 
         $lockedDocument->update([
             'm_document_level_id' => $source->m_document_level_id,
+            'm_status_document_id' => $approvedStatus->id,
             'm_document_types_id' => $source->m_document_types_id,
+            'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
+            'user_id' => $document->user_id,
+            'official_preparer_id' => $document->official_preparer_id,
             'reference' => $source->reference,
             'nomor_dokumen' => $source->nomor_dokumen,
             'nomor_lembar_revisi' => $lockedDocument->nomor_lembar_revisi
                 ?: $this->revisionFormNumber($source, (int) $lockedDocument->nomor_revisi),
-            'm_status_document_id' => $approvedStatus->id,
             'approved_at' => now(),
             'rejected_at' => null,
         ]);
@@ -689,6 +753,55 @@ class DocumentApprovalController extends Controller
             ->update([
                 'm_status_document_id' => $obsoleteStatus->id,
             ]);
+    }
+
+    private function finalizeImportedExistingRevisionApproval(Document $document, StatusDocument $approvedStatus): void
+    {
+        if ($document->imported_existing_source_id === null || $document->request_type !== 'revision') {
+            return;
+        }
+
+        $lockedDocument = Document::query()
+            ->whereKey($document->id)
+            ->lockForUpdate()
+            ->firstOrFail();
+        $source = ImportedExistingDocument::query()
+            ->whereKey($document->imported_existing_source_id)
+            ->lockForUpdate()
+            ->firstOrFail();
+
+        if ($source->document_state !== ImportedExistingDocument::STATE_MASTER) {
+            throw new ConflictHttpException('Imported existing master sumber sudah berubah.');
+        }
+
+        $lockedDocument->update([
+            'm_document_level_id' => $source->m_document_level_id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $source->m_document_types_id,
+            'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
+            'nomor_dokumen' => $source->nomor_dokumen,
+            'approved_at' => now(),
+            'rejected_at' => null,
+        ]);
+
+        $source->update([
+            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
+            'tanggal_obsolete' => $lockedDocument->tanggal_terbit ?? now()->toDateString(),
+        ]);
+
+        ImportedExistingDocumentRelation::query()->updateOrCreate(
+            [
+                'imported_existing_document_id' => $source->id,
+                'related_document_id' => $lockedDocument->id,
+                'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+            ],
+            [
+                'related_imported_existing_document_id' => null,
+                'keterangan' => 'Digantikan oleh revisi V2 hasil approval.',
+                'created_by' => $lockedDocument->user_id,
+            ],
+        );
     }
 
     private function revisionFormNumber(Document $source, int $revision): string
@@ -724,13 +837,18 @@ class DocumentApprovalController extends Controller
 
         Document::query()
             ->whereKey($document->revised_from)
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('request_type')
+                    ->orWhere('request_type', '!=', 'obsolete');
+            })
             ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::APPROVED))
             ->update([
                 'm_status_document_id' => $obsoleteStatus->id,
             ]);
     }
 
-    private function obsoletePreviousApprovedRevisions(Document $document, StatusDocument $approvedStatus): void
+    private function obsoletePreviousApprovedMasterDocuments(Document $document, StatusDocument $approvedStatus): void
     {
         if ($document->revised_from === null) {
             return;
@@ -740,6 +858,7 @@ class DocumentApprovalController extends Controller
 
         $document->revisionFamily()
             ->where('id', '!=', $document->id)
+            ->filter(fn (Document $revision): bool => $revision->request_type !== 'obsolete')
             ->where('m_status_document_id', $approvedStatus->id)
             ->each(function (Document $revision) use ($obsoleteStatus): void {
                 $revision->update([

@@ -1,7 +1,8 @@
 <?php
 
-namespace App\Http\Controllers;
+namespace App\Http\Controllers\Dashboard;
 
+use App\Http\Controllers\Controller;
 use App\Http\Controllers\DocumentManagement\DocumentInboxController;
 use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
@@ -32,8 +33,7 @@ class DashboardController extends Controller
         Request $request,
         DocumentInboxController $documentInboxController,
         DocumentDownloadActivityQuery $activityQuery,
-    ): View
-    {
+    ): View {
         $counts = $documentInboxController->dashboardCounts($request);
 
         return view('main.dashboard', [
@@ -145,17 +145,16 @@ class DashboardController extends Controller
 
     private function masterDocumentBaseQuery()
     {
-        $approvedStatusId = StatusDocument::query()
-            ->where('nama_status', StatusDocument::APPROVED)
-            ->value('id');
+        $documentStatusIds = StatusDocument::query()
+            ->whereIn('nama_status', [
+                StatusDocument::APPROVED,
+                StatusDocument::OBSOLETE,
+            ])
+            ->pluck('id');
 
         return Document::query()
-            ->where('m_status_document_id', $approvedStatusId)
-            ->where(function ($query): void {
-                $query
-                    ->whereNull('request_type')
-                    ->orWhere('request_type', '!=', 'obsolete');
-            });
+            ->whereIn('m_status_document_id', $documentStatusIds)
+            ->whereNull('request_type');
     }
 
     private function chartDataset(Collection $items): array
