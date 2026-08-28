@@ -86,7 +86,7 @@ class ImportedExistingDocumentController extends Controller
 
     public function createMaster(): View
     {
-        $documentLevels = collect(config('document-levels'))
+        $documentLevels = collect(config('document-levels', []))
             ->except('level-4')
             ->all();
 
@@ -102,7 +102,7 @@ class ImportedExistingDocumentController extends Controller
 
     public function storeMasterLevel(Request $request, string $level): RedirectResponse
     {
-        $levelConfig = config("document-levels.{$level}");
+        $levelConfig = config('document-levels', [])[$level] ?? null;
         abort_if($levelConfig === null, 404);
 
         $documentLevelRecord = DocumentLevel::query()->where('kode', $level)->firstOrFail();
@@ -121,7 +121,7 @@ class ImportedExistingDocumentController extends Controller
 
     public function createObsolete(): View
     {
-        $documentLevels = collect(config('document-levels'))
+        $documentLevels = collect(config('document-levels', []))
             ->except('level-4')
             ->all();
 
@@ -205,7 +205,7 @@ class ImportedExistingDocumentController extends Controller
 
     public function storeObsoleteLevel(Request $request, string $level): RedirectResponse
     {
-        $levelConfig = config("document-levels.{$level}");
+        $levelConfig = config('document-levels', [])[$level] ?? null;
         abort_if($levelConfig === null, 404);
 
         $documentLevelRecord = DocumentLevel::query()->where('kode', $level)->firstOrFail();
@@ -223,7 +223,7 @@ class ImportedExistingDocumentController extends Controller
 
     private function createCurrentRuleImportLevel(string $level, string $documentState): View
     {
-        $levelConfig = config("document-levels.{$level}");
+        $levelConfig = config('document-levels', [])[$level] ?? null;
         abort_if($levelConfig === null, 404);
 
         $documentLevelRecord = DocumentLevel::query()->where('kode', $level)->first();
