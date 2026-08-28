@@ -539,8 +539,7 @@
                                             {{ $stage->stage_order }}
                                         </span>
                                         <div class="min-w-0">
-                                            <h3 class="text-base font-bold text-slate-900">{{ $stage->keterangan ?: 'Tahap Approval' }}</h3>
-                                            <p class="mt-1 text-sm font-semibold text-slate-500">{{ $stage->nama_tahap }}</p>
+                                            <h3 class="text-base font-bold text-slate-900">{{ $stage->nama_tahap ?: 'Tahap Approval' }}</h3>
                                         </div>
                                     </div>
 

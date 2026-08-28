@@ -24,7 +24,6 @@ return new class extends Migration
             $table->id();
             $table->foreignId('m_approval_flow_id')->constrained('m_approval_flows')->cascadeOnDelete();
             $table->unsignedInteger('stage_order');
-            $table->string('keterangan')->nullable();
             $table->string('nama_tahap');
             $table->timestamps();
 
