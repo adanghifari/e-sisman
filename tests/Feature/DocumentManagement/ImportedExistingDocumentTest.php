@@ -242,13 +242,27 @@ class ImportedExistingDocumentTest extends TestCase
             'documents.obsolete.imports.create-level',
             'documents.obsolete.imports.store-level',
         ]);
-        $replacementDocument = $this->createExistingDocument($user);
+        $this->createExistingDocument($user);
+        $replacementDocument = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Master Pengganti',
+            'nomor_dokumen' => 'PS-SMR-IMPORTED-MASTER',
+            'nomor_revisi' => '00.00',
+        ]);
 
         $this->actingAs($user)
             ->get(route('documents.obsolete.imports.create.level', 'level-2'))
             ->assertOk()
             ->assertSee('Dokumen Master Pengganti')
             ->assertSee('Digantikan Oleh')
+            ->assertSee('PS-SMR-IMPORTED-MASTER - Imported Master Pengganti')
+            ->assertSee('Imported Master')
             ->assertDontSee('Tambah Relasi');
 
         $this->actingAs($user)
@@ -263,7 +277,7 @@ class ImportedExistingDocumentTest extends TestCase
                 'nomor_revisi' => '00.00',
                 'tanggal_obsolete' => '2026-08-28',
                 'obsolete_document' => UploadedFile::fake()->create('existing-obsolete.pdf', 100, 'application/pdf'),
-                'replacement_document_id' => $replacementDocument->id,
+                'replacement_reference' => 'imported-'.$replacementDocument->id,
             ])
             ->assertRedirect();
 
@@ -279,7 +293,7 @@ class ImportedExistingDocumentTest extends TestCase
         $this->assertSame('2026-08-28', $document->tanggal_obsolete?->toDateString());
         $this->assertSame(ImportedExistingDocumentFile::OBSOLETE_DOCUMENT, $document->files()->firstOrFail()->type_file);
         $this->assertTrue($document->outgoingRelations()
-            ->where('related_document_id', $replacementDocument->id)
+            ->where('related_imported_existing_document_id', $replacementDocument->id)
             ->where('relation_type', ImportedExistingDocumentRelation::SUPERSEDED_BY)
             ->exists());
     }

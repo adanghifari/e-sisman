@@ -18,7 +18,6 @@ use App\Models\StatusDocument;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
-use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -343,10 +342,14 @@ class ImportedExistingDocumentController extends Controller
                 );
             }
 
-            if (filled($validated['replacement_document_id'] ?? null)) {
+            if ($replacementRelation = $this->replacementRelationAttributes(
+                $validated['replacement_reference'] ?? null,
+                (int) ($validated['m_proses_bisnis_id'] ?? 0),
+                (int) ($validated['m_proses_fungsi_id'] ?? 0),
+            )) {
                 $document->outgoingRelations()->create([
-                    'related_imported_existing_document_id' => null,
-                    'related_document_id' => $validated['replacement_document_id'],
+                    'related_imported_existing_document_id' => $replacementRelation['related_imported_existing_document_id'],
+                    'related_document_id' => $replacementRelation['related_document_id'],
                     'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
                     'keterangan' => 'Digantikan oleh dokumen master.',
                     'created_by' => $request->user()->id,
@@ -546,7 +549,7 @@ class ImportedExistingDocumentController extends Controller
             'obsolete_document' => ['required_without:existing_document', 'file', 'mimes:pdf,doc,docx,xls,xlsx', 'max:10240'],
             'attachments' => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'mimes:pdf,doc,docx,xls,xlsx', 'max:10240'],
-            'replacement_document_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+            'replacement_reference' => ['nullable', 'string', 'max:255'],
             'relations' => ['nullable', 'array', 'max:20'],
             'relations.*.related_imported_existing_document_id' => ['nullable', 'integer', Rule::exists('imported_existing_documents', 'id')],
             'relations.*.related_document_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
@@ -594,11 +597,15 @@ class ImportedExistingDocumentController extends Controller
         }
 
         if (
-            filled($validated['replacement_document_id'] ?? null)
-            && ! $this->masterReplacementDocumentOptions()->contains('id', (int) $validated['replacement_document_id'])
+            filled($validated['replacement_reference'] ?? null)
+            && $this->replacementRelationAttributes(
+                $validated['replacement_reference'],
+                (int) ($validated['m_proses_bisnis_id'] ?? 0),
+                (int) ($validated['m_proses_fungsi_id'] ?? 0),
+            ) === null
         ) {
             throw ValidationException::withMessages([
-                'replacement_document_id' => 'Pilih dokumen master pengganti yang valid.',
+                'replacement_reference' => 'Pilih dokumen master pengganti yang valid.',
             ]);
         }
 
@@ -763,14 +770,14 @@ class ImportedExistingDocumentController extends Controller
         ];
     }
 
-    private function masterReplacementDocumentOptions(): Collection
+    private function masterReplacementDocumentOptions(): array
     {
         $approvedStatusId = StatusDocument::query()
             ->where('nama_status', StatusDocument::APPROVED)
             ->value('id');
 
-        return Document::query()
-            ->select(['id', 'nama_dokumen', 'nomor_dokumen'])
+        $workflowMasters = Document::query()
+            ->select(['id', 'nama_dokumen', 'nomor_dokumen', 'm_proses_bisnis_id', 'm_proses_fungsi_id'])
             ->when($approvedStatusId, fn ($query) => $query->where('m_status_document_id', $approvedStatusId))
             ->where(function ($query): void {
                 $query
@@ -779,6 +786,114 @@ class ImportedExistingDocumentController extends Controller
             })
             ->orderBy('nama_dokumen')
             ->get();
+
+        $importedMasters = ImportedExistingDocument::query()
+            ->select(['id', 'nama_dokumen', 'nomor_dokumen', 'm_proses_bisnis_id', 'm_proses_fungsi_id'])
+            ->where('document_state', ImportedExistingDocument::STATE_MASTER)
+            ->orderBy('nama_dokumen')
+            ->get();
+
+        return $workflowMasters
+            ->toBase()
+            ->map(fn (Document $document): array => [
+                'value' => 'existing-'.$document->id,
+                'label' => $this->documentOptionLabel($document),
+                'meta' => 'Master V2',
+                'business_process_id' => $document->m_proses_bisnis_id,
+                'business_function_id' => $document->m_proses_fungsi_id,
+            ])
+            ->merge(
+                $importedMasters
+                    ->toBase()
+                    ->map(fn (ImportedExistingDocument $document): array => [
+                        'value' => 'imported-'.$document->id,
+                        'label' => $this->documentOptionLabel($document),
+                        'meta' => 'Imported Master',
+                        'business_process_id' => $document->m_proses_bisnis_id,
+                        'business_function_id' => $document->m_proses_fungsi_id,
+                    ]),
+            )
+            ->sortBy('label')
+            ->values()
+            ->all();
+    }
+
+    private function replacementRelationAttributes(
+        ?string $replacementReference,
+        ?int $businessProcessId = null,
+        ?int $businessFunctionId = null,
+    ): ?array
+    {
+        if (! filled($replacementReference)) {
+            return null;
+        }
+
+        $parts = explode('-', $replacementReference, 2);
+
+        if (count($parts) !== 2) {
+            return null;
+        }
+
+        [$type, $id] = $parts;
+        $id = (int) $id;
+
+        if ($type === 'existing' && $this->validWorkflowMasterReplacement($id, $businessProcessId, $businessFunctionId)) {
+            return [
+                'related_imported_existing_document_id' => null,
+                'related_document_id' => $id,
+            ];
+        }
+
+        if ($type === 'imported' && $this->validImportedMasterReplacement($id, $businessProcessId, $businessFunctionId)) {
+            return [
+                'related_imported_existing_document_id' => $id,
+                'related_document_id' => null,
+            ];
+        }
+
+        return null;
+    }
+
+    private function validWorkflowMasterReplacement(
+        int $id,
+        ?int $businessProcessId = null,
+        ?int $businessFunctionId = null,
+    ): bool
+    {
+        $approvedStatusId = StatusDocument::query()
+            ->where('nama_status', StatusDocument::APPROVED)
+            ->value('id');
+
+        return Document::query()
+            ->whereKey($id)
+            ->when($approvedStatusId, fn ($query) => $query->where('m_status_document_id', $approvedStatusId))
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('request_type')
+                    ->orWhere('request_type', '!=', 'obsolete');
+            })
+            ->when($businessProcessId, fn ($query) => $query->where('m_proses_bisnis_id', $businessProcessId))
+            ->when($businessFunctionId, fn ($query) => $query->where('m_proses_fungsi_id', $businessFunctionId))
+            ->exists();
+    }
+
+    private function validImportedMasterReplacement(
+        int $id,
+        ?int $businessProcessId = null,
+        ?int $businessFunctionId = null,
+    ): bool
+    {
+        return ImportedExistingDocument::query()
+            ->whereKey($id)
+            ->where('document_state', ImportedExistingDocument::STATE_MASTER)
+            ->when($businessProcessId, fn ($query) => $query->where('m_proses_bisnis_id', $businessProcessId))
+            ->when($businessFunctionId, fn ($query) => $query->where('m_proses_fungsi_id', $businessFunctionId))
+            ->exists();
+    }
+
+    private function documentOptionLabel(Document|ImportedExistingDocument $document): string
+    {
+        return trim(($document->nomor_dokumen ? $document->nomor_dokumen.' - ' : '').$document->nama_dokumen);
     }
 
     /**

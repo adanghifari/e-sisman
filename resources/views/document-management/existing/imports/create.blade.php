@@ -138,13 +138,16 @@
                             @enderror
                             @unless ($isMasterImport)
                                 <div class="md:col-span-2">
-                                    <x-ui.select
-                                        label="Digantikan Oleh"
-                                        name="replacement_document_id"
-                                        :value="old('replacement_document_id')"
-                                        :options="['' => 'Belum ditentukan'] + $masterReplacementDocumentOptions->mapWithKeys(fn ($document) => [$document->id => trim(($document->nomor_dokumen ? $document->nomor_dokumen.' - ' : '').$document->nama_dokumen)])->all()"
+                                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Digantikan Oleh</span>
+                                    <x-ui.document-search-select
+                                        name="replacement_reference"
+                                        :documents="$masterReplacementDocumentOptions"
+                                        :value="old('replacement_reference')"
+                                        placeholder="Belum ditentukan"
+                                        empty-label="Tidak ada dokumen master pada proses/fungsi ini."
+                                        filter-by-context
                                     />
-                                    @error('replacement_document_id')
+                                    @error('replacement_reference')
                                         <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                     @enderror
                                 </div>
@@ -380,6 +383,134 @@
 
                 syncRuleFields();
             }
+
+            const closeDocumentSearch = (root) => {
+                root?.querySelector('[data-document-search-panel]')?.classList.add('hidden');
+                root?.querySelector('[data-document-search-trigger]')?.setAttribute('aria-expanded', 'false');
+            };
+
+            const clearDocumentSearch = (root) => {
+                root.querySelector('[data-document-search-value]').value = '';
+                root.querySelector('[data-document-search-name]').textContent = root.dataset.placeholder || 'Pilih dokumen';
+                const meta = root.querySelector('[data-document-search-meta]');
+                meta.textContent = '';
+                meta.classList.add('hidden');
+            };
+
+            const setDocumentSearch = (root, option) => {
+                const value = root.querySelector('[data-document-search-value]');
+                const meta = root.querySelector('[data-document-search-meta]');
+
+                value.value = option.dataset.value || '';
+                root.querySelector('[data-document-search-name]').textContent = option.dataset.name || root.dataset.placeholder || 'Pilih dokumen';
+                meta.textContent = option.dataset.meta || '';
+                meta.classList.toggle('hidden', !meta.textContent);
+                value.dispatchEvent(new Event('change', { bubbles: true }));
+            };
+
+            const syncDocumentSearchOptions = (form) => {
+                form.querySelectorAll('[data-document-search-select]').forEach((root) => {
+                    const processSelect = form.querySelector('select[name="m_proses_bisnis_id"]');
+                    const functionSelect = form.querySelector('select[name="m_proses_fungsi_id"]');
+                    const input = root.querySelector('[data-document-search-input]');
+                    const value = root.querySelector('[data-document-search-value]');
+                    const trigger = root.querySelector('[data-document-search-trigger]');
+                    const query = (input?.value || '').trim().toLowerCase();
+                    const processId = processSelect?.value || '';
+                    const functionId = functionSelect?.value || '';
+                    const filterByContext = root.dataset.filterByContext === 'true';
+                    let visibleCount = 0;
+                    let selectedStillVisible = value.value === '';
+
+                    root.querySelectorAll('[data-document-search-option]').forEach((option) => {
+                        const matchesContext = !filterByContext
+                            || (processId !== ''
+                                && functionId !== ''
+                                && option.dataset.businessProcessId === processId
+                                && option.dataset.businessFunctionId === functionId);
+                        const matchesSearch = query === '' || (option.dataset.search || '').includes(query);
+                        const isVisible = matchesContext && matchesSearch;
+
+                        option.classList.toggle('hidden', !isVisible);
+                        visibleCount += isVisible ? 1 : 0;
+
+                        if (value.value !== '' && option.dataset.value === value.value && isVisible) {
+                            selectedStillVisible = true;
+                        }
+                    });
+
+                    root.querySelector('[data-document-search-empty]')?.classList.toggle('hidden', visibleCount > 0);
+                    trigger.disabled = filterByContext && (processId === '' || functionId === '');
+
+                    if (!selectedStillVisible) {
+                        clearDocumentSearch(root);
+                    }
+                });
+            };
+
+            document.querySelectorAll('form').forEach((form) => {
+                syncDocumentSearchOptions(form);
+            });
+
+            document.addEventListener('change', (event) => {
+                if (!event.target.closest('select[name="m_proses_bisnis_id"], select[name="m_proses_fungsi_id"]')) {
+                    return;
+                }
+
+                const form = event.target.closest('form');
+                if (form) {
+                    syncDocumentSearchOptions(form);
+                }
+            });
+
+            document.addEventListener('input', (event) => {
+                if (!event.target.closest('[data-document-search-input]')) {
+                    return;
+                }
+
+                const form = event.target.closest('form');
+                if (form) {
+                    syncDocumentSearchOptions(form);
+                }
+            });
+
+            document.addEventListener('click', (event) => {
+                const trigger = event.target.closest('[data-document-search-trigger]');
+
+                if (trigger) {
+                    const root = trigger.closest('[data-document-search-select]');
+                    document.querySelectorAll('[data-document-search-select]').forEach((picker) => {
+                        if (picker !== root) {
+                            closeDocumentSearch(picker);
+                        }
+                    });
+                    root?.querySelector('[data-document-search-panel]')?.classList.toggle('hidden');
+                    trigger.setAttribute('aria-expanded', String(!root?.querySelector('[data-document-search-panel]')?.classList.contains('hidden')));
+                    root?.querySelector('[data-document-search-input]')?.focus();
+                    return;
+                }
+
+                const option = event.target.closest('[data-document-search-option]');
+
+                if (option && !option.classList.contains('hidden')) {
+                    const root = option.closest('[data-document-search-select]');
+                    setDocumentSearch(root, option);
+                    closeDocumentSearch(root);
+                    return;
+                }
+
+                document.querySelectorAll('[data-document-search-select]').forEach((root) => {
+                    if (!root.contains(event.target)) {
+                        closeDocumentSearch(root);
+                    }
+                });
+            });
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    document.querySelectorAll('[data-document-search-select]').forEach(closeDocumentSearch);
+                }
+            });
 
             const root = document.querySelector('[data-imported-existing-relations]');
 
