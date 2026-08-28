@@ -15,6 +15,7 @@ return new class extends Migration
             $table->id();
             $table->foreignId('t_document_id')->constrained('t_document')->cascadeOnDelete();
             $table->foreignId('source_document_file_id')->constrained('t_document_files')->restrictOnDelete();
+            $table->string('artifact_type', 30);
             $table->unsignedInteger('generation_number');
             $table->string('generation_status', 30)->default('pending');
             $table->string('path_file');
@@ -26,9 +27,9 @@ return new class extends Migration
             $table->text('generation_error')->nullable();
             $table->timestamps();
 
-            $table->unique(['t_document_id', 'generation_number'], 'document_final_artifacts_document_generation_unique');
+            $table->unique(['t_document_id', 'artifact_type', 'generation_number'], 'document_final_artifacts_document_type_generation_unique');
             $table->unique('path_file', 'document_final_artifacts_path_unique');
-            $table->index(['t_document_id', 'generation_status'], 'document_final_artifacts_document_status_index');
+            $table->index(['t_document_id', 'artifact_type', 'generation_status'], 'document_final_artifacts_document_type_status_index');
         });
     }
 

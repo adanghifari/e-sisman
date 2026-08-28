@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 #[Fillable([
     't_document_id',
     'source_document_file_id',
+    'artifact_type',
     'generation_number',
     'generation_status',
     'path_file',
@@ -21,6 +22,10 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class DocumentFinalArtifact extends Model
 {
+    public const TYPE_FINAL_DOCUMENT = 'final_document';
+
+    public const TYPE_APPROVAL_SHEET = 'approval_sheet';
+
     public const STATUS_PENDING = 'pending';
 
     public const STATUS_PROCESSING = 'processing';

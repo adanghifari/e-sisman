@@ -22,8 +22,11 @@ class FinalArtifactGenerator
      *
      * This method intentionally does not render, merge, stamp, or write a PDF.
      */
-    public function prepare(Document $document, ?User $generatedBy = null): FinalArtifactPreparation
-    {
+    public function prepare(
+        Document $document,
+        ?User $generatedBy = null,
+        string $artifactType = DocumentFinalArtifact::TYPE_FINAL_DOCUMENT,
+    ): FinalArtifactPreparation {
         $document->loadMissing([
             'status',
             'documentLevel',
@@ -44,7 +47,7 @@ class FinalArtifactGenerator
         }
 
         $payload = $this->buildPayload($document, $sourceFile);
-        $artifact = $this->createPendingArtifact($document, $sourceFile, $generatedBy);
+        $artifact = $this->createPendingArtifact($document, $sourceFile, $generatedBy, $artifactType);
 
         return new FinalArtifactPreparation($artifact, $payload);
     }
@@ -191,31 +194,37 @@ class FinalArtifactGenerator
         Document $document,
         DocumentFile $sourceFile,
         ?User $generatedBy,
+        string $artifactType,
     ): DocumentFinalArtifact {
-        return DB::transaction(function () use ($document, $sourceFile, $generatedBy): DocumentFinalArtifact {
+        return DB::transaction(function () use ($document, $sourceFile, $generatedBy, $artifactType): DocumentFinalArtifact {
             $generationNumber = ((int) DocumentFinalArtifact::query()
                 ->where('t_document_id', $document->id)
+                ->where('artifact_type', $artifactType)
                 ->lockForUpdate()
                 ->max('generation_number')) + 1;
-            $fileName = $this->generatedFileName($document, $generationNumber);
+            $fileName = $this->generatedFileName($document, $generationNumber, $artifactType);
 
             return DocumentFinalArtifact::query()->create([
                 't_document_id' => $document->id,
                 'source_document_file_id' => $sourceFile->id,
+                'artifact_type' => $artifactType,
                 'generation_number' => $generationNumber,
                 'generation_status' => DocumentFinalArtifact::STATUS_PENDING,
-                'path_file' => "documents/final/{$document->id}/{$generationNumber}/{$fileName}",
+                'path_file' => "documents/final/{$document->id}/{$artifactType}/{$generationNumber}/{$fileName}",
                 'generated_file_name' => $fileName,
                 'generated_by' => $generatedBy?->id,
             ]);
         });
     }
 
-    private function generatedFileName(Document $document, int $generationNumber): string
+    private function generatedFileName(Document $document, int $generationNumber, string $artifactType): string
     {
         $baseName = Str::slug($document->nomor_dokumen ?: $document->nama_dokumen) ?: 'document';
+        $prefix = $artifactType === DocumentFinalArtifact::TYPE_APPROVAL_SHEET
+            ? 'approval-sheet'
+            : 'final';
 
-        return "final-{$baseName}-g{$generationNumber}.pdf";
+        return "{$prefix}-{$baseName}-g{$generationNumber}.pdf";
     }
 
     private function stageOrderFromCurrentFlow(Document $document, Approval $approval): ?int

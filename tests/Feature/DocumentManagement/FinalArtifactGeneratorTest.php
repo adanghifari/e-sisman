@@ -49,9 +49,10 @@ class FinalArtifactGeneratorTest extends TestCase
         $artifact = $preparation->artifact;
         $this->assertSame($document->id, $artifact->t_document_id);
         $this->assertSame($sourceFile->id, $artifact->source_document_file_id);
+        $this->assertSame(DocumentFinalArtifact::TYPE_FINAL_DOCUMENT, $artifact->artifact_type);
         $this->assertSame(1, $artifact->generation_number);
         $this->assertSame(DocumentFinalArtifact::STATUS_PENDING, $artifact->generation_status);
-        $this->assertStringStartsWith("documents/final/{$document->id}/1/final-ps-smr-final-g1", $artifact->path_file);
+        $this->assertStringStartsWith("documents/final/{$document->id}/final_document/1/final-ps-smr-final-g1", $artifact->path_file);
         $this->assertSame($generatorUser->id, $artifact->generated_by);
         $this->assertNull($artifact->generated_at);
         $this->assertNull($artifact->checksum_sha256);
