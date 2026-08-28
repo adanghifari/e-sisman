@@ -10,11 +10,6 @@ class UpdateApprovalFlowStage
     public function handle(ApprovalFlowStage $stage, array $data): ApprovalFlowStage
     {
         $validated = Validator::make($data, [
-            'keterangan' => [
-                'nullable',
-                'string',
-                'max:255',
-            ],
             'nama_tahap' => [
                 'required',
                 'string',
@@ -23,7 +18,6 @@ class UpdateApprovalFlowStage
         ])->validate();
 
         $stage->update([
-            'keterangan' => filled($validated['keterangan'] ?? null) ? trim($validated['keterangan']) : null,
             'nama_tahap' => trim($validated['nama_tahap']),
         ]);
 
