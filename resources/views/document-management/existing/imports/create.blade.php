@@ -136,6 +136,19 @@
                             @error('m_proses_fungsi_id')
                                 <span class="text-sm font-semibold text-red-500">{{ $message }}</span>
                             @enderror
+                            @unless ($isMasterImport)
+                                <div class="md:col-span-2">
+                                    <x-ui.select
+                                        label="Digantikan Oleh"
+                                        name="replacement_document_id"
+                                        :value="old('replacement_document_id')"
+                                        :options="['' => 'Belum ditentukan'] + $masterReplacementDocumentOptions->mapWithKeys(fn ($document) => [$document->id => trim(($document->nomor_dokumen ? $document->nomor_dokumen.' - ' : '').$document->nama_dokumen)])->all()"
+                                    />
+                                    @error('replacement_document_id')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </div>
+                            @endunless
                         </div>
                     </div>
 
@@ -165,9 +178,9 @@
 
             <x-ui.panel
                 title="Dokumen Terkait"
-                :description="$isMasterImport ? 'Tambahkan relasi jika dokumen master existing ini berhubungan dengan arsip obsolete legacy lain atau dokumen master V2.' : 'Tambahkan relasi jika arsip ini berhubungan dengan arsip obsolete legacy lain atau dokumen master existing.'"
+                :description="$isMasterImport ? 'Tambahkan relasi jika dokumen master existing ini punya acuan atau menggantikan arsip lain.' : 'Tambahkan relasi legacy jika arsip ini digantikan dokumen lain atau punya dokumen acuan.'"
                 :padded="false"
-                data-rule-dependent-section
+                data-legacy-rule-section
             >
                 @php
                     $oldRelations = collect(old('relations', []))->values();
@@ -329,9 +342,11 @@
                     const legacyRuleNote = ruleForm.querySelector('[data-legacy-rule-note]');
                     const dependentFields = document.querySelectorAll('[data-rule-dependent-fields]');
                     const dependentSections = document.querySelectorAll('[data-rule-dependent-section]');
+                    const legacySections = document.querySelectorAll('[data-legacy-rule-section]');
                     const currentRuleAlwaysVisible = currentRuleFields?.hasAttribute('data-always-visible') || false;
                     const hasSelectedRule = Boolean(selectedRule) || currentRuleAlwaysVisible;
                     const isCurrentRule = selectedRule === '{{ \App\Models\ImportedExistingDocument::CURRENT_RULE }}';
+                    const isLegacyRule = selectedRule === '{{ \App\Models\ImportedExistingDocument::LEGACY_RULE }}';
                     const shouldShowCurrentRule = currentRuleAlwaysVisible || isCurrentRule;
 
                     dependentFields.forEach((section) => {
@@ -339,6 +354,14 @@
                     });
                     dependentSections.forEach((section) => {
                         section.classList.toggle('hidden', !hasSelectedRule);
+                    });
+                    legacySections.forEach((section) => {
+                        const hideLegacySection = !hasSelectedRule || !isLegacyRule;
+
+                        section.classList.toggle('hidden', hideLegacySection);
+                        section.querySelectorAll('select, input, textarea').forEach((field) => {
+                            field.disabled = hideLegacySection;
+                        });
                     });
 
                     currentRuleFields?.classList.toggle('hidden', !hasSelectedRule || !shouldShowCurrentRule);

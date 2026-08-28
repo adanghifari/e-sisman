@@ -54,7 +54,7 @@ class ImportedExistingDocumentTest extends TestCase
             ->assertSee('Dokumen Level I : Manual SKMBS')
             ->assertSee('Dokumen Level II : Prosedur SKMBS')
             ->assertSee('Dokumen Level III : Instruksi Kerja')
-            ->assertSee('Mengikuti Ketentuan Dokumen Lama')
+            ->assertSee('Ketentuan Dokumen Lama')
             ->assertSee(route('documents.obsolete.imports.create.level', 'level-2'), false)
             ->assertSee(route('documents.obsolete.imports.create.legacy'), false);
 
@@ -242,19 +242,14 @@ class ImportedExistingDocumentTest extends TestCase
             'documents.obsolete.imports.create-level',
             'documents.obsolete.imports.store-level',
         ]);
-        $relatedLegacy = ImportedExistingDocument::create([
-            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
-            'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
-            'uploaded_by' => $user->id,
-            'nama_dokumen' => 'Arsip Obsolete Lama Terkait',
-            'nomor_dokumen' => 'LEG-RELATED-001',
-        ]);
+        $replacementDocument = $this->createExistingDocument($user);
 
         $this->actingAs($user)
             ->get(route('documents.obsolete.imports.create.level', 'level-2'))
             ->assertOk()
-            ->assertSee('Dokumen Terkait')
-            ->assertSee('Tambah Relasi');
+            ->assertSee('Dokumen Master Pengganti')
+            ->assertSee('Digantikan Oleh')
+            ->assertDontSee('Tambah Relasi');
 
         $this->actingAs($user)
             ->post(route('documents.obsolete.imports.store.level', 'level-2'), [
@@ -268,13 +263,7 @@ class ImportedExistingDocumentTest extends TestCase
                 'nomor_revisi' => '00.00',
                 'tanggal_obsolete' => '2026-08-28',
                 'obsolete_document' => UploadedFile::fake()->create('existing-obsolete.pdf', 100, 'application/pdf'),
-                'relations' => [
-                    [
-                        'related_imported_existing_document_id' => $relatedLegacy->id,
-                        'relation_type' => ImportedExistingDocumentRelation::RELATED_TO,
-                        'keterangan' => 'Dokumen lama yang berkaitan.',
-                    ],
-                ],
+                'replacement_document_id' => $replacementDocument->id,
             ])
             ->assertRedirect();
 
@@ -290,8 +279,8 @@ class ImportedExistingDocumentTest extends TestCase
         $this->assertSame('2026-08-28', $document->tanggal_obsolete?->toDateString());
         $this->assertSame(ImportedExistingDocumentFile::OBSOLETE_DOCUMENT, $document->files()->firstOrFail()->type_file);
         $this->assertTrue($document->outgoingRelations()
-            ->where('related_imported_existing_document_id', $relatedLegacy->id)
-            ->where('relation_type', ImportedExistingDocumentRelation::RELATED_TO)
+            ->where('related_document_id', $replacementDocument->id)
+            ->where('relation_type', ImportedExistingDocumentRelation::SUPERSEDED_BY)
             ->exists());
     }
 
@@ -530,7 +519,7 @@ class ImportedExistingDocumentTest extends TestCase
                 'obsolete_document' => UploadedFile::fake()->create('legacy-no-target.pdf', 100, 'application/pdf'),
                 'relations' => [
                     [
-                        'relation_type' => ImportedExistingDocumentRelation::RELATED_TO,
+                        'relation_type' => ImportedExistingDocumentRelation::REFERENCES,
                     ],
                 ],
             ])
@@ -547,7 +536,7 @@ class ImportedExistingDocumentTest extends TestCase
                     [
                         'related_imported_existing_document_id' => $targetImported->id,
                         'related_document_id' => $targetDocument->id,
-                        'relation_type' => ImportedExistingDocumentRelation::RELATED_TO,
+                        'relation_type' => ImportedExistingDocumentRelation::REFERENCES,
                     ],
                 ],
             ])
