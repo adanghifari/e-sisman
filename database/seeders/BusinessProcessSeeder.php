@@ -10,9 +10,9 @@ class BusinessProcessSeeder extends Seeder
     public function run(): void
     {
         $businessProcesses = [
-            ['kode' => 'SMR', 'nama_proses_bisnis' => 'Sistem Manajemen Risiko'],
-            ['kode' => 'KSA', 'nama_proses_bisnis' => 'Komersial dan Strategi Area'],
-            ['kode' => 'MRI', 'nama_proses_bisnis' => 'Manajemen Risiko Industri'],
+            ['kode' => 'Utama', 'nama_proses_bisnis' => 'Proses Inti / Utama'],
+            ['kode' => 'Manajemen', 'nama_proses_bisnis' => 'Manajemen Strategis'],
+            ['kode' => 'Pendukung', 'nama_proses_bisnis' => 'Proses Penunjang'],
         ];
 
         foreach ($businessProcesses as $businessProcess) {
@@ -24,5 +24,9 @@ class BusinessProcessSeeder extends Seeder
                 ],
             );
         }
+
+        DB::table('m_proses_bisnis')
+            ->whereNotIn('kode', array_column($businessProcesses, 'kode'))
+            ->delete();
     }
 }
