@@ -10,11 +10,17 @@ class BusinessFunctionSeeder extends Seeder
     public function run(): void
     {
         $businessFunctions = [
-            ['kode' => 'OPS', 'nama_proses_fungsi' => 'Operasional'],
-            ['kode' => 'QA', 'nama_proses_fungsi' => 'Quality Assurance'],
-            ['kode' => 'HSSE', 'nama_proses_fungsi' => 'Health, Safety, Security, and Environment'],
-            ['kode' => 'HCGA', 'nama_proses_fungsi' => 'Human Capital and General Affairs'],
-            ['kode' => 'IT', 'nama_proses_fungsi' => 'Information Technology'],
+            ['kode' => 'BIT', 'nama_proses_fungsi' => 'Perencanaan Bisnis, Teknik & Teknologi Informasi'],
+            ['kode' => 'SMR', 'nama_proses_fungsi' => 'Sistem Manajemen & Resiko'],
+            ['kode' => 'MRI', 'nama_proses_fungsi' => 'Pengukuran, Peninjauan & Inovasi'],
+            ['kode' => 'PMS', 'nama_proses_fungsi' => 'Pemasaran'],
+            ['kode' => 'OPS', 'nama_proses_fungsi' => 'Kepelabuhanan & Marine Services'],
+            ['kode' => 'PGD', 'nama_proses_fungsi' => 'Pengadaan'],
+            ['kode' => 'HCM', 'nama_proses_fungsi' => 'Pengelolaan SDM'],
+            ['kode' => 'KEU', 'nama_proses_fungsi' => 'Pengendalian Keuangan'],
+            ['kode' => 'PIN', 'nama_proses_fungsi' => 'Pengelolaan Infrastruktur'],
+            ['kode' => 'KLK', 'nama_proses_fungsi' => 'Pengelolaan K3LH & Keamanan'],
+            ['kode' => 'HMK', 'nama_proses_fungsi' => 'Humas & Korporasi'],
         ];
 
         foreach ($businessFunctions as $businessFunction) {
@@ -26,5 +32,9 @@ class BusinessFunctionSeeder extends Seeder
                 ],
             );
         }
+
+        DB::table('m_proses_fungsi')
+            ->whereNotIn('kode', array_column($businessFunctions, 'kode'))
+            ->delete();
     }
 }
