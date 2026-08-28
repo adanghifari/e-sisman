@@ -16,6 +16,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'responded_at',
     'stages',
     'catatan',
+    'stage_name_snapshot',
+    'stage_order_snapshot',
+    'approver_name_snapshot',
+    'approver_position_snapshot',
+    'approver_department_snapshot',
 ])]
 class Approval extends Model
 {
@@ -28,7 +33,23 @@ class Approval extends Model
         return [
             'assigned_at' => 'datetime',
             'responded_at' => 'datetime',
+            'stage_order_snapshot' => 'integer',
         ];
+    }
+
+    public function fillResponseSnapshot(?int $stageOrder = null): self
+    {
+        $approver = $this->approver()
+            ->with('department')
+            ->first();
+
+        return $this->fill([
+            'stage_name_snapshot' => $this->stages,
+            'stage_order_snapshot' => $stageOrder,
+            'approver_name_snapshot' => $approver?->name,
+            'approver_position_snapshot' => $approver?->jabatan,
+            'approver_department_snapshot' => $approver?->department?->nama_department,
+        ]);
     }
 
     public function document(): BelongsTo

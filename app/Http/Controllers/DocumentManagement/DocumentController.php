@@ -1199,7 +1199,7 @@ class DocumentController extends Controller
 
         $approvedStatus = ApprovalStatus::findByCode(ApprovalStatus::APPROVED);
 
-        $document->approvals()->create([
+        $approval = $document->approvals()->make([
             'm_approval_status_id' => $approvedStatus->id,
             'user_id' => $document->official_preparer_id,
             'role_id' => null,
@@ -1209,5 +1209,7 @@ class DocumentController extends Controller
             'stages' => 'TTD Penyusun Resmi',
             'catatan' => 'Tanda tangan penyusun resmi tercatat saat submit dokumen.',
         ]);
+
+        $approval->fillResponseSnapshot()->save();
     }
 }

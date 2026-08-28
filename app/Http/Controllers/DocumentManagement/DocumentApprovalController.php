@@ -90,11 +90,12 @@ class DocumentApprovalController extends Controller
         abort_if(! $approval, 404);
 
         DB::transaction(function () use ($request, $document, $approval): void {
-            $approval->update([
+            $approval->fill([
                 'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::APPROVED)->id,
                 'responded_at' => now(),
                 'catatan' => $request->string('catatan')->trim()->value() ?: null,
-            ]);
+            ])->fillResponseSnapshot($this->stageOrderSnapshotForApproval($document, $approval))
+                ->save();
 
             $this->advanceApprovalFlow($document->refresh());
         });
@@ -122,11 +123,12 @@ class DocumentApprovalController extends Controller
             $rejectedStatus = ApprovalStatus::findByCode(ApprovalStatus::REJECTED);
             $terminatedStatus = ApprovalStatus::findByCode(ApprovalStatus::TERMINATED);
 
-            $approval->update([
+            $approval->fill([
                 'm_approval_status_id' => $rejectedStatus->id,
                 'responded_at' => now(),
                 'catatan' => $validated['catatan'],
-            ]);
+            ])->fillResponseSnapshot($this->stageOrderSnapshotForApproval($document, $approval))
+                ->save();
 
             Approval::query()
                 ->where('t_document_id', $document->id)
@@ -244,7 +246,13 @@ class DocumentApprovalController extends Controller
                         : null,
                     'created_at' => $approval->created_at ?? now(),
                     'catatan' => null,
-                ])->save();
+                ]);
+
+                if ($alreadySignedAsOfficialPreparer) {
+                    $approval->fillResponseSnapshot((int) $stage->stage_order);
+                }
+
+                $approval->save();
             }
         }
 
@@ -407,6 +415,14 @@ class DocumentApprovalController extends Controller
         }
 
         return $query->orderByDesc('assigned_at')->first();
+    }
+
+    private function stageOrderSnapshotForApproval(Document $document, Approval $approval): ?int
+    {
+        $stage = $this->approvalFlowStages($document)
+            ->first(fn (ApprovalFlowStage $stage): bool => ($stage->display_label ?: 'Approval') === $approval->stages);
+
+        return $stage !== null ? (int) $stage->stage_order : null;
     }
 
     private function approvalFlowStages(Document $document)

@@ -928,12 +928,12 @@ class DocumentInboxTest extends TestCase
         $this->assertTrue(Approval::query()
             ->where('t_document_id', $document->id)
             ->where('user_id', $nextApprover->id)
-            ->where('stages', 'Diperiksa oleh Manager')
+            ->where('stages', 'Manager')
             ->exists());
         $this->assertTrue(Approval::query()
             ->where('t_document_id', $document->id)
             ->where('user_id', $secondApprover->id)
-            ->where('stages', 'Diperiksa oleh Manager')
+            ->where('stages', 'Manager')
             ->exists());
 
         $this->actingAs($documentControlAdmin)
@@ -947,12 +947,12 @@ class DocumentInboxTest extends TestCase
         $this->assertFalse(Approval::query()
             ->where('t_document_id', $document->id)
             ->where('user_id', $nextApprover->id)
-            ->where('stages', 'Diperiksa oleh Manager')
+            ->where('stages', 'Manager')
             ->exists());
         $this->assertTrue(Approval::query()
             ->where('t_document_id', $document->id)
             ->where('user_id', $secondApprover->id)
-            ->where('stages', 'Diperiksa oleh Manager')
+            ->where('stages', 'Manager')
             ->exists());
     }
 
@@ -1607,10 +1607,10 @@ class DocumentInboxTest extends TestCase
         StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
 
         $this->createApproval($document, $firstApprover, ApprovalStatus::PENDING, [
-            'stages' => 'Dibuat oleh Staff',
+            'stages' => 'Staff',
         ]);
         $this->createApproval($document, $secondApprover, ApprovalStatus::PENDING, [
-            'stages' => 'Diperiksa oleh Manager',
+            'stages' => 'Manager',
         ]);
 
         $this->actingAs($firstApprover)
