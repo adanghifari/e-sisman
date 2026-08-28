@@ -728,13 +728,11 @@ class DocumentMasterTest extends TestCase
         ApprovalFlowStage::create([
             'm_approval_flow_id' => $flow->id,
             'stage_order' => 1,
-            'keterangan' => 'Dibuat oleh',
             'nama_tahap' => 'Staff',
         ]);
         ApprovalFlowStage::create([
             'm_approval_flow_id' => $flow->id,
             'stage_order' => 2,
-            'keterangan' => 'Disetujui oleh',
             'nama_tahap' => 'Direktur Utama',
         ]);
         $staffRole = Role::create(['nama_role' => 'Staff']);
@@ -750,7 +748,7 @@ class DocumentMasterTest extends TestCase
             'assigned_by' => $viewer->id,
             'assigned_at' => now()->subDay(),
             'responded_at' => now()->setDate(2026, 8, 18)->setTime(15, 10, 20),
-            'stages' => 'Disetujui oleh Direktur Utama',
+            'stages' => 'Direktur Utama',
         ]);
         Approval::create([
             't_document_id' => $document->id,
@@ -760,21 +758,21 @@ class DocumentMasterTest extends TestCase
             'assigned_by' => $viewer->id,
             'assigned_at' => now(),
             'responded_at' => now()->setDate(2026, 8, 18)->setTime(14, 25, 36),
-            'stages' => 'Dibuat oleh Staff',
+            'stages' => 'Staff',
         ]);
 
         $response = $this->actingAs($viewer)
             ->get(route('documents.master.show', $document))
             ->assertOk()
-            ->assertSee('Dibuat oleh Staff')
+            ->assertSee('Staff')
             ->assertSee('Diproses pada 18 Aug 2026 14:25:36')
-            ->assertSee('Disetujui oleh Direktur Utama')
+            ->assertSee('Direktur Utama')
             ->assertDontSee('Tahap 1')
             ->assertDontSee('Tahap 2');
 
         $this->assertLessThan(
-            strpos($response->getContent(), 'Disetujui oleh Direktur Utama'),
-            strpos($response->getContent(), 'Dibuat oleh Staff'),
+            strpos($response->getContent(), 'Direktur Utama'),
+            strpos($response->getContent(), 'Staff'),
         );
     }
 
@@ -810,8 +808,7 @@ class DocumentMasterTest extends TestCase
             ->assertSee('FMIK-SMR-010-01')
             ->assertSee('00.01')
             ->assertSee('Riwayat Dokumen')
-            ->assertSee('Dokumen dibuat')
-            ->assertSee('Dokumen diajukan')
+            ->assertSee('Dokumen disetujui')
             ->assertDontSee('Dokumen Acuan')
             ->assertDontSee('Revisi Dari')
             ->assertDontSee('PS-SMR-REF - Dokumen Acuan Lama');
@@ -903,8 +900,7 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Dokumen Obsolete')
             ->assertSee('Obsolete')
             ->assertSee('Riwayat Dokumen')
-            ->assertSee('Dokumen dibuat')
-            ->assertSee('Dokumen diajukan')
+            ->assertSee('Dokumen disetujui')
             ->assertDontSee('Ajukan Revisi')
             ->assertDontSee('Pengajuan Obsolete')
             ->assertDontSee('Jadikan Master')

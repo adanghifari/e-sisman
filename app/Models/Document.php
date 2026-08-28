@@ -193,4 +193,9 @@ class Document extends Model
         // Newer file records win when legacy/concurrent data contains duplicates.
         return $this->hasMany(DocumentFile::class, 't_document_id')->orderByDesc('id');
     }
+
+    public function finalArtifacts(): HasMany
+    {
+        return $this->hasMany(DocumentFinalArtifact::class, 't_document_id');
+    }
 }
