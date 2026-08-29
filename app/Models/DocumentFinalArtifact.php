@@ -24,6 +24,8 @@ class DocumentFinalArtifact extends Model
 {
     public const TYPE_FINAL_DOCUMENT = 'final_document';
 
+    public const TYPE_APPROVAL_PREVIEW = 'approval_preview';
+
     public const TYPE_APPROVAL_SHEET = 'approval_sheet';
 
     public const STATUS_PENDING = 'pending';

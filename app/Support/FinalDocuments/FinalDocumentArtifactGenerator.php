@@ -35,6 +35,7 @@ class FinalDocumentArtifactGenerator
     public function generatePrepared(
         FinalArtifactPreparation $preparation,
         PdfCompositionMode $mode = PdfCompositionMode::PRESERVE,
+        PdfDocumentContext $context = PdfDocumentContext::FINAL_DOCUMENT,
     ): DocumentFinalArtifact {
         $artifact = $preparation->artifact;
 
@@ -48,9 +49,12 @@ class FinalDocumentArtifactGenerator
             $composition = $this->finalPdfComposer->compose(
                 payload: $preparation->payload,
                 coverPdf: $this->coverPdfRenderer->render($preparation->payload),
-                approvalSheetPdf: $this->approvalSheetPdfRenderer->render($preparation->payload),
+                approvalSheetPdf: $context->includesApprovalSheet()
+                    ? $this->approvalSheetPdfRenderer->render($preparation->payload)
+                    : null,
                 bodyPdfPath: $sourcePath,
                 mode: $mode,
+                context: $context,
             );
 
             if (! Storage::disk('local')->put($artifact->path_file, $composition->pdf)) {

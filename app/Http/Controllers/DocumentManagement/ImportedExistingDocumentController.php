@@ -15,6 +15,7 @@ use App\Models\ImportedExistingDocument;
 use App\Models\ImportedExistingDocumentFile;
 use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
+use App\Support\FinalDocuments\AutoGenerateApprovalPreview;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -475,6 +476,12 @@ class ImportedExistingDocumentController extends Controller
 
             $this->storeTDocumentFile($document, $request->file('revision_content'), 'revision_content', $request->user()->id);
             $this->storeTDocumentFile($document, $request->file('revision_form'), 'revision_form', $request->user()->id);
+
+            $documentId = $document->id;
+            $generatedById = $request->user()->id;
+
+            DB::afterCommit(fn () => app(AutoGenerateApprovalPreview::class)
+                ->generateIfNeeded($documentId, $generatedById));
         });
 
         return redirect()

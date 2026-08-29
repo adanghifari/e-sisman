@@ -11,6 +11,7 @@ use App\Models\DocumentNumberingSetup;
 use App\Models\DocumentNumberRegistry;
 use App\Models\DocumentType;
 use App\Models\StatusDocument;
+use App\Support\FinalDocuments\AutoGenerateApprovalPreview;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -300,6 +301,14 @@ class DocumentController extends Controller
                 }
 
                 $savedDocument = $document;
+
+                if ($submittedAt !== null) {
+                    $documentId = $document->id;
+                    $generatedById = $request->user()->id;
+
+                    DB::afterCommit(fn () => app(AutoGenerateApprovalPreview::class)
+                        ->generateIfNeeded($documentId, $generatedById));
+                }
             });
         } finally {
             if ($documentNumberLockAcquired && $documentNumber !== null) {

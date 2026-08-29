@@ -30,23 +30,32 @@ class FinalPdfComposer
     public function compose(
         array $payload,
         string $coverPdf,
-        string $approvalSheetPdf,
+        ?string $approvalSheetPdf,
         string $bodyPdfPath,
         PdfCompositionMode $mode,
+        PdfDocumentContext $context = PdfDocumentContext::FINAL_DOCUMENT,
     ): FinalPdfCompositionResult {
         if (! is_file($bodyPdfPath)) {
             throw new PdfCompositionException('Source body PDF is missing.');
+        }
+
+        if ($context->includesApprovalSheet() && $approvalSheetPdf === null) {
+            throw new PdfCompositionException('Approval sheet PDF is required for final document composition.');
         }
 
         $tempFiles = [];
 
         try {
             $coverPath = $this->writeTempPdf($coverPdf, 'cover-', $tempFiles);
-            $approvalSheetPath = $this->writeTempPdf($approvalSheetPdf, 'approval-sheet-', $tempFiles);
+            $approvalSheetPath = $approvalSheetPdf !== null
+                ? $this->writeTempPdf($approvalSheetPdf, 'approval-sheet-', $tempFiles)
+                : null;
             $pdf = $this->makePdf();
 
             $coverPages = $this->importPdf($pdf, $coverPath, stampBody: false, payload: $payload, mode: $mode);
-            $approvalSheetPages = $this->importPdf($pdf, $approvalSheetPath, stampBody: false, payload: $payload, mode: $mode);
+            $approvalSheetPages = $context->includesApprovalSheet()
+                ? $this->importPdf($pdf, (string) $approvalSheetPath, stampBody: false, payload: $payload, mode: $mode)
+                : ['count' => 0, 'pages' => []];
             $bodyPages = $this->importPdf($pdf, $bodyPdfPath, stampBody: true, payload: $payload, mode: $mode);
 
             if ($bodyPages['count'] < 1) {

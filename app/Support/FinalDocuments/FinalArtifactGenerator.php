@@ -53,6 +53,41 @@ class FinalArtifactGenerator
         return new FinalArtifactPreparation($artifact, $payload);
     }
 
+    public function prepareApprovalPreview(Document $document, ?User $generatedBy = null): FinalArtifactPreparation
+    {
+        $document->loadMissing([
+            'status',
+            'documentLevel',
+            'documentType',
+            'businessProcess',
+            'businessFunction',
+            'departments',
+            'officialPreparer.department',
+            'files',
+            'approvals.status',
+        ]);
+
+        $this->assertApprovalPreviewEligible($document);
+
+        $sourceFile = $this->resolveSourceDocumentFile($document);
+
+        if (! Storage::disk('local')->exists($sourceFile->path_file)) {
+            throw new RuntimeException('Source document file is missing from storage.');
+        }
+
+        $payload = $this->buildPayload($document, $sourceFile);
+        $payload['document']['published_at'] = null;
+        $payload['document']['approved_at'] = null;
+        $artifact = $this->createPendingArtifact(
+            $document,
+            $sourceFile,
+            $generatedBy,
+            DocumentFinalArtifact::TYPE_APPROVAL_PREVIEW,
+        );
+
+        return new FinalArtifactPreparation($artifact, $payload);
+    }
+
     public function assertEligible(Document $document): void
     {
         $document->loadMissing('status');
@@ -63,6 +98,19 @@ class FinalArtifactGenerator
 
         if ($document->request_type === 'obsolete') {
             throw new DomainException('Obsolete request documents cannot be prepared as final artifacts.');
+        }
+    }
+
+    public function assertApprovalPreviewEligible(Document $document): void
+    {
+        $document->loadMissing('status');
+
+        if ($document->status?->nama_status !== StatusDocument::PROPOSED) {
+            throw new DomainException('Only proposed documents can be prepared as approval preview artifacts.');
+        }
+
+        if ($document->request_type === 'obsolete') {
+            throw new DomainException('Obsolete request documents cannot be prepared as approval preview artifacts.');
         }
     }
 
@@ -245,7 +293,9 @@ class FinalArtifactGenerator
         $baseName = Str::slug($document->nomor_dokumen ?: $document->nama_dokumen) ?: 'document';
         $prefix = $artifactType === DocumentFinalArtifact::TYPE_APPROVAL_SHEET
             ? 'approval-sheet'
-            : 'final';
+            : ($artifactType === DocumentFinalArtifact::TYPE_APPROVAL_PREVIEW
+                ? 'approval-preview'
+                : 'final');
 
         return "{$prefix}-{$baseName}-g{$generationNumber}.pdf";
     }
