@@ -34,6 +34,7 @@ class FinalArtifactGenerator
             'businessProcess',
             'businessFunction',
             'departments',
+            'officialPreparer.department',
             'files',
             'approvals.status',
         ]);
@@ -99,6 +100,7 @@ class FinalArtifactGenerator
             'businessProcess',
             'businessFunction',
             'departments',
+            'officialPreparer.department',
             'approvals.status',
         ]);
 
@@ -130,6 +132,7 @@ class FinalArtifactGenerator
                     ->values()
                     ->all(),
             ],
+            'preparers' => $this->collectPreparers($document),
             'approvals' => $this->collectApprovals($document),
             'source' => [
                 'id' => $sourceFile->id,
@@ -140,6 +143,26 @@ class FinalArtifactGenerator
                 'file_size' => $sourceFile->file_size,
             ],
         ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function collectPreparers(Document $document): array
+    {
+        $document->loadMissing('officialPreparer.department');
+
+        if ($document->officialPreparer === null) {
+            return [];
+        }
+
+        return [[
+            'id' => $document->officialPreparer->id,
+            'name' => $document->officialPreparer->name,
+            'position' => $document->officialPreparer->jabatan,
+            'department' => $document->officialPreparer->department?->nama_department,
+            'department_code' => $document->officialPreparer->department?->kode_department,
+        ]];
     }
 
     /**

@@ -78,9 +78,19 @@ class FinalArtifactGeneratorTest extends TestCase
             'kode_department' => 'OPS',
             'nama_department' => 'Operation Department',
         ]);
+        $preparerDepartment = Department::query()->create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $officialPreparer = User::factory()->create([
+            'name' => 'Official Preparer',
+            'jabatan' => 'Management System Specialist',
+            'm_department_id' => $preparerDepartment->id,
+        ]);
         $document = $this->createDocument([
             'm_document_level_id' => $this->documentLevel('level-3', 'Level III', 'Instruksi Kerja')->id,
             'document_type_name' => 'IK',
+            'official_preparer_id' => $officialPreparer->id,
             'nama_dokumen' => 'Instruksi Operasi',
             'nomor_dokumen' => 'IK-SMR-001',
             'nomor_revisi' => 203,
@@ -102,6 +112,10 @@ class FinalArtifactGeneratorTest extends TestCase
         $this->assertSame('IK', $payload['document']['type']);
         $this->assertSame('level-3', $payload['document']['level']['code']);
         $this->assertSame('Operation Department', $payload['document']['departments'][0]['name']);
+        $this->assertSame('Official Preparer', $payload['preparers'][0]['name']);
+        $this->assertSame('Management System Specialist', $payload['preparers'][0]['position']);
+        $this->assertSame('Quality Assurance', $payload['preparers'][0]['department']);
+        $this->assertSame('QA', $payload['preparers'][0]['department_code']);
         $this->assertSame($sourceFile->id, $payload['source']['id']);
         $this->assertSame('filled_template', $payload['source']['type']);
     }
