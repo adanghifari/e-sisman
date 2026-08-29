@@ -28,6 +28,14 @@ class FinalDocumentArtifactGenerator
             $generatedBy,
             DocumentFinalArtifact::TYPE_FINAL_DOCUMENT,
         );
+
+        return $this->generatePrepared($preparation, $mode);
+    }
+
+    public function generatePrepared(
+        FinalArtifactPreparation $preparation,
+        PdfCompositionMode $mode = PdfCompositionMode::PRESERVE,
+    ): DocumentFinalArtifact {
         $artifact = $preparation->artifact;
 
         $artifact->update([

@@ -16,6 +16,7 @@ use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentHistory;
+use App\Support\FinalDocuments\AutoGenerateFinalDocument;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -88,8 +89,9 @@ class DocumentApprovalController extends Controller
 
         $approval = $this->activeApproval($request, $document);
         abort_if(! $approval, 404);
+        $generatedBy = $request->user();
 
-        DB::transaction(function () use ($request, $document, $approval): void {
+        DB::transaction(function () use ($request, $document, $approval, $generatedBy): void {
             $approval->fill([
                 'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::APPROVED)->id,
                 'responded_at' => now(),
@@ -97,7 +99,11 @@ class DocumentApprovalController extends Controller
             ])->fillResponseSnapshot($this->stageOrderSnapshotForApproval($document, $approval))
                 ->save();
 
-            $this->advanceApprovalFlow($document->refresh());
+            $finalizedDocument = $this->advanceApprovalFlow($document->refresh());
+
+            if ($finalizedDocument !== null) {
+                $this->autoGenerateFinalDocumentAfterCommit($finalizedDocument, $generatedBy);
+            }
         });
 
         return redirect()
@@ -257,7 +263,11 @@ class DocumentApprovalController extends Controller
         }
 
         $this->markRevisionRequestAsAssigned($document);
-        $this->advanceApprovalFlow($document);
+        $finalizedDocument = $this->advanceApprovalFlow($document);
+
+        if ($finalizedDocument !== null) {
+            $this->autoGenerateFinalDocumentAfterCommit($finalizedDocument, $request->user());
+        }
 
         return redirect()
             ->route('documents.approval.show', $document)
@@ -604,13 +614,13 @@ class DocumentApprovalController extends Controller
         return false;
     }
 
-    private function advanceApprovalFlow(Document $document): void
+    private function advanceApprovalFlow(Document $document): ?Document
     {
         if ($this->activateNextStageIfCurrentStageComplete($document)) {
-            return;
+            return null;
         }
 
-        $this->markDocumentApprovedWhenComplete($document);
+        return $this->markDocumentApprovedWhenComplete($document);
     }
 
     private function activateNextStageIfCurrentStageComplete(Document $document): bool
@@ -650,24 +660,20 @@ class DocumentApprovalController extends Controller
         return false;
     }
 
-    private function markDocumentApprovedWhenComplete(Document $document): void
+    private function markDocumentApprovedWhenComplete(Document $document): ?Document
     {
         if (! $this->isApprovalComplete($document)) {
-            return;
+            return null;
         }
 
         $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
 
         if ($document->imported_existing_source_id !== null && $document->request_type === 'revision') {
-            $this->finalizeImportedExistingRevisionApproval($document, $approvedStatus);
-
-            return;
+            return $this->finalizeImportedExistingRevisionApproval($document, $approvedStatus);
         }
 
         if ($document->revised_from !== null && $document->request_type !== 'obsolete') {
-            $this->finalizeRevisionApproval($document, $approvedStatus);
-
-            return;
+            return $this->finalizeRevisionApproval($document, $approvedStatus);
         }
 
         $document->update([
@@ -681,16 +687,16 @@ class DocumentApprovalController extends Controller
         if ($document->request_type === 'obsolete') {
             $this->obsoleteSourceMasterDocument($document);
 
-            return;
+            return null;
         }
 
-        $document->refresh();
+        return $document->refresh();
     }
 
-    private function finalizeRevisionApproval(Document $document, StatusDocument $approvedStatus): void
+    private function finalizeRevisionApproval(Document $document, StatusDocument $approvedStatus): ?Document
     {
         if ($document->revised_from === null || $document->request_type === 'obsolete') {
-            return;
+            return null;
         }
 
         $obsoleteStatus = StatusDocument::findByName(StatusDocument::OBSOLETE);
@@ -769,12 +775,14 @@ class DocumentApprovalController extends Controller
             ->update([
                 'm_status_document_id' => $obsoleteStatus->id,
             ]);
+
+        return $lockedDocument->refresh();
     }
 
-    private function finalizeImportedExistingRevisionApproval(Document $document, StatusDocument $approvedStatus): void
+    private function finalizeImportedExistingRevisionApproval(Document $document, StatusDocument $approvedStatus): ?Document
     {
         if ($document->imported_existing_source_id === null || $document->request_type !== 'revision') {
-            return;
+            return null;
         }
 
         $lockedDocument = Document::query()
@@ -818,6 +826,24 @@ class DocumentApprovalController extends Controller
                 'created_by' => $lockedDocument->user_id,
             ],
         );
+
+        return $lockedDocument->refresh();
+    }
+
+    private function autoGenerateFinalDocumentAfterCommit(Document $document, ?User $generatedBy): void
+    {
+        $documentId = $document->id;
+        $generatedById = $generatedBy?->id;
+        $callback = fn () => app(AutoGenerateFinalDocument::class)
+            ->generateIfNeeded($documentId, $generatedById);
+
+        if (DB::connection()->transactionLevel() > 0) {
+            DB::afterCommit($callback);
+
+            return;
+        }
+
+        $callback();
     }
 
     private function revisionFormNumber(Document $source, int $revision): string
