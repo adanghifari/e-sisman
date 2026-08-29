@@ -294,6 +294,7 @@ class DocumentController extends Controller
                 }
 
                 if ($submittedAt !== null) {
+                    $document->snapshotOfficialPreparer();
                     $this->claimTDocumentNumber($document, $request->user()->id);
                     $this->recordOfficialPreparerApproval($document, $request->user()->id, $submittedAt);
                 }

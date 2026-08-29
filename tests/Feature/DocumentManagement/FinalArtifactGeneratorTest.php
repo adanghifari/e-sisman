@@ -91,6 +91,9 @@ class FinalArtifactGeneratorTest extends TestCase
             'm_document_level_id' => $this->documentLevel('level-3', 'Level III', 'Instruksi Kerja')->id,
             'document_type_name' => 'IK',
             'official_preparer_id' => $officialPreparer->id,
+            'official_preparer_name_snapshot' => 'Official Preparer',
+            'official_preparer_position_snapshot' => 'Management System Specialist',
+            'official_preparer_department_snapshot' => 'Quality Assurance',
             'nama_dokumen' => 'Instruksi Operasi',
             'nomor_dokumen' => 'IK-SMR-001',
             'nomor_revisi' => 203,
@@ -115,7 +118,7 @@ class FinalArtifactGeneratorTest extends TestCase
         $this->assertSame('Official Preparer', $payload['preparers'][0]['name']);
         $this->assertSame('Management System Specialist', $payload['preparers'][0]['position']);
         $this->assertSame('Quality Assurance', $payload['preparers'][0]['department']);
-        $this->assertSame('QA', $payload['preparers'][0]['department_code']);
+        $this->assertNull($payload['preparers'][0]['department_code']);
         $this->assertSame($sourceFile->id, $payload['source']['id']);
         $this->assertSame('filled_template', $payload['source']['type']);
     }

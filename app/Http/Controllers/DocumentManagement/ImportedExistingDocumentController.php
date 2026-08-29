@@ -471,6 +471,7 @@ class ImportedExistingDocumentController extends Controller
                 'created_at' => now(),
             ]);
             $document->departments()->sync($importedExistingDocument->departments->pluck('id')->all());
+            $document->snapshotOfficialPreparer();
 
             $this->storeTDocumentFile($document, $request->file('revision_content'), 'revision_content', $request->user()->id);
             $this->storeTDocumentFile($document, $request->file('revision_form'), 'revision_form', $request->user()->id);

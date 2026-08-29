@@ -158,10 +158,10 @@ class FinalArtifactGenerator
 
         return [[
             'id' => $document->officialPreparer->id,
-            'name' => $document->officialPreparer->name,
-            'position' => $document->officialPreparer->jabatan,
-            'department' => $document->officialPreparer->department?->nama_department,
-            'department_code' => $document->officialPreparer->department?->kode_department,
+            'name' => $document->official_preparer_name_snapshot,
+            'position' => $document->official_preparer_position_snapshot,
+            'department' => $document->official_preparer_department_snapshot,
+            'department_code' => null,
         ]];
     }
 
