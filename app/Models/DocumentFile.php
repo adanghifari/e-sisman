@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     't_document_id',
     't_document_files_id',
     'type_file',
+    'attachment_title',
     'path_file',
     'uploaded_by',
     'updated_at',

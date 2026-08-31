@@ -9,6 +9,7 @@
             ->map(fn ($file) => [
                 'id' => $file->id,
                 'name' => $file->original_file_name,
+                'title' => $file->attachment_title,
                 'size' => $file->file_size,
             ])
             ->values();
@@ -574,21 +575,17 @@
                                 </x-documents.upload-toggle-card>
                             @endif
 
-                            <x-documents.upload-toggle-card
-                                title="Daftar Dokumen"
-                                button-label="Tambah Dokumen"
-                                badge="Lampiran"
-                            >
-                                <x-ui.file-upload
-                                    label="Upload Lampiran"
-                                    name="attachments[]"
-                                    accept=".pdf,application/pdf"
-                                    hint="Bisa lebih dari satu file. Format PDF."
-                                    multiple
-                                    :max-files="10"
-                                    :max-file-size-kb="10240"
-                                    :existing-files="$existingFilePayload('attachment')"
-                                />
+                            <div class="rounded-lg border border-slate-200 bg-white px-4 py-4">
+                                <div class="mb-4 flex flex-wrap items-start justify-between gap-4">
+                                    <span class="min-w-0">
+                                        <span class="block text-base font-bold text-slate-900">Daftar Lampiran</span>
+                                        <span class="mt-2 inline-flex rounded-full bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
+                                            Lampiran
+                                        </span>
+                                    </span>
+                                </div>
+
+                                <x-documents.attachment-list :existing-files="$existingFilePayload('attachment')" />
 
                                 @error('attachments')
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -596,7 +593,13 @@
                                 @error('attachments.*')
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                 @enderror
-                            </x-documents.upload-toggle-card>
+                                @error('attachment_titles.*')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                                @error('existing_attachment_titles.*')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                            </div>
                         </div>
                     </x-documents.form-section>
                 </div>

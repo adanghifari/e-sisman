@@ -269,6 +269,7 @@ class DocumentController extends Controller
                 $document->departments()->sync($documentAttributes['department_ids'] ?? []);
 
                 $this->removeExistingDocumentFiles($document, $documentAttributes['remove_existing_files'] ?? []);
+                $this->updateExistingAttachmentTitles($document, $documentAttributes['existing_attachment_titles'] ?? []);
 
                 if ($request->hasFile('imported_document')) {
                     $this->replaceSingleDocumentFile($document, 'imported_document');
@@ -290,9 +291,7 @@ class DocumentController extends Controller
                     $this->storeDocumentFile($document, $request->file('revision_form'), 'revision_form', $request->user()->id);
                 }
 
-                foreach ($request->file('attachments', []) as $attachment) {
-                    $this->storeDocumentFile($document, $attachment, 'attachment', $request->user()->id);
-                }
+                $this->storeAttachmentFiles($request, $document);
 
                 if ($submittedAt !== null) {
                     $document->snapshotOfficialPreparer();
@@ -472,6 +471,8 @@ class DocumentController extends Controller
                 'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'remove_existing_files' => ['nullable', 'array'],
                 'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
+                'existing_attachment_titles' => ['nullable', 'array'],
+                'existing_attachment_titles.*' => ['nullable', 'string', 'max:255'],
             ];
         }
 
@@ -490,11 +491,15 @@ class DocumentController extends Controller
                 'revision_form' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'revision_form')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
                 'attachments' => ['nullable', 'array', 'max:10'],
                 'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
+                'attachment_titles' => ['nullable', 'array', 'max:10'],
+                'attachment_titles.*' => ['required_with:attachments.*', 'string', 'max:255'],
                 'submit_action' => ['required', Rule::in(['draft', 'submit'])],
                 'revised_from' => ['required', 'integer', Rule::exists('t_document', 'id')],
                 'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'remove_existing_files' => ['nullable', 'array'],
                 'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
+                'existing_attachment_titles' => ['nullable', 'array'],
+                'existing_attachment_titles.*' => ['nullable', 'string', 'max:255'],
             ];
         }
 
@@ -511,11 +516,15 @@ class DocumentController extends Controller
             'filled_template' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'filled_template')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
             'attachments' => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
+            'attachment_titles' => ['nullable', 'array', 'max:10'],
+            'attachment_titles.*' => ['required_with:attachments.*', 'string', 'max:255'],
             'submit_action' => ['required', Rule::in(['draft', 'submit'])],
             'revised_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'remove_existing_files' => ['nullable', 'array'],
             'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
+            'existing_attachment_titles' => ['nullable', 'array'],
+            'existing_attachment_titles.*' => ['nullable', 'string', 'max:255'],
         ];
     }
 
@@ -544,6 +553,10 @@ class DocumentController extends Controller
             'revision_form' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
             'attachments' => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
+            'attachment_titles' => ['nullable', 'array', 'max:10'],
+            'attachment_titles.*' => ['nullable', 'string', 'max:255'],
+            'existing_attachment_titles' => ['nullable', 'array'],
+            'existing_attachment_titles.*' => ['nullable', 'string', 'max:255'],
         ];
 
         if ($level === 'level-4') {
@@ -649,8 +662,62 @@ class DocumentController extends Controller
             $this->storeDocumentFile($document, $request->file($type), $type, $request->user()->id);
         }
 
-        foreach ($request->file('attachments', []) as $attachment) {
-            $this->storeDocumentFile($document, $attachment, 'attachment', $request->user()->id);
+        $this->updateExistingAttachmentTitles($document, $request->input('existing_attachment_titles', []));
+        $this->storeAttachmentFiles($request, $document);
+    }
+
+    private function storeAttachmentFiles(Request $request, Document $document): void
+    {
+        $titles = collect($request->input('attachment_titles', []))->values();
+
+        foreach (array_values($request->file('attachments', [])) as $index => $attachment) {
+            $title = trim((string) $titles->get($index, ''));
+
+            if ($this->hasMatchingAttachment($document, $attachment, $title)) {
+                continue;
+            }
+
+            $this->storeDocumentFile(
+                $document,
+                $attachment,
+                'attachment',
+                $request->user()->id,
+                $title !== '' ? $title : null,
+            );
+        }
+    }
+
+    private function hasMatchingAttachment(Document $document, mixed $file, ?string $title): bool
+    {
+        return $document->files()
+            ->where('type_file', 'attachment')
+            ->where('original_file_name', $file->getClientOriginalName())
+            ->where('file_size', $file->getSize())
+            ->where(function ($query) use ($title): void {
+                filled($title)
+                    ? $query->where('attachment_title', $title)
+                    : $query->whereNull('attachment_title');
+            })
+            ->exists();
+    }
+
+    /**
+     * @param  array<int|string, string|null>  $titles
+     */
+    private function updateExistingAttachmentTitles(Document $document, array $titles): void
+    {
+        if ($titles === []) {
+            return;
+        }
+
+        foreach ($titles as $fileId => $title) {
+            $document->files()
+                ->whereKey($fileId)
+                ->where('type_file', 'attachment')
+                ->update([
+                    'attachment_title' => filled($title) ? trim((string) $title) : null,
+                    'updated_at' => now(),
+                ]);
         }
     }
 
@@ -1159,12 +1226,13 @@ class DocumentController extends Controller
         return ($major * 100) + $minor;
     }
 
-    protected function storeDocumentFile(Document $document, mixed $file, string $type, int $uploadedBy): void
+    protected function storeDocumentFile(Document $document, mixed $file, string $type, int $uploadedBy, ?string $attachmentTitle = null): void
     {
         $path = $file->store("documents/{$document->id}", 'local');
 
         $document->files()->create([
             'type_file' => $type,
+            'attachment_title' => $attachmentTitle,
             'path_file' => $path,
             'uploaded_by' => $uploadedBy,
             'updated_at' => now(),

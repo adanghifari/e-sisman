@@ -1882,6 +1882,112 @@ class CreateDocumentTest extends TestCase
             ->assertSessionHasErrors(['attachments.0']);
     }
 
+    public function test_attachment_title_is_stored_with_uploaded_attachment(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+
+        StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        DocumentType::create(['nama_types' => 'IK']);
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-3'), [
+                'nama_dokumen' => 'Instruksi Kerja Pengujian',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'nomor_dokumen_suffix' => '001',
+                'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
+                'attachment_titles' => ['Catatan Brainstorming'],
+                'attachments' => [
+                    UploadedFile::fake()->create('lampiran.pdf', 24, 'application/pdf'),
+                ],
+                'submit_action' => 'draft',
+            ])
+            ->assertRedirect(route('documents.create.drafts'));
+
+        $this->assertDatabaseHas('t_document_files', [
+            'type_file' => 'attachment',
+            'attachment_title' => 'Catatan Brainstorming',
+            'original_file_name' => 'lampiran.pdf',
+        ]);
+    }
+
+    public function test_matching_attachment_upload_is_not_stored_twice(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+
+        StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        DocumentType::create(['nama_types' => 'IK']);
+
+        $payload = [
+            'nama_dokumen' => 'Instruksi Kerja Pengujian',
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'department_ids' => [$department->id],
+            'official_preparer_id' => $user->id,
+            'nomor_dokumen_suffix' => '001',
+            'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
+            'attachment_titles' => ['Catatan Brainstorming'],
+            'attachments' => [
+                UploadedFile::fake()->create('lampiran.pdf', 24, 'application/pdf'),
+            ],
+            'submit_action' => 'draft',
+        ];
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-3'), $payload)
+            ->assertRedirect(route('documents.create.drafts'));
+
+        $draft = Document::query()->firstOrFail();
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-3'), [
+                ...$payload,
+                'draft_id' => $draft->id,
+                'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
+                'attachments' => [
+                    UploadedFile::fake()->create('lampiran.pdf', 24, 'application/pdf'),
+                ],
+            ])
+            ->assertRedirect(route('documents.create.drafts'));
+
+        $this->assertSame(
+            1,
+            $draft->files()->where('type_file', 'attachment')->count(),
+        );
+    }
+
     private function initialResubmissionFixture(): array
     {
         $user = User::factory()->create();
