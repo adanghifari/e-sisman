@@ -191,12 +191,12 @@
                                             <p class="truncate text-sm font-bold text-slate-900">{{ $printoutTitle }}</p>
                                             <p class="text-xs font-medium text-slate-500">{{ $printoutDescription }}</p>
                                         </div>
-                                        <a href="{{ route('documents.approval.generated.show', $document) }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                        <a href="{{ route('documents.approval.generated.show', $document).'#toolbar=0&view=FitH&navpanes=0' }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                             Buka
                                         </a>
                                     </div>
 
-                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.generated.show', $document).'#view=FitH&navpanes=0'" />
+                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.generated.show', $document).'#toolbar=0&view=FitH&navpanes=0'" />
                                 </section>
                             @else
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
@@ -223,12 +223,12 @@
                                                 <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                                 <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                             </div>
-                                            <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                            <a href="{{ route('documents.approval.files.show', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0' }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                                 Buka
                                             </a>
                                         </div>
 
-                                        <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#view=FitH&navpanes=0'" />
+                                        <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
                                     </section>
                                 @empty
                                     <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
@@ -245,13 +245,13 @@
                                                     <p class="text-sm font-bold text-slate-900">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                                     <p class="mt-1 truncate text-xs font-semibold text-slate-500">{{ $file->original_file_name }}</p>
                                                 </div>
-                                                <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                                <a href="{{ route('documents.approval.files.show', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0' }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                                     Buka
                                                 </a>
                                             </div>
 
                                             <x-documents.lazy-pdf-preview
-                                                :src="route('documents.approval.files.preview', [$document, $file]).'#view=FitH&navpanes=0'"
+                                                :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'"
                                                 height-class="h-[620px] 2xl:h-[72vh]"
                                             />
                                         </section>
@@ -266,12 +266,12 @@
                                             <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                             <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                         </div>
-                                        <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                        <a href="{{ route('documents.approval.files.show', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0' }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                             Buka
                                         </a>
                                     </div>
 
-                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#view=FitH&navpanes=0'" />
+                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
                                 </section>
                             @endforeach
 
@@ -288,12 +288,12 @@
                                         <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                         <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                     </div>
-                                    <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                    <a href="{{ route('documents.approval.files.show', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0' }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                         Buka
                                     </a>
                                 </div>
 
-                                <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#view=FitH&navpanes=0'" />
+                                <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
                             </section>
                         @empty
                             <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">

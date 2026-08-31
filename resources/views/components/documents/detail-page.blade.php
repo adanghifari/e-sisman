@@ -152,12 +152,12 @@
                                             <p class="truncate text-sm font-bold text-slate-900">Printout PDF Final</p>
                                             <p class="text-xs font-medium text-slate-500">Preview dinamis lengkap dengan lembar pengesahan.</p>
                                         </div>
-                                        <a href="{{ route($fileRoutePrefix.'.generated.show', $document) }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                        <a href="{{ route($fileRoutePrefix.'.generated.show', $document).'#toolbar=0&view=FitH&navpanes=0' }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                             Buka
                                         </a>
                                     </div>
 
-                                    <x-documents.lazy-pdf-preview :src="route($fileRoutePrefix.'.generated.show', $document).'#view=FitH&navpanes=0'" />
+                                    <x-documents.lazy-pdf-preview :src="route($fileRoutePrefix.'.generated.show', $document).'#toolbar=0&view=FitH&navpanes=0'" />
                                 </section>
                             @else
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
@@ -184,7 +184,7 @@
                                     </div>
 
                                     @if (\Illuminate\Support\Str::of($file->original_file_name)->lower()->endsWith('.pdf'))
-                                        <x-documents.lazy-pdf-preview :src="route($fileRoutePrefix.'.files.preview', [$document, $file]).'#view=FitH&navpanes=0'" />
+                                        <x-documents.lazy-pdf-preview :src="route($fileRoutePrefix.'.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
                                     @else
                                         <div class="px-4 py-8 text-center text-sm font-medium text-slate-500">
                                             Preview hanya tersedia untuk PDF. Gunakan tombol Buka untuk melihat file ini.
