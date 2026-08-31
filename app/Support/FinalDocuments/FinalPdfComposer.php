@@ -208,9 +208,11 @@ class FinalPdfComposer
             $pdf->Line($x + $leftWidth + $centerWidth, $lineY, $x + $contentWidth, $lineY);
         }
 
-        $logoPath = public_path('image/krakatau_logo.png');
+        $pdf->Line($x + $leftWidth, $y + (self::HEADER_HEIGHT / 2), $x + $leftWidth + $centerWidth, $y + (self::HEADER_HEIGHT / 2));
+
+        $logoPath = public_path('image/kopsuratlogo.jpeg');
         if (is_file($logoPath)) {
-            $pdf->Image($logoPath, $x + 2, $y + 4.5, min(54.0, $leftWidth - 5), 0, 'PNG');
+            $pdf->Image($logoPath, $x + 1.8, $y + 5.5, min(60.0, $leftWidth - 3.6), 0, 'JPEG');
         } else {
             $pdf->SetFont('helvetica', 'B', 10);
             $pdf->MultiCell($leftWidth, 8, 'KRAKATAU INTERNATIONAL PORT', 0, 'C', false, 1, $x, $y + 7);
@@ -218,14 +220,16 @@ class FinalPdfComposer
 
         $companyLineY = $y + 22.5;
         $pdf->Line($x, $companyLineY, $x + $leftWidth, $companyLineY);
-        $pdf->SetFont('helvetica', '', 9);
-        $pdf->MultiCell($leftWidth, 6, 'PT KRAKATAU BANDAR SAMUDERA', 0, 'C', false, 1, $x, $companyLineY + 2);
+        $pdf->SetFont('helvetica', '', 8.5);
+        $pdf->MultiCell($leftWidth, 6, 'PT KRAKATAU BANDAR SAMUDERA', 0, 'C', false, 1, $x, $companyLineY + 2.2);
 
         $centerX = $x + $leftWidth;
         $pdf->SetFont('helvetica', 'B', 10);
-        $pdf->MultiCell($centerWidth, 6, $documentType, 0, 'C', false, 1, $centerX, $y + 3);
-        $pdf->MultiCell($centerWidth, 6, 'SISTEM MANAJEMEN KBS', 0, 'C', false, 1, $centerX, $y + 9);
-        $pdf->MultiCell($centerWidth, 12, $documentName, 0, 'C', false, 1, $centerX, $y + 19);
+        $pdf->MultiCell($centerWidth, 5.5, $documentType, 0, 'C', false, 1, $centerX, $y + 3.4);
+        $pdf->SetFont('helvetica', 'B', 9);
+        $pdf->MultiCell($centerWidth, 5.5, 'SISTEM MANAJEMEN KBS', 0, 'C', false, 1, $centerX, $y + 8.8);
+        $pdf->SetFont('helvetica', 'B', 9.5);
+        $pdf->MultiCell($centerWidth, 12, $documentName, 0, 'C', false, 1, $centerX, $y + 18.8);
 
         $labels = ['No. Dok.', 'Revisi', 'Tgl. Terbit', 'Halaman'];
         $values = [$documentNumber, $revision, $publishedAt, "{$currentPage} dari {$totalBodyPages}"];

@@ -33,9 +33,19 @@
             <div class="header-company">PT KRAKATAU BANDAR SAMUDERA</div>
         </td>
         <td class="header-title" rowspan="4">
-            <div class="header-document-type">{{ \Illuminate\Support\Str::upper($documentType !== '' ? $documentType : '-') }}</div>
-            <div class="header-system-title">SISTEM MANAJEMEN KBS</div>
-            <div class="header-document-name">{{ \Illuminate\Support\Str::upper($documentName !== '' ? $documentName : '-') }}</div>
+            <table class="header-title-table">
+                <tr>
+                    <td>
+                        <div class="header-document-type">{{ \Illuminate\Support\Str::upper($documentType !== '' ? $documentType : '-') }}</div>
+                        <div class="header-system-title">SISTEM MANAJEMEN KBS</div>
+                    </td>
+                </tr>
+                <tr>
+                    <td>
+                        <div class="header-document-name">{{ \Illuminate\Support\Str::upper($documentName !== '' ? $documentName : '-') }}</div>
+                    </td>
+                </tr>
+            </table>
         </td>
         <td class="header-meta-label">No. Dok.</td>
         <td class="header-meta-value">: {{ $documentNumber !== '' ? $documentNumber : '-' }}</td>

@@ -34,7 +34,7 @@ class CoverPdfRenderer
         return $this->view->make('final-documents.cover', [
             'document' => $payload['document'] ?? [],
             'preparers' => $payload['preparers'] ?? [],
-            'logoPath' => public_path('image/krakatau_logo.png'),
+            'logoPath' => public_path('image/kopsuratlogo.jpeg'),
         ])->render();
     }
 

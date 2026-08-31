@@ -39,60 +39,84 @@
 
         .content-header td {
             border: 0.6pt solid #777777;
-            padding: 3pt 5pt;
+            padding: 0;
             vertical-align: middle;
         }
 
         .header-brand {
             width: 32.5%;
-            padding: 4pt 6pt 3pt;
             text-align: center;
         }
 
         .header-logo {
-            width: 54mm;
+            width: 60mm;
             height: auto;
-            margin-bottom: 2pt;
+            margin: 6pt auto 4pt;
         }
 
         .header-company {
             border-top: 0.6pt solid #777777;
-            margin: 3pt -5pt -3pt;
-            padding: 4pt 2pt 0;
-            font-size: 11pt;
-            line-height: 1.15;
+            padding-top: 3.5pt;
+            height: 7.5mm;
+            font-size: 9.5pt;
+            line-height: 1.1;
         }
 
         .header-title {
             width: 33%;
             text-align: center;
             font-weight: 700;
-            line-height: 1.2;
+            line-height: 1.08;
         }
 
-        .header-document-type,
-        .header-system-title {
-            font-size: 12pt;
+        .header-title-table {
+            width: 100%;
+            height: 30mm;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .content-header .header-title-table td {
+            border: 0;
+            padding: 0 4pt;
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        .content-header .header-title-table tr:first-child td {
+            border-bottom: 0.6pt solid #777777;
+            height: 15mm;
+        }
+
+        .content-header .header-title-table tr:last-child td {
+            height: 15mm;
+        }
+
+        .header-document-type {
+            font-size: 11pt;
         }
 
         .header-system-title {
             margin-top: 1pt;
+            font-size: 10pt;
         }
 
         .header-document-name {
-            margin-top: 8pt;
-            font-size: 12pt;
+            font-size: 10.5pt;
+            line-height: 1.12;
             word-wrap: break-word;
         }
 
         .header-meta-label {
             width: 13%;
+            padding-left: 5pt !important;
             font-size: 10.5pt;
             line-height: 1.2;
         }
 
         .header-meta-value {
             width: 21.5%;
+            padding-left: 5pt !important;
             font-size: 10.5pt;
             line-height: 1.2;
             word-wrap: break-word;

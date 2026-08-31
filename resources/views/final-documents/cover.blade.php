@@ -80,7 +80,7 @@
         }
 
         .brand-logo {
-            width: 52mm;
+            width: 60mm;
             height: auto;
         }
 

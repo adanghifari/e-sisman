@@ -39,7 +39,7 @@ class ContentPagePdfRenderer
             'document' => $payload['document'] ?? [],
             'page' => $page,
             'sample' => $sample,
-            'logoPath' => public_path('image/krakatau_logo.png'),
+            'logoPath' => public_path('image/kopsuratlogo.jpeg'),
         ])->render();
     }
 
