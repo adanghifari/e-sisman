@@ -69,6 +69,13 @@ return [
             'action' => 'preview',
         ],
         [
+            'code' => 'documents.approval.generated',
+            'name' => 'Preview Printout Approval Dokumen',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.approval.generated.show',
+            'action' => 'preview',
+        ],
+        [
             'code' => 'documents.create.view',
             'name' => 'Lihat Tambah Dokumen',
             'module' => 'Manajemen Dokumen',
@@ -129,6 +136,13 @@ return [
             'name' => 'Preview File Dokumen Master',
             'module' => 'Manajemen Dokumen',
             'route' => 'documents.master.files.preview',
+            'action' => 'preview',
+        ],
+        [
+            'code' => 'documents.master.generated',
+            'name' => 'Preview Printout Dokumen Master',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.master.generated.show',
             'action' => 'preview',
         ],
         [

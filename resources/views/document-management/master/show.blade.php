@@ -12,6 +12,8 @@
     :approval-flow-stages="$approvalFlowStages"
     :content-files="$contentFiles"
     :attachment-files="$attachmentFiles"
+    :generated-printout="$generatedPrintout"
+    :show-generated-printout="true"
     :document-history="$documentHistory"
 >
     <x-slot:actions>

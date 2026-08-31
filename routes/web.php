@@ -36,6 +36,7 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
         ->withErrors(['stage_approvers' => 'Halaman assign sudah diperbarui. Silakan simpan ulang dari detail dokumen.']));
     Route::get('documents/inbox/{document}/files/{file}', [DocumentApprovalController::class, 'file'])->name('documents.approval.files.show');
     Route::get('documents/inbox/{document}/files/{file}/preview', [DocumentApprovalController::class, 'preview'])->name('documents.approval.files.preview');
+    Route::get('documents/inbox/{document}/generated/{artifact}', [DocumentApprovalController::class, 'generatedFile'])->name('documents.approval.generated.show');
     Route::get('documents/create', [DocumentController::class, 'index'])->name('documents.create');
     Route::get('documents/drafts', [DocumentController::class, 'drafts'])->name('documents.create.drafts');
     Route::get('documents/drafts/{document}/edit', [DocumentController::class, 'editDraft'])
@@ -91,6 +92,7 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::post('documents/master/{document}/restore', [DocumentMasterController::class, 'restore'])->name('documents.master.restore');
     Route::get('documents/master/{document}/files/{file}', [DocumentMasterController::class, 'file'])->name('documents.master.files.show');
     Route::get('documents/master/{document}/files/{file}/preview', [DocumentMasterController::class, 'preview'])->name('documents.master.files.preview');
+    Route::get('documents/master/{document}/generated/{artifact}', [DocumentMasterController::class, 'generatedFile'])->name('documents.master.generated.show');
     Route::view('reports', 'reporting.index')->name('reports.index');
     Route::livewire('users', UserIndex::class)->name('users.index');
     Route::livewire('access-groups', AccessGroupIndex::class)->name('access-groups.index');

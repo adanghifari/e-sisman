@@ -9,6 +9,7 @@ use App\Models\ApprovalFlowStage;
 use App\Models\ApprovalStatus;
 use App\Models\Document;
 use App\Models\DocumentFile;
+use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
 use App\Models\ImportedExistingDocument;
@@ -45,6 +46,7 @@ class DocumentApprovalController extends Controller
             'officialPreparer',
             'departments',
             'files.uploader',
+            'finalArtifacts',
             'approvals.status',
             'approvals.approver',
             'approvals.role',
@@ -79,6 +81,7 @@ class DocumentApprovalController extends Controller
             ])->values(),
             'obsoleteSourceContentFiles' => $obsoleteSourceContentFiles,
             'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
+            'generatedPrintout' => $this->latestGeneratedPrintout($document),
             'documentHistory' => app(DocumentHistory::class)->forDocument($document),
         ]);
     }
@@ -345,6 +348,22 @@ class DocumentApprovalController extends Controller
         ]);
     }
 
+    public function generatedFile(Request $request, Document $document, DocumentFinalArtifact $artifact): BinaryFileResponse
+    {
+        $this->authorizeDocumentAccess($request, $document);
+        $this->authorizeApprovalGeneratedArtifact($document, $artifact);
+
+        $path = Storage::disk('local')->path($artifact->path_file);
+        abort_unless(is_file($path), 404);
+
+        return response()->file($path, [
+            'Content-Disposition' => 'inline; filename="'.$artifact->generated_file_name.'"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+        ]);
+    }
+
     private function authorizedFileDocument(Document $document, DocumentFile $file): Document
     {
         if ($file->t_document_id === $document->id) {
@@ -356,6 +375,32 @@ class DocumentApprovalController extends Controller
         }
 
         abort(404);
+    }
+
+    private function authorizeApprovalGeneratedArtifact(Document $document, DocumentFinalArtifact $artifact): void
+    {
+        abort_unless($artifact->t_document_id === $document->id, 404);
+        abort_unless($artifact->generation_status === DocumentFinalArtifact::STATUS_GENERATED, 404);
+        abort_unless(in_array($artifact->artifact_type, [
+            DocumentFinalArtifact::TYPE_APPROVAL_PREVIEW,
+            DocumentFinalArtifact::TYPE_FINAL_DOCUMENT,
+        ], true), 404);
+    }
+
+    private function latestGeneratedPrintout(Document $document): ?DocumentFinalArtifact
+    {
+        $preferredType = $document->status?->nama_status === StatusDocument::APPROVED
+            ? DocumentFinalArtifact::TYPE_FINAL_DOCUMENT
+            : DocumentFinalArtifact::TYPE_APPROVAL_PREVIEW;
+
+        return $document->finalArtifacts
+            ->where('artifact_type', $preferredType)
+            ->whereIn('generation_status', [
+                DocumentFinalArtifact::STATUS_GENERATED,
+                DocumentFinalArtifact::STATUS_FAILED,
+            ])
+            ->sortByDesc('generation_number')
+            ->first();
     }
 
     private function approvalDownloadNumber(Document $document, Document $downloadDocument): ?string
@@ -676,9 +721,12 @@ class DocumentApprovalController extends Controller
             return $this->finalizeRevisionApproval($document, $approvedStatus);
         }
 
+        $approvedAt = now();
+
         $document->update([
             'm_status_document_id' => $approvedStatus->id,
-            'approved_at' => now(),
+            'tanggal_terbit' => $document->tanggal_terbit ?? $approvedAt->toDateString(),
+            'approved_at' => $approvedAt,
             'rejected_at' => null,
         ]);
 
@@ -747,6 +795,8 @@ class DocumentApprovalController extends Controller
             throw new ConflictHttpException('Family dokumen sudah memiliki master aktif lain.');
         }
 
+        $approvedAt = now();
+
         $lockedDocument->update([
             'm_document_level_id' => $source->m_document_level_id,
             'm_status_document_id' => $approvedStatus->id,
@@ -759,7 +809,8 @@ class DocumentApprovalController extends Controller
             'nomor_dokumen' => $source->nomor_dokumen,
             'nomor_lembar_revisi' => $lockedDocument->nomor_lembar_revisi
                 ?: $this->revisionFormNumber($source, (int) $lockedDocument->nomor_revisi),
-            'approved_at' => now(),
+            'tanggal_terbit' => $lockedDocument->tanggal_terbit ?? $approvedAt->toDateString(),
+            'approved_at' => $approvedAt,
             'rejected_at' => null,
         ]);
 
@@ -798,6 +849,8 @@ class DocumentApprovalController extends Controller
             throw new ConflictHttpException('Imported existing master sumber sudah berubah.');
         }
 
+        $approvedAt = now();
+
         $lockedDocument->update([
             'm_document_level_id' => $source->m_document_level_id,
             'm_status_document_id' => $approvedStatus->id,
@@ -805,7 +858,8 @@ class DocumentApprovalController extends Controller
             'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
             'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
             'nomor_dokumen' => $source->nomor_dokumen,
-            'approved_at' => now(),
+            'tanggal_terbit' => $lockedDocument->tanggal_terbit ?? $approvedAt->toDateString(),
+            'approved_at' => $approvedAt,
             'rejected_at' => null,
         ]);
 
