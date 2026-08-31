@@ -110,6 +110,7 @@ class DocumentHistory
         $events = [];
 
         $document->approvals
+            ->reject(fn (Approval $approval): bool => $approval->shouldHideAsOfficialPreparerDisplay($document))
             ->groupBy(fn (Approval $approval): string => $approval->stages ?: 'Approval')
             ->each(function (Collection $stageApprovals, string $stage) use (&$events, $document): void {
                 $assigned = $stageApprovals

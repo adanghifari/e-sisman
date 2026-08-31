@@ -164,6 +164,41 @@ class FinalArtifactGeneratorTest extends TestCase
         $this->assertSame('Disahkan Khusus', $approvals[1]['stage_name']);
     }
 
+    public function test_approval_payload_hides_official_preparer_signature_stages(): void
+    {
+        $document = $this->createDocument();
+        $officialPreparer = User::query()->findOrFail($document->official_preparer_id);
+        $reviewer = User::factory()->create();
+
+        $this->createApproval($document, $officialPreparer, [
+            'stages' => 'TTD Penyusun Resmi',
+            'stage_name_snapshot' => 'TTD Penyusun Resmi',
+            'stage_order_snapshot' => null,
+            'approver_name_snapshot' => 'Penyusun Resmi',
+        ]);
+        $this->createApproval($document, $officialPreparer, [
+            'stages' => 'Disusun Oleh',
+            'stage_name_snapshot' => 'Disusun Oleh',
+            'stage_order_snapshot' => 1,
+            'approver_name_snapshot' => 'Penyusun Resmi',
+        ]);
+        $this->createApproval($document, $reviewer, [
+            'stages' => 'Disusun Oleh',
+            'stage_name_snapshot' => 'Disusun Oleh',
+            'stage_order_snapshot' => 1,
+            'approver_name_snapshot' => 'Reviewer Penyusun',
+        ]);
+        $this->createDocumentFile($document, 'filled_template');
+
+        $approvals = app(FinalArtifactGenerator::class)
+            ->prepare($document)
+            ->payload['approvals'];
+
+        $this->assertCount(1, $approvals);
+        $this->assertSame('Disusun Oleh', $approvals[0]['stage_name']);
+        $this->assertSame('Reviewer Penyusun', $approvals[0]['approvers'][0]['name']);
+    }
+
     public function test_approval_payload_uses_snapshot_instead_of_current_user_profile(): void
     {
         $oldDepartment = Department::query()->create([

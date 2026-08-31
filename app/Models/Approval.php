@@ -24,6 +24,11 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
 ])]
 class Approval extends Model
 {
+    private const OFFICIAL_PREPARER_DISPLAY_STAGES = [
+        'TTD Penyusun Resmi',
+        'Disusun Oleh',
+    ];
+
     protected $table = 't_approval';
 
     public $timestamps = false;
@@ -50,6 +55,22 @@ class Approval extends Model
             'approver_position_snapshot' => $approver?->jabatan,
             'approver_department_snapshot' => $approver?->department?->nama_department,
         ]);
+    }
+
+    public function shouldHideAsOfficialPreparerDisplay(Document $document): bool
+    {
+        if ($document->official_preparer_id === null || $this->user_id !== $document->official_preparer_id) {
+            return false;
+        }
+
+        $stageNames = [
+            trim((string) $this->stages),
+            trim((string) $this->stage_name_snapshot),
+        ];
+
+        return collect($stageNames)
+            ->filter()
+            ->contains(fn (string $stage): bool => in_array($stage, self::OFFICIAL_PREPARER_DISPLAY_STAGES, true));
     }
 
     public function document(): BelongsTo

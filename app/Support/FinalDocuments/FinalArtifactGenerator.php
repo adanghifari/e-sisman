@@ -264,7 +264,8 @@ class FinalArtifactGenerator
         $document->loadMissing('approvals.status');
 
         return $document->approvals
-            ->filter(fn (Approval $approval): bool => $approval->responded_at !== null)
+            ->filter(fn (Approval $approval): bool => $approval->responded_at !== null
+                && ! $approval->shouldHideAsOfficialPreparerDisplay($document))
             ->map(fn (Approval $approval): array => [
                 'stage_name' => $approval->stage_name_snapshot ?? $approval->stages,
                 'stage_order' => $approval->stage_order_snapshot,

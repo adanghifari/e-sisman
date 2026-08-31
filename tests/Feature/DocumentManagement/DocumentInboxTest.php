@@ -645,6 +645,52 @@ class DocumentInboxTest extends TestCase
             ->assertSee(StatusDocument::PROPOSED);
     }
 
+    public function test_document_history_hides_official_preparer_signature_stages(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create();
+        $officialPreparer = User::factory()->create();
+        $manager = User::factory()->create();
+        $document = $this->createDocument($submitter, [
+            'official_preparer_id' => $officialPreparer->id,
+        ]);
+
+        $this->createApproval($document, $officialPreparer, ApprovalStatus::APPROVED, [
+            'stages' => 'TTD Penyusun Resmi',
+            'stage_name_snapshot' => 'TTD Penyusun Resmi',
+            'responded_at' => now(),
+        ]);
+        $this->createApproval($document, $officialPreparer, ApprovalStatus::APPROVED, [
+            'stages' => 'Disusun Oleh',
+            'stage_name_snapshot' => 'Disusun Oleh',
+            'responded_at' => now(),
+        ]);
+        $this->createApproval($document, $manager, ApprovalStatus::APPROVED, [
+            'stages' => 'Diperiksa Oleh',
+            'stage_name_snapshot' => 'Diperiksa Oleh',
+            'responded_at' => now(),
+        ]);
+
+        $historyDescriptions = app(DocumentHistory::class)
+            ->forDocument($document)
+            ->pluck('description');
+
+        $this->assertTrue($document->approvals()
+            ->where('user_id', $officialPreparer->id)
+            ->where('stages', 'TTD Penyusun Resmi')
+            ->whereNotNull('responded_at')
+            ->exists());
+        $this->assertTrue($document->approvals()
+            ->where('user_id', $officialPreparer->id)
+            ->where('stages', 'Disusun Oleh')
+            ->whereNotNull('responded_at')
+            ->exists());
+        $this->assertFalse($historyDescriptions->contains('Memasuki tahap approval TTD Penyusun Resmi'));
+        $this->assertFalse($historyDescriptions->contains('Memasuki tahap approval Disusun Oleh'));
+        $this->assertTrue($historyDescriptions->contains('Memasuki tahap approval Diperiksa Oleh'));
+    }
+
     public function test_submitter_history_shows_revision_form_number_after_work_instruction_revision_is_approved(): void
     {
         $submitter = User::factory()->create(['name' => 'Pengaju Revisi IK']);

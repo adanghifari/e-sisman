@@ -830,7 +830,7 @@ class CreateDocumentTest extends TestCase
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
             ->assertOk()
             ->assertSee('Prosedur Submit Approval')
-            ->assertSee('TTD Penyusun Resmi')
+            ->assertDontSee('TTD Penyusun Resmi')
             ->assertSee('Disetujui');
 
         $this->actingAs($officialPreparer)
