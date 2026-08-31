@@ -321,6 +321,7 @@ class DocumentApprovalController extends Controller
     public function file(Request $request, Document $document, DocumentFile $file, RecordDocumentDownload $recordDocumentDownload): BinaryFileResponse
     {
         $this->authorizeDocumentAccess($request, $document);
+        abort_unless($document->status?->nama_status === StatusDocument::PROPOSED, 404);
         $downloadDocument = $this->authorizedFileDocument($document, $file);
 
         $path = Storage::disk('local')->path($file->path_file);
@@ -341,6 +342,7 @@ class DocumentApprovalController extends Controller
     public function preview(Request $request, Document $document, DocumentFile $file): BinaryFileResponse
     {
         $this->authorizeDocumentAccess($request, $document);
+        abort_unless($document->status?->nama_status === StatusDocument::PROPOSED, 404);
         $this->authorizedFileDocument($document, $file);
         abort_unless(Str::of($file->original_file_name)->lower()->endsWith('.pdf'), 415);
 

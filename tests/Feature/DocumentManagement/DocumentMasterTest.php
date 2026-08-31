@@ -192,7 +192,7 @@ class DocumentMasterTest extends TestCase
         $this->assertSame(1, substr_count($response->getContent(), 'PS-SMR-REL-OLD'));
     }
 
-    public function test_master_download_logs_master_document_number_snapshot(): void
+    public function test_master_raw_file_download_is_not_available_after_approval(): void
     {
         Storage::fake('local');
 
@@ -228,14 +228,9 @@ class DocumentMasterTest extends TestCase
 
         $this->actingAs($user)
             ->get(route('documents.master.files.show', [$revision, $file]))
-            ->assertOk();
+            ->assertNotFound();
 
-        $log = DocumentDownloadLog::query()->firstOrFail();
-
-        $this->assertSame('master', $log->download_context);
-        $this->assertSame('PS-SMR-SNAP', $log->document_number_snapshot);
-        $this->assertSame('Prosedur Sumber Revisi', $log->document_name_snapshot);
-        $this->assertSame(1, $log->document_revision_snapshot);
+        $this->assertSame(0, DocumentDownloadLog::query()->count());
     }
 
     public function test_master_page_does_not_show_approved_obsolete_request_transaction(): void
@@ -691,11 +686,10 @@ class DocumentMasterTest extends TestCase
             ->assertOk()
             ->assertSee('Nomor Lembar Revisi')
             ->assertSee('FMPS-KSA-02-01')
-            ->assertSee('Isi Dokumen Versi Revisi')
-            ->assertSee('dokumen-revisi.pdf')
-            ->assertSee('Lembar Revisi')
-            ->assertSee('lembar-revisi.pdf')
-            ->assertDontSee('Belum ada file isi dokumen.');
+            ->assertSee('Printout PDF Final')
+            ->assertDontSee('Isi Dokumen Versi Revisi')
+            ->assertDontSee('dokumen-revisi.pdf')
+            ->assertDontSee('lembar-revisi.pdf');
 
         $this->actingAs($submitter)
             ->get(route('documents.approval.show', $revision))
@@ -954,12 +948,12 @@ class DocumentMasterTest extends TestCase
             ->get(route('documents.obsolete.show', $revision))
             ->assertOk()
             ->assertSee('Detail Dokumen Obsolete')
-            ->assertSee('revision.pdf');
+            ->assertSee('Printout PDF Final')
+            ->assertDontSee('revision.pdf');
 
         $this->actingAs($user)
             ->get(route('documents.obsolete.files.preview', [$revision, $file]))
-            ->assertOk()
-            ->assertHeader('content-type', 'application/pdf');
+            ->assertNotFound();
     }
 
     public function test_regular_user_cannot_restore_obsolete_document_as_master(): void

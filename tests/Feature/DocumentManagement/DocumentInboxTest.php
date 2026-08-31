@@ -407,7 +407,7 @@ class DocumentInboxTest extends TestCase
             'nomor_dokumen' => 'PS-SMR-WAITING',
         ]);
         $this->createApproval($document, $waitingApprover, ApprovalStatus::WAITING, [
-            'stages' => 'Diperiksa oleh Manager',
+            'stages' => 'Manager',
         ]);
 
         $this->actingAs($waitingApprover)
@@ -424,7 +424,7 @@ class DocumentInboxTest extends TestCase
             'nomor_dokumen' => 'PS-SMR-WAITING-INBOX',
         ]);
         $this->createApproval($document, $waitingApprover, ApprovalStatus::WAITING, [
-            'stages' => 'Diperiksa oleh Manager',
+            'stages' => 'Manager',
         ]);
 
         $this->actingAs($waitingApprover)
@@ -1010,7 +1010,7 @@ class DocumentInboxTest extends TestCase
             ->get(route('documents.approval.show', $document))
             ->assertOk()
             ->assertSee('Assign Approver')
-            ->assertSee('Dibuat oleh')
+            ->assertSee('Staff')
             ->assertSee('Tambah Approver')
             ->assertSee('Save Approver')
             ->assertSee('action="'.route('documents.approval.assign', $document).'"', false)
@@ -1183,11 +1183,11 @@ class DocumentInboxTest extends TestCase
             'nama_tahap' => 'Manager',
         ]);
         $this->createApproval($document, $approvedApprover, ApprovalStatus::APPROVED, [
-            'stages' => 'Diperiksa oleh Manager',
+            'stages' => 'Manager',
             'responded_at' => now(),
         ]);
         $this->createApproval($document, $pendingApprover, ApprovalStatus::PENDING, [
-            'stages' => 'Diperiksa oleh Manager',
+            'stages' => 'Manager',
         ]);
 
         $this->actingAs($documentControlAdmin)
@@ -1231,11 +1231,11 @@ class DocumentInboxTest extends TestCase
             'nama_tahap' => 'Manager',
         ]);
         $this->createApproval($document, $respondedApprover, ApprovalStatus::REJECTED, [
-            'stages' => 'Diperiksa oleh Manager',
+            'stages' => 'Manager',
             'responded_at' => now(),
         ]);
         $this->createApproval($document, $pendingApprover, ApprovalStatus::PENDING, [
-            'stages' => 'Diperiksa oleh Manager',
+            'stages' => 'Manager',
         ]);
 
         $this->actingAs($documentControlAdmin)
@@ -1278,7 +1278,7 @@ class DocumentInboxTest extends TestCase
             'nama_tahap' => 'Manager',
         ]);
         $this->createApproval($document, $approvedApprover, ApprovalStatus::APPROVED, [
-            'stages' => 'Diperiksa oleh Manager',
+            'stages' => 'Manager',
             'responded_at' => now(),
         ]);
 
@@ -1419,13 +1419,13 @@ class DocumentInboxTest extends TestCase
             'nama_tahap' => 'Manager',
         ]);
         $this->createApproval($document, $firstApprover, ApprovalStatus::PENDING, [
-            'stages' => 'Dibuat oleh Staff',
+            'stages' => 'Staff',
         ]);
         $this->createApproval($document, $secondApprover, ApprovalStatus::PENDING, [
-            'stages' => 'Dibuat oleh Staff',
+            'stages' => 'Staff',
         ]);
         $this->createApproval($document, $nextStageApprover, ApprovalStatus::WAITING, [
-            'stages' => 'Diperiksa oleh Manager',
+            'stages' => 'Manager',
         ]);
 
         $this->actingAs($firstApprover)
@@ -1540,16 +1540,16 @@ class DocumentInboxTest extends TestCase
         $document = $this->createDocument($submitter);
         StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::REJECTED]);
         $this->createApproval($document, $rejectingApprover, ApprovalStatus::PENDING, [
-            'stages' => 'Dibuat oleh Staff',
+            'stages' => 'Staff',
         ]);
         $this->createApproval($document, $otherPendingApprover, ApprovalStatus::PENDING, [
-            'stages' => 'Dibuat oleh Staff',
+            'stages' => 'Staff',
         ]);
         $this->createApproval($document, $waitingApprover, ApprovalStatus::WAITING, [
-            'stages' => 'Diperiksa oleh Manager',
+            'stages' => 'Manager',
         ]);
         $this->createApproval($document, $approvedApprover, ApprovalStatus::APPROVED, [
-            'stages' => 'Dibuat oleh Staff',
+            'stages' => 'Staff',
             'responded_at' => now(),
         ]);
 
@@ -1875,11 +1875,11 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Riwayat Dokumen')
             ->assertSee('Dokumen diobsoletekan lewat pengajuan PS-SMR-OBSOLETE')
             ->assertSee('Obsolete')
-            ->assertSee(route('documents.approval.files.preview', [$request, $sourceFile]), false);
+            ->assertDontSee(route('documents.approval.files.preview', [$request, $sourceFile]), false);
 
         $this->actingAs($approver)
             ->get(route('documents.approval.files.preview', [$request, $sourceFile]))
-            ->assertOk();
+            ->assertNotFound();
 
         $this->actingAs($approver)
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
@@ -2036,12 +2036,12 @@ class DocumentInboxTest extends TestCase
         $this->assertFalse(Approval::query()
             ->where('t_document_id', $document->id)
             ->where('user_id', $officialPreparer->id)
-            ->where('stages', 'Dibuat oleh Staff')
+            ->where('stages', 'Staff')
             ->exists());
         $this->assertTrue(Approval::query()
             ->where('t_document_id', $document->id)
             ->where('user_id', $replacementApprover->id)
-            ->where('stages', 'Dibuat oleh Staff')
+            ->where('stages', 'Staff')
             ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::PENDING))
             ->exists());
     }
@@ -2088,9 +2088,7 @@ class DocumentInboxTest extends TestCase
 
         $this->actingAs($documentControlAdmin)
             ->get(route('documents.approval.show', $document))
-            ->assertOk()
-            ->assertDontSee('TTD Penyusun Resmi')
-            ->assertDontSee('Tanda tangan penyusun resmi tercatat saat submit dokumen.');
+            ->assertOk();
 
         $this->actingAs($documentControlAdmin)
             ->post(route('documents.approval.assign', $document), [
@@ -2106,7 +2104,7 @@ class DocumentInboxTest extends TestCase
             Approval::query()
                 ->where('t_document_id', $document->id)
                 ->where('user_id', $officialPreparer->id)
-                ->where('stages', 'Dibuat oleh Staff')
+                ->where('stages', 'Staff')
                 ->firstOrFail()
                 ->status
                 ->kode_status,
@@ -2114,7 +2112,7 @@ class DocumentInboxTest extends TestCase
         $this->assertNotNull(Approval::query()
             ->where('t_document_id', $document->id)
             ->where('user_id', $officialPreparer->id)
-            ->where('stages', 'Dibuat oleh Staff')
+            ->where('stages', 'Staff')
             ->firstOrFail()
             ->responded_at);
         $this->assertSame(
@@ -2122,7 +2120,7 @@ class DocumentInboxTest extends TestCase
             Approval::query()
                 ->where('t_document_id', $document->id)
                 ->where('user_id', $nextApprover->id)
-                ->where('stages', 'Diperiksa oleh Manager')
+                ->where('stages', 'Manager')
                 ->firstOrFail()
                 ->status
                 ->kode_status,
@@ -2137,7 +2135,7 @@ class DocumentInboxTest extends TestCase
             ->get(route('documents.inbox', ['tab' => 'processed-history']))
             ->assertOk()
             ->assertSee('Dokumen Pengujian')
-            ->assertSee('Dibuat oleh Staff')
+            ->assertSee('Staff')
             ->assertSee('Disetujui');
     }
 

@@ -15,6 +15,7 @@
     'generatedPrintout' => null,
     'showGeneratedPrintout' => false,
     'canPreviewGeneratedPrintout' => false,
+    'showSourceFiles' => true,
     'documentHistory' => collect(),
     'relatedObsoleteDocuments' => collect(),
     'showOwnerSection' => true,
@@ -170,58 +171,60 @@
                     </x-documents.form-section>
                 @endif
 
-                <x-documents.form-section title="Isi Dokumen" icon="document-text">
-                    <div class="space-y-4 px-6 py-6">
-                        @forelse ($contentFiles as $file)
-                            <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                @if ($showSourceFiles)
+                    <x-documents.form-section title="Isi Dokumen" icon="document-text">
+                        <div class="space-y-4 px-6 py-6">
+                            @forelse ($contentFiles as $file)
+                                <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                    <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                        <div class="min-w-0">
+                                            <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
+                                            <p class="text-xs font-medium text-slate-500">{{ $fileTypeLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                        </div>
+                                        <a href="{{ route($fileRoutePrefix.'.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                            Buka
+                                        </a>
+                                    </div>
+
+                                    @if (\Illuminate\Support\Str::of($file->original_file_name)->lower()->endsWith('.pdf'))
+                                        <iframe
+                                            src="{{ route($fileRoutePrefix.'.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                            class="min-h-[760px] w-full bg-white xl:h-[82vh]"
+                                        ></iframe>
+                                    @else
+                                        <div class="px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                            Preview hanya tersedia untuk PDF. Gunakan tombol Buka untuk melihat file ini.
+                                        </div>
+                                    @endif
+                                </section>
+                            @empty
+                                <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                    Belum ada file isi dokumen.
+                                </p>
+                            @endforelse
+                        </div>
+                    </x-documents.form-section>
+
+                    <x-documents.form-section title="Lampiran" icon="paper-clip">
+                        <div class="space-y-3 px-6 py-6">
+                            @forelse ($attachmentFiles as $file)
+                                <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
                                     <div class="min-w-0">
-                                        <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
-                                        <p class="text-xs font-medium text-slate-500">{{ $fileTypeLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                        <p class="truncate text-sm font-bold text-slate-900">{{ $file->attachment_title ?: $file->original_file_name }}</p>
+                                        <p class="text-xs font-medium text-slate-500">{{ $file->original_file_name }} - {{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
                                     </div>
                                     <a href="{{ route($fileRoutePrefix.'.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                         Buka
                                     </a>
                                 </div>
-
-                                @if (\Illuminate\Support\Str::of($file->original_file_name)->lower()->endsWith('.pdf'))
-                                    <iframe
-                                        src="{{ route($fileRoutePrefix.'.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
-                                        class="min-h-[760px] w-full bg-white xl:h-[82vh]"
-                                    ></iframe>
-                                @else
-                                    <div class="px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                        Preview hanya tersedia untuk PDF. Gunakan tombol Buka untuk melihat file ini.
-                                    </div>
-                                @endif
-                            </section>
-                        @empty
-                            <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                Belum ada file isi dokumen.
-                            </p>
-                        @endforelse
-                    </div>
-                </x-documents.form-section>
-
-                <x-documents.form-section title="Lampiran" icon="paper-clip">
-                    <div class="space-y-3 px-6 py-6">
-                        @forelse ($attachmentFiles as $file)
-                            <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
-                                <div class="min-w-0">
-                                    <p class="truncate text-sm font-bold text-slate-900">{{ $file->attachment_title ?: $file->original_file_name }}</p>
-                                    <p class="text-xs font-medium text-slate-500">{{ $file->original_file_name }} - {{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
-                                </div>
-                                <a href="{{ route($fileRoutePrefix.'.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                    Buka
-                                </a>
-                            </div>
-                        @empty
-                            <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                Tidak ada lampiran.
-                            </p>
-                        @endforelse
-                    </div>
-                </x-documents.form-section>
+                            @empty
+                                <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                    Tidak ada lampiran.
+                                </p>
+                            @endforelse
+                        </div>
+                    </x-documents.form-section>
+                @endif
 
                 @if ($relatedObsoleteDocuments->isNotEmpty())
                     <x-documents.form-section title="Dokumen Obsolete Terkait" icon="archive-box-x-mark">

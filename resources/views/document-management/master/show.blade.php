@@ -15,6 +15,7 @@
     :generated-printout="$generatedPrintout"
     :show-generated-printout="true"
     :can-preview-generated-printout="$canPreviewGeneratedPrintout"
+    :show-source-files="false"
     :document-history="$documentHistory"
 >
     <x-slot:actions>

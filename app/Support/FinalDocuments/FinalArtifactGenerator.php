@@ -92,8 +92,8 @@ class FinalArtifactGenerator
     {
         $document->loadMissing('status');
 
-        if ($document->status?->nama_status !== StatusDocument::APPROVED) {
-            throw new DomainException('Only approved documents can be prepared as final artifacts.');
+        if (! in_array($document->status?->nama_status, [StatusDocument::APPROVED, StatusDocument::OBSOLETE], true)) {
+            throw new DomainException('Only approved or obsolete documents can be prepared as final artifacts.');
         }
 
         if ($document->request_type === 'obsolete') {

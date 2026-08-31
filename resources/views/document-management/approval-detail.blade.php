@@ -11,6 +11,11 @@
         $statusCode = $activeApproval?->status?->kode_status ?? $document->status?->nama_status ?? '-';
         $statusLabel = $activeApproval?->status?->nama_status ?? $document->status?->nama_status ?? '-';
         $isObsoleteRequest = $document->request_type === 'obsolete';
+        $showSourceFiles = $document->status?->nama_status === \App\Models\StatusDocument::PROPOSED;
+        $printoutTitle = $showSourceFiles ? 'Printout PDF Sementara' : 'Printout PDF Final';
+        $printoutDescription = $showSourceFiles
+            ? 'Preview dinamis. Lembar pengesahan akan tersedia setelah semua approval selesai.'
+            : 'Versi final lengkap dengan cover, kop, footer, lembar pengesahan, dan lampiran.';
         $ownerLabel = $isObsoleteRequest ? 'Pengaju Awal Dokumen' : ($isLevelOne ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses');
         $contentSectionTitle = match (true) {
             $isObsoleteRequest => 'Dokumen yang Akan Diobsoletekan',
@@ -177,14 +182,14 @@
                 @endif
 
                 @if (! $isObsoleteRequest)
-                    <x-documents.form-section title="Printout PDF Sementara" icon="document-check">
+                    <x-documents.form-section :title="$printoutTitle" icon="document-check">
                         <div class="space-y-4 px-6 py-6">
                             @if ($canPreviewGeneratedPrintout)
                                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                                     <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
                                         <div class="min-w-0">
-                                            <p class="truncate text-sm font-bold text-slate-900">Printout PDF Sementara</p>
-                                            <p class="text-xs font-medium text-slate-500">Preview dinamis. Lembar pengesahan akan tersedia setelah semua approval selesai.</p>
+                                            <p class="truncate text-sm font-bold text-slate-900">{{ $printoutTitle }}</p>
+                                            <p class="text-xs font-medium text-slate-500">{{ $printoutDescription }}</p>
                                         </div>
                                         <a href="{{ route('documents.approval.generated.show', $document) }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                             Buka
@@ -198,44 +203,45 @@
                                 </section>
                             @else
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                    Printout PDF sementara belum tersedia karena file sumber dokumen belum lengkap.
+                                    {{ $printoutTitle }} belum tersedia karena file sumber dokumen belum lengkap.
                                 </p>
                             @endif
                         </div>
                     </x-documents.form-section>
                 @endif
 
-                <x-documents.form-section :title="$contentSectionTitle" icon="document-text">
-                    <div class="space-y-4 px-6 py-6">
-                        @if ($isObsoleteRequest)
-                            @forelse ($obsoleteSourceContentFiles as $file)
-                                @php
-                                    $obsoleteSourceFileRoutePrefix = $document->revisedFrom?->status?->nama_status === \App\Models\StatusDocument::OBSOLETE
-                                        ? 'documents.obsolete'
-                                        : 'documents.master';
-                                @endphp
-                                <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                    <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
-                                        <div class="min-w-0">
-                                            <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
-                                            <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                @if ($showSourceFiles)
+                    <x-documents.form-section :title="$contentSectionTitle" icon="document-text">
+                        <div class="space-y-4 px-6 py-6">
+                            @if ($isObsoleteRequest)
+                                @forelse ($obsoleteSourceContentFiles as $file)
+                                    @php
+                                        $obsoleteSourceFileRoutePrefix = $document->revisedFrom?->status?->nama_status === \App\Models\StatusDocument::OBSOLETE
+                                            ? 'documents.obsolete'
+                                            : 'documents.master';
+                                    @endphp
+                                    <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                        <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                            <div class="min-w-0">
+                                                <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
+                                                <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                            </div>
+                                            <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                                Buka
+                                            </a>
                                         </div>
-                                        <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                            Buka
-                                        </a>
-                                    </div>
 
-                                    <iframe
-                                        src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
-                                        class="min-h-[760px] w-full bg-white xl:h-[82vh]"
-                                    ></iframe>
-                                </section>
-                            @empty
-                                <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                    Belum ada file isi dokumen.
-                                </p>
-                            @endforelse
-                        @elseif ($levelKey === 'level-4')
+                                        <iframe
+                                            src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
+                                            class="min-h-[760px] w-full bg-white xl:h-[82vh]"
+                                        ></iframe>
+                                    </section>
+                                @empty
+                                    <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                        Belum ada file isi dokumen.
+                                    </p>
+                                @endforelse
+                            @elseif ($levelKey === 'level-4')
                             @if ($revisionMainFiles->isNotEmpty())
                                 <div class="grid gap-4 2xl:grid-cols-2">
                                     @foreach ($revisionMainFiles as $file)
@@ -306,29 +312,30 @@
                                 Belum ada file isi dokumen.
                             </p>
                         @endforelse
-                        @endif
-                    </div>
-                </x-documents.form-section>
+                            @endif
+                        </div>
+                    </x-documents.form-section>
 
-                <x-documents.form-section title="Lampiran" icon="paper-clip">
-                    <div class="space-y-3 px-6 py-6">
-                        @forelse ($attachmentFiles as $file)
-                            <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
-                                <div class="min-w-0">
-                                    <p class="truncate text-sm font-bold text-slate-900">{{ $file->attachment_title ?: $file->original_file_name }}</p>
-                                    <p class="text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
+                    <x-documents.form-section title="Lampiran" icon="paper-clip">
+                        <div class="space-y-3 px-6 py-6">
+                            @forelse ($attachmentFiles as $file)
+                                <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
+                                    <div class="min-w-0">
+                                        <p class="truncate text-sm font-bold text-slate-900">{{ $file->attachment_title ?: $file->original_file_name }}</p>
+                                        <p class="text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
+                                    </div>
+                                    <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                        Buka
+                                    </a>
                                 </div>
-                                <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                    Buka
-                                </a>
-                            </div>
-                        @empty
-                            <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                Tidak ada lampiran.
-                            </p>
-                        @endforelse
-                    </div>
-                </x-documents.form-section>
+                            @empty
+                                <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                    Tidak ada lampiran.
+                                </p>
+                            @endforelse
+                        </div>
+                    </x-documents.form-section>
+                @endif
             </div>
 
             <aside class="space-y-6 xl:sticky xl:top-8">

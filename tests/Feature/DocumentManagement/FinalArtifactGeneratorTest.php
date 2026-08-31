@@ -67,7 +67,7 @@ class FinalArtifactGeneratorTest extends TestCase
         $document = $this->createDocument(statusName: StatusDocument::PROPOSED);
 
         $this->expectException(DomainException::class);
-        $this->expectExceptionMessage('Only approved documents can be prepared as final artifacts.');
+        $this->expectExceptionMessage('Only approved or obsolete documents can be prepared as final artifacts.');
 
         app(FinalArtifactGenerator::class)->prepare($document);
     }

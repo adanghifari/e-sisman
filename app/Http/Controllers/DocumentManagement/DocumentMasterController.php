@@ -381,6 +381,7 @@ class DocumentMasterController extends Controller
         abort_unless($file->t_document_id === $document->id, 404);
         abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
         abort_unless($this->isVisibleMasterRecord($document), 404);
+        abort(404);
     }
 
     private function authorizeMasterGeneratedPreviewAccess(Document $document): void
