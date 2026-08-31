@@ -20,7 +20,7 @@ class AutoGenerateApprovalPreview
     public function generateIfNeeded(
         Document|int $document,
         User|int|null $generatedBy = null,
-        PdfCompositionMode $mode = PdfCompositionMode::FIT_TO_SAFE_AREA,
+        PdfCompositionMode $mode = PdfCompositionMode::FIT_WIDTH_TO_SAFE_TOP,
     ): ?DocumentFinalArtifact {
         $documentId = $document instanceof Document ? $document->id : $document;
         $generatedByUser = $generatedBy instanceof User

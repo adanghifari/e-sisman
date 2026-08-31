@@ -128,9 +128,23 @@ class FinalPdfComposer
 
             $pdf->AddPage($orientation, [$pageWidth, $pageHeight]);
 
-            $placement = $stampBody && $mode === PdfCompositionMode::FIT_TO_SAFE_AREA
-                ? $this->geometry->fitToSafeArea($pageWidth, $pageHeight, $pageWidth, $pageHeight, $this->safeArea())
-                : $this->geometry->preserve($pageWidth, $pageHeight, $pageWidth, $pageHeight);
+            $placement = match (true) {
+                $stampBody && $mode === PdfCompositionMode::FIT_TO_SAFE_AREA => $this->geometry->fitToSafeArea(
+                    $pageWidth,
+                    $pageHeight,
+                    $pageWidth,
+                    $pageHeight,
+                    $this->safeArea(),
+                ),
+                $stampBody && $mode === PdfCompositionMode::FIT_WIDTH_TO_SAFE_TOP => $this->geometry->fitWidthToSafeTop(
+                    $pageWidth,
+                    $pageHeight,
+                    $pageWidth,
+                    $pageHeight,
+                    $this->safeArea(),
+                ),
+                default => $this->geometry->preserve($pageWidth, $pageHeight, $pageWidth, $pageHeight),
+            };
 
             $pdf->useImportedPage(
                 $template,

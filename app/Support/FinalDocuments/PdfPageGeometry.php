@@ -50,4 +50,35 @@ class PdfPageGeometry
             scale: $scale,
         );
     }
+
+    public function fitWidthToSafeTop(
+        float $pageWidth,
+        float $pageHeight,
+        float $sourceWidth,
+        float $sourceHeight,
+        ?PdfSafeArea $safeArea = null,
+    ): PdfPagePlacement {
+        $safeArea ??= new PdfSafeArea;
+        $availableWidth = $pageWidth - $safeArea->left - $safeArea->right;
+
+        if ($availableWidth <= 0) {
+            throw new PdfCompositionException('Page is too small for configured header/footer safe area.');
+        }
+
+        $scale = min(1.0, $availableWidth / $sourceWidth);
+        $width = $sourceWidth * $scale;
+        $height = $sourceHeight * $scale;
+
+        return new PdfPagePlacement(
+            pageWidth: $pageWidth,
+            pageHeight: $pageHeight,
+            sourceWidth: $sourceWidth,
+            sourceHeight: $sourceHeight,
+            x: $safeArea->left + (($availableWidth - $width) / 2),
+            y: $safeArea->top,
+            width: $width,
+            height: $height,
+            scale: $scale,
+        );
+    }
 }

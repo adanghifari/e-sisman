@@ -19,7 +19,7 @@ class DynamicFinalDocumentRenderer
     public function render(
         Document $document,
         PdfDocumentContext $context,
-        PdfCompositionMode $mode = PdfCompositionMode::FIT_TO_SAFE_AREA,
+        PdfCompositionMode $mode = PdfCompositionMode::FIT_WIDTH_TO_SAFE_TOP,
     ): string {
         $this->assertEligible($document, $context);
 

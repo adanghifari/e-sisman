@@ -73,10 +73,10 @@ class PdfCompositionTest extends TestCase
         $placement = app(PdfPageGeometry::class)->fitToSafeArea(210, 297, 210, 297, app(FinalPdfComposer::class)->safeArea());
 
         $this->assertLessThanOrEqual(1, $placement->scale);
-        $this->assertEqualsWithDelta(42, $placement->y, 0.01);
+        $this->assertEqualsWithDelta(23, $placement->y, 0.01);
         $this->assertGreaterThanOrEqual(9, $placement->x);
         $this->assertLessThanOrEqual(201, $placement->x + $placement->width);
-        $this->assertLessThanOrEqual(277, $placement->y + $placement->height);
+        $this->assertLessThanOrEqual(287, $placement->y + $placement->height);
         $this->assertEqualsWithDelta(210 / 297, $placement->width / $placement->height, 0.001);
     }
 
@@ -100,9 +100,20 @@ class PdfCompositionTest extends TestCase
         $this->assertStringStartsWith('%PDF-', $result->pdf);
         $this->assertSame('fit_to_safe_area', $result->bodyPages[0]['mode']);
         $this->assertLessThanOrEqual(1, $placement['scale']);
-        $this->assertGreaterThanOrEqual(41.99, $placement['y']);
-        $this->assertLessThanOrEqual(277.01, $placement['y'] + $placement['height']);
+        $this->assertGreaterThanOrEqual(22.99, $placement['y']);
+        $this->assertLessThanOrEqual(287.01, $placement['y'] + $placement['height']);
         $this->assertSame($sourceChecksum, hash_file('sha256', $body));
+    }
+
+    public function test_fit_width_to_safe_top_keeps_source_height_from_footer_scaling(): void
+    {
+        $placement = app(PdfPageGeometry::class)->fitWidthToSafeTop(210, 297, 210, 297, app(FinalPdfComposer::class)->safeArea());
+
+        $this->assertEqualsWithDelta(23, $placement->y, 0.01);
+        $this->assertEqualsWithDelta(9, $placement->x, 0.01);
+        $this->assertEqualsWithDelta(192, $placement->width, 0.01);
+        $this->assertGreaterThan(270, $placement->height);
+        $this->assertGreaterThan(287, $placement->y + $placement->height);
     }
 
     public function test_preserve_mode_processes_mixed_page_sizes_per_page(): void
