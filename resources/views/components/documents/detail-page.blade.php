@@ -14,6 +14,7 @@
     'attachmentFiles' => collect(),
     'generatedPrintout' => null,
     'showGeneratedPrintout' => false,
+    'canPreviewGeneratedPrintout' => false,
     'documentHistory' => collect(),
     'relatedObsoleteDocuments' => collect(),
     'showOwnerSection' => true,
@@ -26,7 +27,6 @@
     $levelKey = $document->documentLevel?->kode ?? 'level-3';
     $ownerLabel = $levelKey === 'level-1' ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses';
     $publishedAt = $document->tanggal_terbit ?? $document->approved_at;
-    $generatedPrintoutStatus = $generatedPrintout?->generation_status;
     $levelTitle = trim(($document->documentLevel?->nama_level ?? '').' : '.\Illuminate\Support\Str::after($document->documentLevel?->nama_dokumen ?? '', ': '), ' :');
     $processLabel = collect([
         $document->businessProcess?->nama_proses_bisnis,
@@ -144,30 +144,26 @@
                 @if ($showGeneratedPrintout)
                     <x-documents.form-section title="Printout PDF Final" icon="document-check">
                         <div class="space-y-4 px-6 py-6">
-                            @if ($generatedPrintoutStatus === \App\Models\DocumentFinalArtifact::STATUS_GENERATED)
+                            @if ($canPreviewGeneratedPrintout)
                                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                                     <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
                                         <div class="min-w-0">
-                                            <p class="truncate text-sm font-bold text-slate-900">{{ $generatedPrintout->generated_file_name }}</p>
-                                            <p class="text-xs font-medium text-slate-500">Dokumen final lengkap dengan lembar pengesahan.</p>
+                                            <p class="truncate text-sm font-bold text-slate-900">Printout PDF Final</p>
+                                            <p class="text-xs font-medium text-slate-500">Preview dinamis lengkap dengan lembar pengesahan.</p>
                                         </div>
-                                        <a href="{{ route($fileRoutePrefix.'.generated.show', [$document, $generatedPrintout]) }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                        <a href="{{ route($fileRoutePrefix.'.generated.show', $document) }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                             Buka
                                         </a>
                                     </div>
 
                                     <iframe
-                                        src="{{ route($fileRoutePrefix.'.generated.show', [$document, $generatedPrintout]) }}#view=FitH&navpanes=0"
+                                        src="{{ route($fileRoutePrefix.'.generated.show', $document) }}#view=FitH&navpanes=0"
                                         class="min-h-[760px] w-full bg-white xl:h-[82vh]"
                                     ></iframe>
                                 </section>
-                            @elseif ($generatedPrintoutStatus === \App\Models\DocumentFinalArtifact::STATUS_FAILED)
-                                <p class="rounded-lg border border-red-100 bg-red-50 px-4 py-4 text-sm font-semibold leading-6 text-red-800">
-                                    Printout PDF final gagal digenerate. {{ $generatedPrintout->generation_error ?: 'Silakan cek file sumber dokumen.' }}
-                                </p>
                             @else
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                    Printout PDF final belum tersedia.
+                                    Printout PDF final belum tersedia karena file sumber dokumen belum lengkap.
                                 </p>
                             @endif
                         </div>

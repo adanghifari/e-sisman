@@ -18,6 +18,8 @@ use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentHistory;
 use App\Support\FinalDocuments\AutoGenerateFinalDocument;
+use App\Support\FinalDocuments\DynamicFinalDocumentRenderer;
+use App\Support\FinalDocuments\PdfDocumentContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -26,6 +28,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 class DocumentApprovalController extends Controller
@@ -82,6 +85,10 @@ class DocumentApprovalController extends Controller
             'obsoleteSourceContentFiles' => $obsoleteSourceContentFiles,
             'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
             'generatedPrintout' => $this->latestGeneratedPrintout($document),
+            'canPreviewGeneratedPrintout' => app(DynamicFinalDocumentRenderer::class)
+                ->canRender($document, $document->status?->nama_status === StatusDocument::APPROVED
+                    ? PdfDocumentContext::FINAL_DOCUMENT
+                    : PdfDocumentContext::APPROVAL_PREVIEW),
             'documentHistory' => app(DocumentHistory::class)->forDocument($document),
         ]);
     }
@@ -348,16 +355,22 @@ class DocumentApprovalController extends Controller
         ]);
     }
 
-    public function generatedFile(Request $request, Document $document, DocumentFinalArtifact $artifact): BinaryFileResponse
+    public function generatedFile(
+        Request $request,
+        Document $document,
+        DynamicFinalDocumentRenderer $renderer,
+    ): Response
     {
         $this->authorizeDocumentAccess($request, $document);
-        $this->authorizeApprovalGeneratedArtifact($document, $artifact);
+        abort_if($document->request_type === 'obsolete', 404);
 
-        $path = Storage::disk('local')->path($artifact->path_file);
-        abort_unless(is_file($path), 404);
+        $context = $document->status?->nama_status === StatusDocument::APPROVED
+            ? PdfDocumentContext::FINAL_DOCUMENT
+            : PdfDocumentContext::APPROVAL_PREVIEW;
 
-        return response()->file($path, [
-            'Content-Disposition' => 'inline; filename="'.$artifact->generated_file_name.'"',
+        return response($renderer->render($document, $context), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="'.$renderer->fileName($document, $context).'"',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
             'Pragma' => 'no-cache',
             'Expires' => '0',

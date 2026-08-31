@@ -16,7 +16,7 @@ class ApprovalPreviewArtifactGenerator
     public function generate(
         Document $document,
         ?User $generatedBy = null,
-        PdfCompositionMode $mode = PdfCompositionMode::PRESERVE,
+        PdfCompositionMode $mode = PdfCompositionMode::FIT_TO_SAFE_AREA,
     ): DocumentFinalArtifact {
         return $this->finalDocumentArtifactGenerator->generatePrepared(
             $this->finalArtifactGenerator->prepareApprovalPreview($document, $generatedBy),

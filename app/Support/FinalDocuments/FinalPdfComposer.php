@@ -91,9 +91,9 @@ class FinalPdfComposer
     {
         return new PdfSafeArea(
             left: self::HORIZONTAL_MARGIN,
-            top: 45.0,
+            top: 23.0,
             right: self::HORIZONTAL_MARGIN,
-            bottom: 20.0,
+            bottom: 10.0,
         );
     }
 

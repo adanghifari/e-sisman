@@ -21,7 +21,7 @@ class FinalDocumentArtifactGenerator
     public function generate(
         Document $document,
         ?User $generatedBy = null,
-        PdfCompositionMode $mode = PdfCompositionMode::PRESERVE,
+        PdfCompositionMode $mode = PdfCompositionMode::FIT_TO_SAFE_AREA,
     ): DocumentFinalArtifact {
         $preparation = $this->finalArtifactGenerator->prepare(
             $document,
@@ -34,7 +34,7 @@ class FinalDocumentArtifactGenerator
 
     public function generatePrepared(
         FinalArtifactPreparation $preparation,
-        PdfCompositionMode $mode = PdfCompositionMode::PRESERVE,
+        PdfCompositionMode $mode = PdfCompositionMode::FIT_TO_SAFE_AREA,
         PdfDocumentContext $context = PdfDocumentContext::FINAL_DOCUMENT,
     ): DocumentFinalArtifact {
         $artifact = $preparation->artifact;

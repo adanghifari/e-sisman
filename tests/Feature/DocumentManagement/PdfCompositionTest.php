@@ -73,7 +73,7 @@ class PdfCompositionTest extends TestCase
         $placement = app(PdfPageGeometry::class)->fitToSafeArea(210, 297, 210, 297, app(FinalPdfComposer::class)->safeArea());
 
         $this->assertLessThanOrEqual(1, $placement->scale);
-        $this->assertEqualsWithDelta(45, $placement->y, 0.01);
+        $this->assertEqualsWithDelta(42, $placement->y, 0.01);
         $this->assertGreaterThanOrEqual(9, $placement->x);
         $this->assertLessThanOrEqual(201, $placement->x + $placement->width);
         $this->assertLessThanOrEqual(277, $placement->y + $placement->height);
@@ -100,7 +100,7 @@ class PdfCompositionTest extends TestCase
         $this->assertStringStartsWith('%PDF-', $result->pdf);
         $this->assertSame('fit_to_safe_area', $result->bodyPages[0]['mode']);
         $this->assertLessThanOrEqual(1, $placement['scale']);
-        $this->assertGreaterThanOrEqual(45, $placement['y']);
+        $this->assertGreaterThanOrEqual(41.99, $placement['y']);
         $this->assertLessThanOrEqual(277.01, $placement['y'] + $placement['height']);
         $this->assertSame($sourceChecksum, hash_file('sha256', $body));
     }

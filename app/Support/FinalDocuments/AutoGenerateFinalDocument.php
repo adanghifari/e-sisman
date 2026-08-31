@@ -20,7 +20,7 @@ class AutoGenerateFinalDocument
     public function generateIfNeeded(
         Document|int $document,
         User|int|null $generatedBy = null,
-        PdfCompositionMode $mode = PdfCompositionMode::PRESERVE,
+        PdfCompositionMode $mode = PdfCompositionMode::FIT_TO_SAFE_AREA,
     ): ?DocumentFinalArtifact {
         $documentId = $document instanceof Document ? $document->id : $document;
         $generatedByUser = $generatedBy instanceof User

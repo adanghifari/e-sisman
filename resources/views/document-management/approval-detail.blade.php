@@ -47,7 +47,6 @@
                 ->reject(fn ($file) => in_array($file->type_file, ['revision_content', 'revision_form'], true))
                 ->values()
             : $contentFiles;
-        $generatedPrintoutStatus = $generatedPrintout?->generation_status;
         $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
         $readonlySelect = 'h-12 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
     @endphp
@@ -180,30 +179,26 @@
                 @if (! $isObsoleteRequest)
                     <x-documents.form-section title="Printout PDF Sementara" icon="document-check">
                         <div class="space-y-4 px-6 py-6">
-                            @if ($generatedPrintoutStatus === \App\Models\DocumentFinalArtifact::STATUS_GENERATED)
+                            @if ($canPreviewGeneratedPrintout)
                                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                                     <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
                                         <div class="min-w-0">
-                                            <p class="truncate text-sm font-bold text-slate-900">{{ $generatedPrintout->generated_file_name }}</p>
-                                            <p class="text-xs font-medium text-slate-500">Generated saat submit. Lembar pengesahan akan tersedia setelah semua approval selesai.</p>
+                                            <p class="truncate text-sm font-bold text-slate-900">Printout PDF Sementara</p>
+                                            <p class="text-xs font-medium text-slate-500">Preview dinamis. Lembar pengesahan akan tersedia setelah semua approval selesai.</p>
                                         </div>
-                                        <a href="{{ route('documents.approval.generated.show', [$document, $generatedPrintout]) }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                        <a href="{{ route('documents.approval.generated.show', $document) }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
                                             Buka
                                         </a>
                                     </div>
 
                                     <iframe
-                                        src="{{ route('documents.approval.generated.show', [$document, $generatedPrintout]) }}#view=FitH&navpanes=0"
+                                        src="{{ route('documents.approval.generated.show', $document) }}#view=FitH&navpanes=0"
                                         class="min-h-[760px] w-full bg-white xl:h-[82vh]"
                                     ></iframe>
                                 </section>
-                            @elseif ($generatedPrintoutStatus === \App\Models\DocumentFinalArtifact::STATUS_FAILED)
-                                <p class="rounded-lg border border-red-100 bg-red-50 px-4 py-4 text-sm font-semibold leading-6 text-red-800">
-                                    Printout PDF sementara gagal digenerate. {{ $generatedPrintout->generation_error ?: 'Silakan cek file sumber dokumen.' }}
-                                </p>
                             @else
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                    Printout PDF sementara belum tersedia.
+                                    Printout PDF sementara belum tersedia karena file sumber dokumen belum lengkap.
                                 </p>
                             @endif
                         </div>

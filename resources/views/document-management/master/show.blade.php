@@ -14,6 +14,7 @@
     :attachment-files="$attachmentFiles"
     :generated-printout="$generatedPrintout"
     :show-generated-printout="true"
+    :can-preview-generated-printout="$canPreviewGeneratedPrintout"
     :document-history="$documentHistory"
 >
     <x-slot:actions>

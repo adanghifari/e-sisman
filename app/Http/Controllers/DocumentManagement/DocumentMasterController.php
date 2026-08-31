@@ -15,6 +15,8 @@ use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentHistory;
+use App\Support\FinalDocuments\DynamicFinalDocumentRenderer;
+use App\Support\FinalDocuments\PdfDocumentContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -23,6 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 class DocumentMasterController extends Controller
 {
@@ -190,6 +193,8 @@ class DocumentMasterController extends Controller
             'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document', 'revision_content'])->values(),
             'attachmentFiles' => $document->files->whereIn('type_file', ['attachment', 'revision_form'])->values(),
             'generatedPrintout' => $this->latestGeneratedPrintout($document),
+            'canPreviewGeneratedPrintout' => app(DynamicFinalDocumentRenderer::class)
+                ->canRender($document, PdfDocumentContext::FINAL_DOCUMENT),
             'documentHistory' => app(DocumentHistory::class)->forDocument($document),
             'relatedObsoleteDocuments' => $this->relatedImportedObsoleteForWorkflowMaster($document),
         ]);
@@ -354,15 +359,15 @@ class DocumentMasterController extends Controller
         ]);
     }
 
-    public function generatedFile(Document $document, DocumentFinalArtifact $artifact): BinaryFileResponse
+    public function generatedFile(Document $document, DynamicFinalDocumentRenderer $renderer): Response
     {
-        $this->authorizeMasterGeneratedArtifact($document, $artifact);
+        $this->authorizeMasterGeneratedPreviewAccess($document);
 
-        $path = Storage::disk('local')->path($artifact->path_file);
-        abort_unless(is_file($path), 404);
+        $context = PdfDocumentContext::FINAL_DOCUMENT;
 
-        return response()->file($path, [
-            'Content-Disposition' => 'inline; filename="'.$artifact->generated_file_name.'"',
+        return response($renderer->render($document, $context), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="'.$renderer->fileName($document, $context).'"',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
             'Pragma' => 'no-cache',
             'Expires' => '0',
@@ -378,13 +383,10 @@ class DocumentMasterController extends Controller
         abort_unless($this->isVisibleMasterRecord($document), 404);
     }
 
-    private function authorizeMasterGeneratedArtifact(Document $document, DocumentFinalArtifact $artifact): void
+    private function authorizeMasterGeneratedPreviewAccess(Document $document): void
     {
         $document->loadMissing('status');
 
-        abort_unless($artifact->t_document_id === $document->id, 404);
-        abort_unless($artifact->artifact_type === DocumentFinalArtifact::TYPE_FINAL_DOCUMENT, 404);
-        abort_unless($artifact->generation_status === DocumentFinalArtifact::STATUS_GENERATED, 404);
         abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
         abort_unless($this->isVisibleMasterRecord($document), 404);
     }
