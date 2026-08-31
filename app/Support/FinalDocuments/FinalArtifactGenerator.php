@@ -200,16 +200,33 @@ class FinalArtifactGenerator
      */
     public function collectAttachments(Document $document): array
     {
-        return $document->files()
+        $attachments = $document->files()
             ->where('type_file', 'attachment')
             ->orderByRaw('CASE WHEN attachment_order IS NULL THEN 1 ELSE 0 END')
             ->orderBy('attachment_order')
             ->orderBy('id')
-            ->get()
+            ->get();
+
+        if ($document->request_type === 'revision') {
+            $revisionForm = $document->files()
+                ->where('type_file', 'revision_form')
+                ->latest('id')
+                ->first();
+
+            if ($revisionForm !== null) {
+                $attachments->prepend($revisionForm);
+            }
+        }
+
+        return $attachments
+            ->values()
             ->map(fn (DocumentFile $file, int $index): array => [
                 'id' => $file->id,
                 'number' => $index + 1,
-                'title' => $file->attachment_title ?: $file->original_file_name,
+                'title' => $file->type_file === 'revision_form'
+                    ? ($file->attachment_title ?: 'Lembar Revisi')
+                    : ($file->attachment_title ?: $file->original_file_name),
+                'type' => $file->type_file,
                 'order' => $file->attachment_order,
                 'path_file' => $file->path_file,
                 'original_file_name' => $file->original_file_name,

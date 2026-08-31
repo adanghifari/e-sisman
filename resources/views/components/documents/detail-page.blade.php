@@ -37,7 +37,7 @@
                         'filled_template' => 'Template Dokumen',
                         'imported_document' => 'Dokumen Import',
                         'existing_document' => 'Dokumen Existing',
-                        'revision_content' => 'Isi Dokumen Versi Revisi',
+                        'revision_content' => 'Dokumen Revisi',
                         'revision_form' => 'Lembar Revisi',
                         'attachment' => 'Lampiran',
     ];

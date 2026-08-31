@@ -206,6 +206,7 @@ class ApprovalPreviewArtifactTest extends TestCase
     {
         [$source, $revision, $approver] = $this->revisionFixture();
         $this->storeDocumentFile($revision, 'revision_content', $this->pdfBinary(['Revision body']));
+        $this->storeDocumentFile($revision, 'revision_form', $this->pdfBinary(['Revision form']));
 
         app(AutoGenerateApprovalPreview::class)->generateIfNeeded($revision->id, $revision->user_id);
 
@@ -232,6 +233,33 @@ class ApprovalPreviewArtifactTest extends TestCase
         ]);
     }
 
+    public function test_revision_approval_preview_merges_revision_form_as_first_attachment(): void
+    {
+        [, $revision] = $this->revisionFixture();
+        $revisionForm = $this->storeDocumentFile($revision, 'revision_form', $this->pdfBinary(['Revision form']), [
+            'original_file_name' => 'lembar-revisi.pdf',
+            'stored_file_name' => 'lembar-revisi.pdf',
+        ]);
+        $this->storeDocumentFile($revision, 'revision_content', $this->pdfBinary(['Revision body']));
+        $userAttachment = $this->storeDocumentFile($revision, 'attachment', $this->pdfBinary(['User attachment']), [
+            'attachment_title' => 'Matriks Komunikasi',
+            'attachment_order' => 1,
+            'original_file_name' => 'matriks.pdf',
+            'stored_file_name' => 'matriks.pdf',
+        ]);
+
+        $payload = app(FinalArtifactGenerator::class)
+            ->prepareApprovalPreview($revision)
+            ->payload;
+
+        $this->assertSame($revisionForm->id, $payload['attachments'][0]['id']);
+        $this->assertSame(1, $payload['attachments'][0]['number']);
+        $this->assertSame('Lembar Revisi', $payload['attachments'][0]['title']);
+        $this->assertSame($userAttachment->id, $payload['attachments'][1]['id']);
+        $this->assertSame(2, $payload['attachments'][1]['number']);
+        $this->assertSame('Matriks Komunikasi', $payload['attachments'][1]['title']);
+    }
+
     public function test_imported_existing_revision_submit_generates_approval_preview(): void
     {
         [$user, $source] = $this->importedExistingFixture();
@@ -244,10 +272,18 @@ class ApprovalPreviewArtifactTest extends TestCase
                 'tanggal_terbit' => '2026-08-29',
                 'revision_content' => UploadedFile::fake()->createWithContent('revision-content.pdf', $this->pdfBinary(['Revision content'])),
                 'revision_form' => UploadedFile::fake()->createWithContent('revision-form.pdf', $this->pdfBinary(['Revision form'])),
+                'attachment_titles' => ['Matriks Komunikasi'],
+                'attachment_orders' => [1],
+                'attachments' => [
+                    UploadedFile::fake()->createWithContent('matriks.pdf', $this->pdfBinary(['Matriks komunikasi'])),
+                ],
             ])
             ->assertRedirect();
 
         $revision = Document::query()->where('nama_dokumen', 'Imported Revision Preview')->firstOrFail();
+        $payload = app(FinalArtifactGenerator::class)
+            ->prepareApprovalPreview($revision)
+            ->payload;
 
         $this->assertSame(StatusDocument::PROPOSED, $revision->status->nama_status);
         $this->assertDatabaseHas('document_final_artifacts', [
@@ -255,6 +291,9 @@ class ApprovalPreviewArtifactTest extends TestCase
             'artifact_type' => DocumentFinalArtifact::TYPE_APPROVAL_PREVIEW,
             'generation_status' => DocumentFinalArtifact::STATUS_GENERATED,
         ]);
+        $this->assertSame('Lembar Revisi', $payload['attachments'][0]['title']);
+        $this->assertSame('Matriks Komunikasi', $payload['attachments'][1]['title']);
+        $this->assertSame(2, $payload['attachments'][1]['number']);
     }
 
     /**
@@ -428,12 +467,12 @@ class ApprovalPreviewArtifactTest extends TestCase
         ]);
     }
 
-    private function storeDocumentFile(Document $document, string $type, string $contents): DocumentFile
+    private function storeDocumentFile(Document $document, string $type, string $contents, array $attributes = []): DocumentFile
     {
-        $path = "documents/{$document->id}/{$type}.pdf";
+        $path = $attributes['path_file'] ?? "documents/{$document->id}/{$type}.pdf";
         Storage::disk('local')->put($path, $contents);
 
-        return DocumentFile::query()->create([
+        return DocumentFile::query()->create($attributes + [
             't_document_id' => $document->id,
             'type_file' => $type,
             'path_file' => $path,

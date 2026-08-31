@@ -255,6 +255,35 @@ class FinalArtifactGeneratorTest extends TestCase
         $this->assertSame('revision_content', $preparation->payload['source']['type']);
     }
 
+    public function test_revision_form_is_merged_as_first_attachment_for_revision_document(): void
+    {
+        $document = $this->createDocument(['request_type' => 'revision']);
+        $revisionForm = $this->createDocumentFile($document, 'revision_form', 'revision form body', [
+            'original_file_name' => 'lembar-revisi.pdf',
+            'stored_file_name' => 'lembar-revisi.pdf',
+        ]);
+        $this->createDocumentFile($document, 'revision_content');
+        $userAttachment = $this->createDocumentFile($document, 'attachment', 'attachment body', [
+            'attachment_title' => 'Matriks Komunikasi',
+            'attachment_order' => 1,
+            'original_file_name' => 'matriks.pdf',
+            'stored_file_name' => 'matriks.pdf',
+        ]);
+
+        $payload = app(FinalArtifactGenerator::class)
+            ->prepare($document)
+            ->payload;
+
+        $this->assertCount(2, $payload['attachments']);
+        $this->assertSame($revisionForm->id, $payload['attachments'][0]['id']);
+        $this->assertSame(1, $payload['attachments'][0]['number']);
+        $this->assertSame('revision_form', $payload['attachments'][0]['type']);
+        $this->assertSame('Lembar Revisi', $payload['attachments'][0]['title']);
+        $this->assertSame($userAttachment->id, $payload['attachments'][1]['id']);
+        $this->assertSame(2, $payload['attachments'][1]['number']);
+        $this->assertSame('Matriks Komunikasi', $payload['attachments'][1]['title']);
+    }
+
     public function test_legacy_approval_with_null_snapshot_does_not_crash_or_use_current_profile(): void
     {
         $document = $this->createDocument();

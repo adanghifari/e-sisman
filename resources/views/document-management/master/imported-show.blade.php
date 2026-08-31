@@ -40,8 +40,13 @@
                     </label>
                     <x-ui.date-input label="Tanggal Terbit Revisi" name="tanggal_terbit" />
                     <x-ui.textarea label="Catatan Revisi" name="catatan_revisi" rows="3" />
-                    <x-ui.file-upload label="Isi Dokumen Revisi" name="revision_content" accept=".pdf" required />
                     <x-ui.file-upload label="Lembar Revisi" name="revision_form" accept=".pdf" required />
+                    <x-ui.file-upload label="Dokumen Revisi" name="revision_content" accept=".pdf" required />
+
+                    <div class="rounded-lg border border-slate-200 bg-slate-50 p-4">
+                        <p class="mb-3 text-sm font-bold text-slate-900">Lampiran</p>
+                        <x-documents.attachment-list />
+                    </div>
 
                     <button type="submit" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700">
                         <flux:icon name="arrow-path" class="size-4" />

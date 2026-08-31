@@ -519,28 +519,7 @@
 
                             @if ($levelKey === 'level-4')
                                 <x-documents.upload-toggle-card
-                                    title="1. Isi Dokumen Versi Revisi"
-                                    button-label="Upload Dokumen Revisi"
-                                    tone="sky"
-                                >
-                                    <x-ui.file-upload
-                                        label="Upload Isi Dokumen Versi Revisi"
-                                        name="revision_content"
-                                        accept=".pdf,application/pdf"
-                                        hint="Upload dokumen utama yang sudah direvisi. Format PDF, maksimal 10 MB."
-                                        :max-files="1"
-                                        :max-file-size-kb="10240"
-                                        :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content', collect())->isEmpty()"
-                                        :existing-files="$existingFilePayload('revision_content')"
-                                    />
-
-                                    @error('revision_content')
-                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                    @enderror
-                                </x-documents.upload-toggle-card>
-
-                                <x-documents.upload-toggle-card
-                                    title="2. Lembar Revisi"
+                                    title="1. Lembar Revisi"
                                     button-label="Upload Lembar Revisi"
                                     tone="sky"
                                 >
@@ -556,6 +535,27 @@
                                     />
 
                                     @error('revision_form')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </x-documents.upload-toggle-card>
+
+                                <x-documents.upload-toggle-card
+                                    title="2. Dokumen Revisi"
+                                    button-label="Upload Dokumen Revisi"
+                                    tone="sky"
+                                >
+                                    <x-ui.file-upload
+                                        label="Upload Dokumen Revisi"
+                                        name="revision_content"
+                                        accept=".pdf,application/pdf"
+                                        hint="Upload dokumen utama yang sudah direvisi. Format PDF, maksimal 10 MB."
+                                        :max-files="1"
+                                        :max-file-size-kb="10240"
+                                        :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content', collect())->isEmpty()"
+                                        :existing-files="$existingFilePayload('revision_content')"
+                                    />
+
+                                    @error('revision_content')
                                         <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                     @enderror
                                 </x-documents.upload-toggle-card>

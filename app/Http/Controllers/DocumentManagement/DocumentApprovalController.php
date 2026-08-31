@@ -17,6 +17,7 @@ use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentHistory;
+use App\Support\DocumentRejectionHistory;
 use App\Support\FinalDocuments\AutoGenerateFinalDocument;
 use App\Support\FinalDocuments\DynamicFinalDocumentRenderer;
 use App\Support\FinalDocuments\PdfDocumentContext;
@@ -90,6 +91,7 @@ class DocumentApprovalController extends Controller
                     ? PdfDocumentContext::FINAL_DOCUMENT
                     : PdfDocumentContext::APPROVAL_PREVIEW),
             'documentHistory' => app(DocumentHistory::class)->forDocument($document),
+            'rejectionHistory' => app(DocumentRejectionHistory::class)->forDocument($document),
         ]);
     }
 

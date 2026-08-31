@@ -324,7 +324,7 @@ class ImportedExistingDocumentTest extends TestCase
         ApprovalStatus::query()->firstOrCreate(['kode_status' => ApprovalStatus::APPROVED], ['nama_status' => 'Disetujui']);
 
         DocumentNumberingSetup::create([
-            'scope_identifier' => 'PS-SMR',
+            'scope_identifier' => 'PS-OPS',
             'existing_start_number' => 1,
             'existing_end_number' => 127,
             'v2_start_number' => 128,

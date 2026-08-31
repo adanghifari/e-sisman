@@ -427,6 +427,12 @@ class ImportedExistingDocumentController extends Controller
             'tanggal_terbit' => ['nullable', 'date'],
             'revision_content' => ['required', 'file', 'mimes:pdf', 'max:10240'],
             'revision_form' => ['required', 'file', 'mimes:pdf', 'max:10240'],
+            'attachment_titles' => ['nullable', 'array', 'max:10'],
+            'attachment_titles.*' => ['required_with:attachments.*', 'string', 'max:255'],
+            'attachment_orders' => ['nullable', 'array', 'max:10'],
+            'attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
+            'attachments' => ['nullable', 'array', 'max:10'],
+            'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
         ]);
 
         $document = null;
@@ -476,6 +482,7 @@ class ImportedExistingDocumentController extends Controller
 
             $this->storeTDocumentFile($document, $request->file('revision_content'), 'revision_content', $request->user()->id);
             $this->storeTDocumentFile($document, $request->file('revision_form'), 'revision_form', $request->user()->id);
+            $this->storeTDocumentAttachments($request, $document);
 
             $documentId = $document->id;
             $generatedById = $request->user()->id;
@@ -677,7 +684,34 @@ class ImportedExistingDocumentController extends Controller
         ]);
     }
 
-    private function storeTDocumentFile(Document $document, mixed $file, string $type, int $uploadedBy): void
+    private function storeTDocumentAttachments(Request $request, Document $document): void
+    {
+        $titles = collect($request->input('attachment_titles', []))->values();
+        $orders = collect($request->input('attachment_orders', []))->values();
+
+        foreach (array_values($request->file('attachments', [])) as $index => $attachment) {
+            $title = trim((string) $titles->get($index, ''));
+            $order = max(1, (int) ($orders->get($index) ?: ($index + 1)));
+
+            $this->storeTDocumentFile(
+                $document,
+                $attachment,
+                'attachment',
+                $request->user()->id,
+                $title !== '' ? $title : null,
+                $order,
+            );
+        }
+    }
+
+    private function storeTDocumentFile(
+        Document $document,
+        mixed $file,
+        string $type,
+        int $uploadedBy,
+        ?string $attachmentTitle = null,
+        ?int $attachmentOrder = null,
+    ): void
     {
         $path = $file->store("documents/{$document->id}", 'local');
 
@@ -689,6 +723,8 @@ class ImportedExistingDocumentController extends Controller
             'original_file_name' => $file->getClientOriginalName(),
             'stored_file_name' => basename($path),
             'file_size' => $file->getSize(),
+            'attachment_title' => $attachmentTitle,
+            'attachment_order' => $attachmentOrder,
         ]);
     }
 

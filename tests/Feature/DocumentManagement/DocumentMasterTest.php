@@ -687,7 +687,7 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Nomor Lembar Revisi')
             ->assertSee('FMPS-KSA-02-01')
             ->assertSee('Printout PDF Final')
-            ->assertDontSee('Isi Dokumen Versi Revisi')
+            ->assertDontSee('Dokumen Revisi')
             ->assertDontSee('dokumen-revisi.pdf')
             ->assertDontSee('lembar-revisi.pdf');
 

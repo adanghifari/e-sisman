@@ -33,13 +33,13 @@
         $contentFileLabels = [
             'filled_template' => 'Template Dokumen',
             'imported_document' => 'Dokumen Import',
-            'revision_content' => 'Isi Dokumen Versi Revisi',
+            'revision_content' => 'Dokumen Revisi',
             'revision_form' => 'Lembar Revisi',
             'revision_before' => 'Semula',
             'revision_after' => 'Menjadi',
         ];
         $revisionMainFiles = $levelKey === 'level-4'
-            ? collect(['revision_content', 'revision_form'])
+            ? collect(['revision_form', 'revision_content'])
                 ->map(fn ($type) => $contentFiles
                     ->where('type_file', $type)
                     ->sortByDesc('id')
@@ -381,6 +381,39 @@
                         </div>
                     </div>
                 </section>
+
+                @if ($rejectionHistory->isNotEmpty())
+                    <section class="overflow-hidden rounded-lg border border-red-100 bg-white shadow-sm">
+                        <div class="border-b border-red-100 px-6 py-5">
+                            <h3 class="text-sm font-bold text-red-950">Riwayat Penolakan</h3>
+                        </div>
+                        <div class="space-y-2 px-6 py-5">
+                            @foreach ($rejectionHistory as $item)
+                                <div class="rounded-lg bg-red-50 px-3 py-3">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <p class="text-sm font-semibold text-red-950">
+                                                Transaksi #{{ $item['document_id'] }}
+                                            </p>
+                                            <p class="mt-1 text-xs font-medium text-red-700">
+                                                {{ $item['stage'] }} oleh {{ $item['approver_name'] }}
+                                            </p>
+                                            @if ($item['responded_at'])
+                                                <p class="mt-1 text-xs font-medium text-red-700">
+                                                    {{ $item['responded_at']->translatedFormat('d M Y H:i:s') }}
+                                                </p>
+                                            @endif
+                                        </div>
+                                        <x-ui.status-badge label="Ditolak" tone="red" class="shrink-0" />
+                                    </div>
+                                    @if ($item['catatan'])
+                                        <p class="mt-2 rounded-md bg-white px-2 py-1 text-xs text-slate-600">{{ $item['catatan'] }}</p>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+                    </section>
+                @endif
 
                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <div class="border-b border-slate-100 px-6 py-5">

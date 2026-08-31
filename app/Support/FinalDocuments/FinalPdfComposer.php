@@ -215,6 +215,7 @@ class FinalPdfComposer
                     'page_height' => $pageHeight,
                     'orientation' => $orientation,
                     'mode' => $mode->value,
+                    'header' => 'standard',
                     'placement' => [
                         'x' => $placement->x,
                         'y' => $placement->y,
@@ -248,6 +249,7 @@ class FinalPdfComposer
 
         foreach ($chunks as $chunkIndex => $chunk) {
             $bodyPageNumber = $bodyPageOffset + $chunkIndex + 1;
+            $printedAttachmentTitles = [];
             $pdf->AddPage('P', [$pageWidth, $pageHeight]);
             $this->stampBodyHeaderFooter($pdf, $payload, $bodyPageNumber, $totalBodyPages, $pageWidth, $pageHeight);
 
@@ -266,9 +268,10 @@ class FinalPdfComposer
 
             foreach ($chunk as $attachment) {
                 $number = (int) ($attachment['number'] ?? 0);
-                $title = $this->value($attachment['title'] ?? null);
+                $title = $this->attachmentListTitle($attachment, $payload);
+                $printedAttachmentTitles[] = $title;
                 $pdf->MultiCell($numberWidth, 7, "7.{$number}", 0, 'L', false, 0, $x, $rowY);
-                $pdf->MultiCell($contentWidth - $numberWidth, 7, "Lampiran {$number}. {$title}", 0, 'L', false, 1, $x + $numberWidth, $rowY);
+                $pdf->MultiCell($contentWidth - $numberWidth, 7, $title, 0, 'L', false, 1, $x + $numberWidth, $rowY);
                 $rowY += max(7.0, $pdf->getLastH());
             }
 
@@ -278,6 +281,8 @@ class FinalPdfComposer
                 'page_height' => $pageHeight,
                 'orientation' => 'P',
                 'mode' => 'generated_attachment_list',
+                'header' => 'standard',
+                'attachment_titles' => $printedAttachmentTitles,
                 'placement' => null,
                 'page_label' => "{$bodyPageNumber} dari {$totalBodyPages}",
             ];
@@ -306,12 +311,15 @@ class FinalPdfComposer
             if (! ($attachment['mergeable'] ?? false)) {
                 for ($pageNumber = 1; $pageNumber <= $pageCount; $pageNumber++) {
                     $appendedPages++;
+                    $header = $this->attachmentHeaderType($attachment);
                     $this->appendAttachmentFallbackPage(
                         $pdf,
                         $payload,
                         $attachment,
                         $bodyPageOffset + $appendedPages,
                         $totalBodyPages,
+                        $pageNumber,
+                        $pageCount,
                     );
 
                     $pages[] = [
@@ -320,6 +328,14 @@ class FinalPdfComposer
                         'page_height' => 297.0,
                         'orientation' => 'P',
                         'mode' => 'attachment_fallback',
+                        'header' => $header,
+                        'header_page_label' => $this->attachmentHeaderPageLabel(
+                            $attachment,
+                            $bodyPageOffset + $appendedPages,
+                            $totalBodyPages,
+                            $pageNumber,
+                            $pageCount,
+                        ),
                         'attachment_number' => $attachment['number'] ?? null,
                         'attachment_title' => $attachment['title'] ?? null,
                         'placement' => null,
@@ -342,7 +358,17 @@ class FinalPdfComposer
                 $bodyPageNumber = $bodyPageOffset + $appendedPages + 1;
 
                 $pdf->AddPage($orientation, [$pageWidth, $pageHeight]);
-                $this->stampBodyHeaderFooter($pdf, $payload, $bodyPageNumber, $totalBodyPages, $pageWidth, $pageHeight);
+                $header = $this->stampAttachmentHeaderFooter(
+                    $pdf,
+                    $payload,
+                    $attachment,
+                    $bodyPageNumber,
+                    $totalBodyPages,
+                    $pageWidth,
+                    $pageHeight,
+                    $pageNumber,
+                    $pageCount,
+                );
                 $this->stampAttachmentTitle($pdf, $attachment, $pageWidth);
 
                 $availableHeight = $pageHeight - self::BODY_CONTENT_TOP - self::BODY_CONTENT_BOTTOM - 10;
@@ -373,6 +399,14 @@ class FinalPdfComposer
                     'page_height' => $pageHeight,
                     'orientation' => $orientation,
                     'mode' => 'attachment',
+                    'header' => $header,
+                    'header_page_label' => $this->attachmentHeaderPageLabel(
+                        $attachment,
+                        $bodyPageNumber,
+                        $totalBodyPages,
+                        $pageNumber,
+                        $pageCount,
+                    ),
                     'attachment_number' => $attachment['number'] ?? null,
                     'attachment_title' => $attachment['title'] ?? null,
                     'placement' => [
@@ -400,12 +434,24 @@ class FinalPdfComposer
         array $attachment,
         int $bodyPageNumber,
         int $totalBodyPages,
+        int $attachmentPageNumber = 1,
+        int $attachmentPageCount = 1,
     ): void {
         $pageWidth = 210.0;
         $pageHeight = 297.0;
 
         $pdf->AddPage('P', [$pageWidth, $pageHeight]);
-        $this->stampBodyHeaderFooter($pdf, $payload, $bodyPageNumber, $totalBodyPages, $pageWidth, $pageHeight);
+        $this->stampAttachmentHeaderFooter(
+            $pdf,
+            $payload,
+            $attachment,
+            $bodyPageNumber,
+            $totalBodyPages,
+            $pageWidth,
+            $pageHeight,
+            $attachmentPageNumber,
+            $attachmentPageCount,
+        );
         $this->stampAttachmentTitle($pdf, $attachment, $pageWidth);
 
         $x = self::HORIZONTAL_MARGIN + 8;
@@ -588,6 +634,24 @@ class FinalPdfComposer
 
     /**
      * @param  array<string, mixed>  $attachment
+     * @param  array<string, mixed>  $payload
+     */
+    private function attachmentListTitle(array $attachment, array $payload): string
+    {
+        $number = (int) ($attachment['number'] ?? 0);
+
+        if ($this->attachmentHeaderType($attachment) === 'revision_form') {
+            $document = $payload['document'] ?? [];
+            $revisionFormNumber = $this->value($document['revision_form_number'] ?? ($document['number'] ?? null));
+
+            return 'Form Lembar Revisi ('.$revisionFormNumber.')';
+        }
+
+        return 'Lampiran '.$number.'. '.$this->value($attachment['title'] ?? null);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attachment
      */
     private function stampAttachmentTitle(Fpdi $pdf, array $attachment, float $pageWidth): void
     {
@@ -613,6 +677,64 @@ class FinalPdfComposer
             true,
             'L',
         );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @param  array<string, mixed>  $attachment
+     */
+    private function stampAttachmentHeaderFooter(
+        Fpdi $pdf,
+        array $payload,
+        array $attachment,
+        int $currentPage,
+        int $totalBodyPages,
+        float $pageWidth,
+        float $pageHeight,
+        int $attachmentPageNumber = 1,
+        int $attachmentPageCount = 1,
+    ): string {
+        if ($this->attachmentHeaderType($attachment) === 'revision_form') {
+            $this->stampRevisionFormHeaderFooter(
+                $pdf,
+                $payload,
+                $attachmentPageNumber,
+                $attachmentPageCount,
+                $pageWidth,
+                $pageHeight,
+            );
+
+            return 'revision_form';
+        }
+
+        $this->stampBodyHeaderFooter($pdf, $payload, $currentPage, $totalBodyPages, $pageWidth, $pageHeight);
+
+        return 'standard';
+    }
+
+    /**
+     * @param  array<string, mixed>  $attachment
+     */
+    private function attachmentHeaderType(array $attachment): string
+    {
+        return ($attachment['type'] ?? null) === 'revision_form' ? 'revision_form' : 'standard';
+    }
+
+    /**
+     * @param  array<string, mixed>  $attachment
+     */
+    private function attachmentHeaderPageLabel(
+        array $attachment,
+        int $currentPage,
+        int $totalBodyPages,
+        int $attachmentPageNumber,
+        int $attachmentPageCount,
+    ): string {
+        if ($this->attachmentHeaderType($attachment) === 'revision_form') {
+            return "{$attachmentPageNumber} dari {$attachmentPageCount}";
+        }
+
+        return "{$currentPage} dari {$totalBodyPages}";
     }
 
     /**
@@ -663,12 +785,7 @@ class FinalPdfComposer
         $pdf->Line($x + $leftWidth, $y + (self::HEADER_HEIGHT / 2), $x + $leftWidth + $centerWidth, $y + (self::HEADER_HEIGHT / 2));
 
         $logoPath = public_path('image/kopsuratlogo.jpeg');
-        if (is_file($logoPath)) {
-            $pdf->Image($logoPath, $x + 1.8, $y + 5.5, min(60.0, $leftWidth - 3.6), 0, 'JPEG');
-        } else {
-            $pdf->SetFont('helvetica', 'B', 10);
-            $pdf->MultiCell($leftWidth, 8, 'KRAKATAU INTERNATIONAL PORT', 0, 'C', false, 1, $x, $y + 7);
-        }
+        $this->stampHeaderLogo($pdf, $logoPath, $x, $y + 5.5, $leftWidth, $y + 7);
 
         $companyLineY = $y + 22.5;
         $pdf->Line($x, $companyLineY, $x + $leftWidth, $companyLineY);
@@ -695,6 +812,82 @@ class FinalPdfComposer
             $pdf->MultiCell($valueWidth, 5, ': '.$values[$row], 0, 'L', false, 1, $valueX + 2, $rowY);
         }
 
+        $this->stampFooter($pdf, $pageWidth, $pageHeight);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function stampRevisionFormHeaderFooter(
+        Fpdi $pdf,
+        array $payload,
+        int $currentPage,
+        int $totalPages,
+        float $pageWidth,
+        float $pageHeight,
+    ): void {
+        $contentWidth = $pageWidth - (self::HORIZONTAL_MARGIN * 2);
+
+        if ($contentWidth < self::MIN_STAMP_WIDTH || $pageHeight < 90.0) {
+            throw new PdfCompositionException('Page is too small for revision form header/footer stamp.');
+        }
+
+        $x = self::HORIZONTAL_MARGIN;
+        $y = self::HEADER_MARGIN_TOP;
+        $leftWidth = $contentWidth * 0.335;
+        $centerWidth = $contentWidth * 0.335;
+        $rightWidth = $contentWidth - $leftWidth - $centerWidth;
+        $halfHeight = self::HEADER_HEIGHT / 2;
+        $document = $payload['document'] ?? [];
+        $revisionFormNumber = $this->value($document['revision_form_number'] ?? ($document['number'] ?? null));
+
+        $pdf->SetDrawColor(0, 0, 0);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->SetLineWidth(0.45);
+        $pdf->Rect($x, $y, $contentWidth, self::HEADER_HEIGHT);
+        $pdf->Line($x + $leftWidth, $y, $x + $leftWidth, $y + self::HEADER_HEIGHT);
+        $pdf->Line($x + $leftWidth + $centerWidth, $y, $x + $leftWidth + $centerWidth, $y + self::HEADER_HEIGHT);
+        $pdf->Line($x, $y + 22.5, $x + $leftWidth, $y + 22.5);
+        $pdf->Line($x + $leftWidth, $y + $halfHeight, $x + $contentWidth, $y + $halfHeight);
+
+        $this->stampHeaderLogo($pdf, public_path('image/kopsuratlogo.jpeg'), $x, $y + 3.5, $leftWidth, $y + 7);
+
+        $pdf->SetFont('helvetica', '', 10);
+        $pdf->MultiCell($leftWidth, 6, 'PT. KRAKATAU BANDAR SAMUDERA', 0, 'C', false, 1, $x, $y + 24);
+
+        $centerX = $x + $leftWidth;
+        $pdf->SetFont('helvetica', 'B', 12);
+        $pdf->MultiCell($centerWidth, 8, 'FORM', 0, 'C', false, 1, $centerX, $y + 5.7);
+        $pdf->MultiCell($centerWidth, 8, 'LEMBAR REVISI', 0, 'C', false, 1, $centerX, $y + $halfHeight + 5.7);
+
+        $rightX = $centerX + $centerWidth;
+        $pdf->SetFont('helvetica', '', 10.5);
+        $pdf->MultiCell($rightWidth, 7, 'No. Dok.  :  '.$revisionFormNumber, 0, 'L', false, 1, $rightX + 3, $y + 5.8);
+        $pdf->MultiCell($rightWidth, 7, 'Halaman  :  '.$currentPage.' dari '.$totalPages, 0, 'L', false, 1, $rightX + 3, $y + $halfHeight + 5.8);
+
+        $this->stampFooter($pdf, $pageWidth, $pageHeight);
+    }
+
+    private function stampHeaderLogo(
+        Fpdi $pdf,
+        string $logoPath,
+        float $x,
+        float $y,
+        float $leftWidth,
+        float $fallbackY,
+    ): void {
+        if (is_file($logoPath)) {
+            $pdf->Image($logoPath, $x + 1.8, $y, min(60.0, $leftWidth - 3.6), 0, 'JPEG');
+
+            return;
+        }
+
+        $pdf->SetFont('helvetica', 'B', 10);
+        $pdf->MultiCell($leftWidth, 8, 'KRAKATAU INTERNATIONAL PORT', 0, 'C', false, 1, $x, $fallbackY);
+    }
+
+    private function stampFooter(Fpdi $pdf, float $pageWidth, float $pageHeight): void
+    {
         $footerX = self::HORIZONTAL_MARGIN + 22;
         $footerWidth = max(10.0, $pageWidth - (2 * ($footerX)));
         $footerY = $pageHeight - self::FOOTER_MARGIN_BOTTOM;

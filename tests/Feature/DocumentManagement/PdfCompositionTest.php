@@ -221,6 +221,53 @@ class PdfCompositionTest extends TestCase
         $this->assertSame('Lampiran Rusak', $result->bodyPages[3]['attachment_title']);
     }
 
+    public function test_revision_form_attachment_uses_revision_form_header(): void
+    {
+        $body = $this->storeBodyPdf($this->tcpdfBinary([
+            ['text' => 'Body 1'],
+        ]));
+        Storage::disk('local')->put('documents/10/revision-form.pdf', $this->tcpdfBinary([
+            ['text' => 'Revision form 1'],
+            ['text' => 'Revision form 2'],
+        ]));
+        Storage::disk('local')->put('documents/10/attachment.pdf', $this->tcpdfBinary([
+            ['text' => 'Attachment'],
+        ]));
+
+        $result = app(FinalPdfComposer::class)->compose(
+            $this->payload([
+                [
+                    'number' => 1,
+                    'title' => 'Lembar Revisi',
+                    'type' => 'revision_form',
+                    'path_file' => 'documents/10/revision-form.pdf',
+                ],
+                [
+                    'number' => 2,
+                    'title' => 'Lampiran Pendukung',
+                    'type' => 'attachment',
+                    'path_file' => 'documents/10/attachment.pdf',
+                ],
+            ]),
+            $this->tcpdfBinary([['text' => 'Cover']]),
+            $this->tcpdfBinary([['text' => 'Approval']]),
+            $body,
+            PdfCompositionMode::PRESERVE,
+        );
+
+        $this->assertSame('generated_attachment_list', $result->bodyPages[1]['mode']);
+        $this->assertSame([
+            'Form Lembar Revisi (FMIK-OPS-01-01-08)',
+            'Lampiran 2. Lampiran Pendukung',
+        ], $result->bodyPages[1]['attachment_titles']);
+        $this->assertSame('revision_form', $result->bodyPages[2]['header']);
+        $this->assertSame('1 dari 2', $result->bodyPages[2]['header_page_label']);
+        $this->assertSame('revision_form', $result->bodyPages[3]['header']);
+        $this->assertSame('2 dari 2', $result->bodyPages[3]['header_page_label']);
+        $this->assertSame('standard', $result->bodyPages[4]['header']);
+        $this->assertSame('5 dari 5', $result->bodyPages[4]['header_page_label']);
+    }
+
     public function test_final_document_artifact_generator_includes_attachment_pdfs(): void
     {
         $document = $this->approvedDocument();
@@ -380,6 +427,7 @@ class PdfCompositionTest extends TestCase
                 'id' => 10,
                 'name' => 'Komunikasi, Konsultasi dan Partisipasi',
                 'number' => 'IK - HMK - 01 - 05',
+                'revision_form_number' => 'FMIK-OPS-01-01-08',
                 'revision' => 0,
                 'revision_label' => '00.00',
                 'published_at' => '2026-08-27',
