@@ -131,19 +131,19 @@ class FinalArtifactGeneratorTest extends TestCase
         $firstApprover = User::factory()->create();
         $secondApprover = User::factory()->create();
         $thirdApprover = User::factory()->create();
-        $this->createApproval($document, $thirdApprover, [
+        $thirdApproval = $this->createApproval($document, $thirdApprover, [
             'stages' => $lateStage->display_label,
             'stage_name_snapshot' => 'Disahkan Khusus',
             'stage_order_snapshot' => 2,
             'approver_name_snapshot' => 'Approver Stage Dua',
         ]);
-        $this->createApproval($document, $firstApprover, [
+        $firstApproval = $this->createApproval($document, $firstApprover, [
             'stages' => $earlyStage->display_label,
             'stage_name_snapshot' => 'Direview Teknis',
             'stage_order_snapshot' => 1,
             'approver_name_snapshot' => 'Approver Stage Satu A',
         ]);
-        $this->createApproval($document, $secondApprover, [
+        $secondApproval = $this->createApproval($document, $secondApprover, [
             'stages' => $earlyStage->display_label,
             'stage_name_snapshot' => 'Direview Teknis',
             'stage_order_snapshot' => 1,
@@ -159,9 +159,12 @@ class FinalArtifactGeneratorTest extends TestCase
         $this->assertSame('Direview Teknis', $approvals[0]['stage_name']);
         $this->assertSame(1, $approvals[0]['stage_order']);
         $this->assertCount(2, $approvals[0]['approvers']);
+        $this->assertSame($firstApproval->id, $approvals[0]['approvers'][0]['approval_id']);
         $this->assertSame('Approver Stage Satu A', $approvals[0]['approvers'][0]['name']);
+        $this->assertSame($secondApproval->id, $approvals[0]['approvers'][1]['approval_id']);
         $this->assertSame('Approver Stage Satu B', $approvals[0]['approvers'][1]['name']);
         $this->assertSame('Disahkan Khusus', $approvals[1]['stage_name']);
+        $this->assertSame($thirdApproval->id, $approvals[1]['approvers'][0]['approval_id']);
     }
 
     public function test_approval_payload_hides_official_preparer_signature_stages(): void

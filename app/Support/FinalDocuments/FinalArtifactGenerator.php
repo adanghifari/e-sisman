@@ -267,10 +267,12 @@ class FinalArtifactGenerator
             ->filter(fn (Approval $approval): bool => $approval->responded_at !== null
                 && ! $approval->shouldHideAsOfficialPreparerDisplay($document))
             ->map(fn (Approval $approval): array => [
+                'id' => $approval->id,
                 'stage_name' => $approval->stage_name_snapshot ?? $approval->stages,
                 'stage_order' => $approval->stage_order_snapshot,
                 'sort_order' => $approval->stage_order_snapshot ?? $this->stageOrderFromCurrentFlow($document, $approval),
                 'approver' => [
+                    'approval_id' => $approval->id,
                     'name' => $approval->approver_name_snapshot,
                     'position' => $approval->approver_position_snapshot,
                     'department' => $approval->approver_department_snapshot,
@@ -285,7 +287,10 @@ class FinalArtifactGenerator
                     'stage_name' => $firstApproval['stage_name'],
                     'stage_order' => $firstApproval['stage_order'],
                     'approvers' => $stageApprovals
-                        ->map(fn (array $approval): array => $approval['approver'])
+                        ->map(fn (array $approval): array => [
+                            ...$approval['approver'],
+                            'approval_id' => $approval['id'],
+                        ])
                         ->values()
                         ->all(),
                     'sort_order' => $firstApproval['sort_order'],

@@ -4,6 +4,20 @@
     $documentNumber = trim((string) ($document['number'] ?? ''));
     $revisionLabel = trim((string) ($document['revision_label'] ?? $document['revision'] ?? ''));
     $publishedAt = $document['published_at'] ?? null;
+    $qrWriter = new \BaconQrCode\Writer(new \BaconQrCode\Renderer\ImageRenderer(
+        new \BaconQrCode\Renderer\RendererStyle\RendererStyle(96, 0),
+        new \BaconQrCode\Renderer\Image\SvgImageBackEnd
+    ));
+    $signatureUrl = app(\App\Support\DigitalSignatures\SignatureVerificationUrl::class);
+    $qrDataUri = static function (?int $approvalId) use ($qrWriter, $signatureUrl): ?string {
+        if ($approvalId === null) {
+            return null;
+        }
+
+        $svg = $qrWriter->writeString($signatureUrl->forApproval($approvalId));
+
+        return 'data:image/svg+xml;base64,'.base64_encode($svg);
+    };
     $formatDate = static function ($value): string {
         if (blank($value)) {
             return '-';
@@ -140,7 +154,7 @@
 
         .approver-cell {
             width: 50%;
-            padding: 48pt 4mm 0;
+            padding: 12pt 4mm 0;
             text-align: center;
             vertical-align: top;
             page-break-inside: avoid;
@@ -162,6 +176,12 @@
             border-bottom: 0.7pt solid #111111;
             font-weight: 700;
             line-height: 1.25;
+        }
+
+        .signature-qr {
+            width: 24mm;
+            height: 24mm;
+            margin: 0 auto 7pt;
         }
 
         .approver-position {
@@ -252,6 +272,13 @@
                                     <tr>
                                         @foreach ($row as $approver)
                                             <td @class(['approver-cell', 'single' => $approvers->count() === 1])>
+                                                @php
+                                                    $qr = $qrDataUri($approver['approval_id'] ?? null);
+                                                @endphp
+
+                                                @if ($qr !== null)
+                                                    <img class="signature-qr" src="{{ $qr }}" alt="QR verifikasi tanda tangan digital">
+                                                @endif
                                                 <div class="approver-name">{{ $approver['name'] ?? '-' }}</div>
                                                 <div class="approver-position">{{ $approver['position'] ?? '-' }}</div>
                                             </td>
