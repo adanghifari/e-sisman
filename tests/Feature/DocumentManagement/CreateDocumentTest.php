@@ -350,7 +350,7 @@ class CreateDocumentTest extends TestCase
         $this->assertSame($level->id, $document->m_document_level_id);
         $this->assertSame('Prosedur Pengujian', $document->nama_dokumen);
         $this->assertSame($user->id, $document->official_preparer_id);
-        $this->assertSame('PS-SMR-002', $document->nomor_dokumen);
+        $this->assertSame('PS-OPS-002', $document->nomor_dokumen);
         $this->assertTrue($document->departments()->whereKey($department->id)->exists());
     }
 
@@ -492,7 +492,7 @@ class CreateDocumentTest extends TestCase
 
         $draft->refresh();
         $this->assertSame('Nama Baru Draft', $draft->nama_dokumen);
-        $this->assertSame('PS-SMR-012', $draft->nomor_dokumen);
+        $this->assertSame('PS-OPS-012', $draft->nomor_dokumen);
         $this->assertSame(StatusDocument::DRAFT, $draft->status->nama_status);
         $this->assertTrue($draft->files()->where('original_file_name', 'template-baru.pdf')->exists());
     }
@@ -1633,7 +1633,7 @@ class CreateDocumentTest extends TestCase
             'm_proses_fungsi_id' => $businessFunction->id,
             'user_id' => $user->id,
             'nama_dokumen' => 'Prosedur Lama',
-            'nomor_dokumen' => 'PS-SMR-001',
+            'nomor_dokumen' => 'PS-QA-001',
         ]);
 
         $this->actingAs($user)
@@ -1658,7 +1658,7 @@ class CreateDocumentTest extends TestCase
 
         [$user, $businessProcess, $businessFunction, $department, $level, $documentType] = $this->initialResubmissionFixture();
         $rejectedStatus = StatusDocument::query()->where('nama_status', StatusDocument::REJECTED)->firstOrFail();
-        $previous = $this->createRejectedInitialAttempt($user, $level, $documentType, $businessProcess, $businessFunction, 'PS-SMR-003', [
+        $previous = $this->createRejectedInitialAttempt($user, $level, $documentType, $businessProcess, $businessFunction, 'PS-QA-003', [
             'm_status_document_id' => $rejectedStatus->id,
         ]);
 
@@ -1667,7 +1667,7 @@ class CreateDocumentTest extends TestCase
             ->assertRedirect(route('documents.create'));
 
         $newDocument = Document::query()
-            ->where('nomor_dokumen', 'PS-SMR-003')
+            ->where('nomor_dokumen', 'PS-QA-003')
             ->whereKeyNot($previous->id)
             ->firstOrFail();
 
@@ -1684,7 +1684,7 @@ class CreateDocumentTest extends TestCase
         $previous = null;
 
         foreach (range(1, 4) as $index) {
-            $attempt = $this->createRejectedInitialAttempt($user, $level, $documentType, $businessProcess, $businessFunction, 'PS-SMR-004', [
+            $attempt = $this->createRejectedInitialAttempt($user, $level, $documentType, $businessProcess, $businessFunction, 'PS-QA-004', [
                 'nama_dokumen' => "Attempt {$index}",
                 'resubmitted_from' => $previous?->id,
             ], "Catatan penolakan {$index}");
@@ -1698,12 +1698,12 @@ class CreateDocumentTest extends TestCase
             ->assertRedirect(route('documents.create'));
 
         $active = Document::query()
-            ->where('nomor_dokumen', 'PS-SMR-004')
+            ->where('nomor_dokumen', 'PS-QA-004')
             ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED))
             ->firstOrFail();
 
         $this->assertSame($attempts->last()->id, $active->resubmitted_from);
-        $this->assertCount(5, Document::query()->where('nomor_dokumen', 'PS-SMR-004')->get());
+        $this->assertCount(5, Document::query()->where('nomor_dokumen', 'PS-QA-004')->get());
 
         $history = app(DocumentRejectionHistory::class)->forDocument($active);
 
@@ -1736,7 +1736,7 @@ class CreateDocumentTest extends TestCase
             'user_id' => $user->id,
             'official_preparer_id' => $user->id,
             'nama_dokumen' => 'Prosedur Aktif',
-            'nomor_dokumen' => 'PS-SMR-005',
+            'nomor_dokumen' => 'PS-QA-005',
             'submitted_at' => now(),
         ]);
 
@@ -1763,10 +1763,10 @@ class CreateDocumentTest extends TestCase
             'user_id' => $user->id,
             'official_preparer_id' => $user->id,
             'nama_dokumen' => 'Prosedur Master',
-            'nomor_dokumen' => 'PS-SMR-006',
+            'nomor_dokumen' => 'PS-QA-006',
             'approved_at' => now(),
         ]);
-        $this->createRejectedInitialAttempt($user, $level, $documentType, $businessProcess, $businessFunction, 'PS-SMR-006');
+        $this->createRejectedInitialAttempt($user, $level, $documentType, $businessProcess, $businessFunction, 'PS-QA-006');
 
         $this->actingAs($user)
             ->from(route('documents.create.level', 'level-2'))

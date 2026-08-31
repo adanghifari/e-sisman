@@ -4,7 +4,7 @@ namespace App\Http\Controllers\DocumentManagement;
 
 use App\Http\Controllers\Controller;
 use App\Models\ApprovalStatus;
-use App\Models\BusinessProcess;
+use App\Models\BusinessFunction;
 use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentNumberingSetup;
@@ -1008,19 +1008,19 @@ class DocumentController extends Controller
         if ($documentLevel->kode === 'level-1') {
             $segments[] = Str::upper(trim($suffix));
         } elseif ($documentLevel->kode === 'level-2') {
-            if (! filled($validated['m_proses_bisnis_id'] ?? null)) {
+            if (! filled($validated['m_proses_fungsi_id'] ?? null)) {
                 return null;
             }
 
-            $businessProcessCode = BusinessProcess::query()
-                ->whereKey($validated['m_proses_bisnis_id'])
+            $businessFunctionCode = BusinessFunction::query()
+                ->whereKey($validated['m_proses_fungsi_id'])
                 ->value('kode');
 
-            if (! filled($businessProcessCode)) {
+            if (! filled($businessFunctionCode)) {
                 return null;
             }
 
-            $segments[] = $businessProcessCode;
+            $segments[] = $businessFunctionCode;
             $segments[] = Str::upper(trim($suffix));
         } elseif ($documentLevel->kode === 'level-4') {
             $segments[] = Str::upper(trim($suffix));

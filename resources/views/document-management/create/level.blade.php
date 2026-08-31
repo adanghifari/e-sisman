@@ -99,7 +99,7 @@
                 ->where('nomor_revisi', 0)
                 ->whereNotNull('nomor_dokumen')
                 ->get()
-                ->groupBy(fn ($document) => $document->m_proses_bisnis_id.'-'.$document->m_proses_fungsi_id)
+                ->groupBy(fn ($document) => $document->m_proses_fungsi_id)
                 ->map(fn ($documents) => str_pad((string) ($documents->count() + 1), 2, '0', STR_PAD_LEFT))
                 ->all()
             : [];
@@ -161,8 +161,8 @@
             : ($revisionSource
             ? \App\Models\Document::formatRevisionNumber($rejectedRevisionAttempt?->nomor_revisi ?? (($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1))
             : '00.00');
-        $selectedBusinessProcess = $businessProcesses->firstWhere('id', (int) $selectedBusinessProcessId);
-        $documentNumberProcessCode = $selectedBusinessProcess?->kode ?: 'SMR';
+        $selectedBusinessFunction = $businessFunctions->firstWhere('id', (int) $selectedBusinessFunctionId);
+        $documentNumberFunctionCode = $selectedBusinessFunction?->kode ?: 'SMR';
         $selectedProcedureReference = $procedureReferences->firstWhere('id', (int) $selectedReferenceId);
         $procedureReferenceSegments = fn ($procedure) => collect(explode('-', (string) ($procedure?->procedure_reference_number ?: $procedure?->nomor_dokumen)))
             ->filter()
@@ -176,7 +176,7 @@
             ])
             ->all();
         $documentNumberSegments = match ($levelKey) {
-            'level-2' => [['value' => $documentNumberProcessCode, 'target' => 'business-process']],
+            'level-2' => [['value' => $documentNumberFunctionCode, 'target' => 'business-function']],
             'level-3' => [
                 ['value' => $selectedProcedureNumberSegments->get(0, 'XXX'), 'target' => 'procedure-reference-0'],
                 ['value' => $selectedProcedureNumberSegments->get(1, 'YY'), 'target' => 'procedure-reference-1'],
@@ -430,7 +430,6 @@
                                         @foreach ($businessProcesses as $businessProcess)
                                             <option
                                                 value="{{ $businessProcess->id }}"
-                                                data-process-code="{{ $businessProcess->kode }}"
                                                 @selected((string) $selectedBusinessProcessId === (string) $businessProcess->id)
                                             >
                                                 {{ $formatBusinessProcess($businessProcess) }}
@@ -447,7 +446,11 @@
                                     <select name="m_proses_fungsi_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                                         <option value="">-Pilih-</option>
                                         @foreach ($businessFunctions as $businessFunction)
-                                            <option value="{{ $businessFunction->id }}" @selected((string) $selectedBusinessFunctionId === (string) $businessFunction->id)>
+                                            <option
+                                                value="{{ $businessFunction->id }}"
+                                                data-function-code="{{ $businessFunction->kode }}"
+                                                @selected((string) $selectedBusinessFunctionId === (string) $businessFunction->id)
+                                            >
                                                 {{ $formatBusinessFunction($businessFunction) }}
                                             </option>
                                         @endforeach
@@ -920,18 +923,18 @@
                 });
 
                 document.addEventListener('change', (event) => {
-                    const select = event.target.closest('select[name="m_proses_bisnis_id"]');
+                    const select = event.target.closest('select[name="m_proses_fungsi_id"]');
 
                     if (!select) {
                         return;
                     }
 
-                    const segment = document.querySelector('[data-document-number-segment="business-process"]');
+                    const segment = document.querySelector('[data-document-number-segment="business-function"]');
                     const selectedOption = select.selectedOptions[0];
-                    const processCode = selectedOption?.dataset.processCode;
+                    const functionCode = selectedOption?.dataset.functionCode;
 
-                    if (segment && processCode) {
-                        segment.value = processCode;
+                    if (segment && functionCode) {
+                        segment.value = functionCode;
                     }
                 });
 
@@ -1006,14 +1009,13 @@
                         return;
                     }
 
-                    const processId = processSelect.value;
                     const functionId = functionSelect.value;
 
-                    if (processId === '' || functionId === '') {
+                    if (functionId === '') {
                         return;
                     }
 
-                    suffixInput.value = documentNumberSuggestions[`${processId}-${functionId}`] ?? '01';
+                    suffixInput.value = documentNumberSuggestions[functionId] ?? '01';
                 };
 
                 document.querySelectorAll('form').forEach((form) => {

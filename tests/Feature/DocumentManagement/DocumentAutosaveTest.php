@@ -92,7 +92,7 @@ class DocumentAutosaveTest extends TestCase
         $draft = Document::query()->findOrFail($draftId);
 
         $this->assertSame(StatusDocument::DRAFT, $draft->status->nama_status);
-        $this->assertSame('PS-SMR-77', $draft->nomor_dokumen);
+        $this->assertSame('PS-OPS-77', $draft->nomor_dokumen);
         $this->assertSame('Catatan pertama', $draft->catatan_revisi);
 
         $this->actingAs($user)
@@ -147,11 +147,11 @@ class DocumentAutosaveTest extends TestCase
         $this->assertNotSame($firstResponse->json('draft_id'), $secondResponse->json('draft_id'));
         $this->assertDatabaseHas('t_document', [
             'id' => $firstResponse->json('draft_id'),
-            'nomor_dokumen' => 'PS-SMR-81',
+            'nomor_dokumen' => 'PS-OPS-81',
         ]);
         $this->assertDatabaseHas('t_document', [
             'id' => $secondResponse->json('draft_id'),
-            'nomor_dokumen' => 'PS-SMR-82',
+            'nomor_dokumen' => 'PS-OPS-82',
         ]);
     }
 
