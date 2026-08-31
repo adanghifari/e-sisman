@@ -61,6 +61,14 @@
             position: relative;
         }
 
+        .side-icon {
+            position: absolute;
+            right: -18mm;
+            top: 56mm;
+            width: 14mm;
+            height: auto;
+        }
+
         .top-table,
         .identity-table,
         .preparer-table,
@@ -93,9 +101,10 @@
         .company-box {
             display: inline-block;
             min-width: 60mm;
-            border: 1.1pt solid #111111;
+            border: 0.8pt solid #ff4d4d;
             padding: 8pt 12pt;
             font-size: 12pt;
+            font-style: italic;
             font-weight: 700;
             text-align: center;
         }
@@ -193,6 +202,10 @@
 </head>
 <body>
     <main class="cover">
+        @if (is_file($sideIconPath))
+            <img class="side-icon" src="{{ $sideIconPath }}" alt="">
+        @endif
+
         <table class="top-table">
             <tr>
                 <td class="brand-cell">

@@ -35,6 +35,7 @@ class CoverPdfRenderer
             'document' => $payload['document'] ?? [],
             'preparers' => $payload['preparers'] ?? [],
             'logoPath' => public_path('image/kopsuratlogo.jpeg'),
+            'sideIconPath' => public_path('image/sideicon.jpeg'),
         ])->render();
     }
 
