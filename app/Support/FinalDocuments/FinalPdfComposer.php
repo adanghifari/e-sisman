@@ -3,9 +3,11 @@
 namespace App\Support\FinalDocuments;
 
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use setasign\Fpdi\PdfParser\PdfParserException;
 use setasign\Fpdi\Tcpdf\Fpdi;
+use Symfony\Component\Process\Process;
 use Throwable;
 
 class FinalPdfComposer
@@ -19,6 +21,10 @@ class FinalPdfComposer
     private const FOOTER_MARGIN_BOTTOM = 8.0;
 
     private const MIN_STAMP_WIDTH = 120.0;
+
+    private const BODY_CONTENT_TOP = 45.0;
+
+    private const BODY_CONTENT_BOTTOM = 14.0;
 
     public function __construct(
         private readonly PdfPageGeometry $geometry = new PdfPageGeometry,
@@ -56,18 +62,56 @@ class FinalPdfComposer
             $approvalSheetPages = $context->includesApprovalSheet()
                 ? $this->importPdf($pdf, (string) $approvalSheetPath, stampBody: false, payload: $payload, mode: $mode)
                 : ['count' => 0, 'pages' => []];
-            $bodyPages = $this->importPdf($pdf, $bodyPdfPath, stampBody: true, payload: $payload, mode: $mode);
+            $bodyPageCount = $this->countPdfPages($bodyPdfPath);
+            $attachments = $this->attachmentPayloads($payload, $tempFiles);
+            $attachmentPageCount = collect($attachments)->sum(fn (array $attachment): int => (int) $attachment['page_count']);
+            $attachmentListPageCount = $attachments === [] ? 0 : $this->attachmentListPageCount($attachments);
+            $totalBodyPages = $bodyPageCount + $attachmentListPageCount + $attachmentPageCount;
+
+            $bodyPages = $this->importPdf(
+                $pdf,
+                $bodyPdfPath,
+                stampBody: true,
+                payload: $payload,
+                mode: $mode,
+                bodyPageOffset: 0,
+                totalBodyPages: $totalBodyPages,
+            );
 
             if ($bodyPages['count'] < 1) {
                 throw new PdfCompositionException('Source body PDF contains no pages.');
             }
 
+            $attachmentListPages = $attachments === []
+                ? ['count' => 0, 'pages' => []]
+                : $this->appendAttachmentListPages(
+                    $pdf,
+                    $payload,
+                    $attachments,
+                    $bodyPages['count'],
+                    $totalBodyPages,
+                );
+            $attachmentPages = $attachments === []
+                ? ['count' => 0, 'pages' => []]
+                : $this->appendAttachmentPdfs(
+                    $pdf,
+                    $payload,
+                    $attachments,
+                    $bodyPages['count'] + $attachmentListPages['count'],
+                    $totalBodyPages,
+                );
+            $mergedBodyPages = array_merge(
+                $bodyPages['pages'],
+                $attachmentListPages['pages'],
+                $attachmentPages['pages'],
+            );
+
             return new FinalPdfCompositionResult(
                 pdf: $pdf->Output('', 'S'),
                 coverPages: $coverPages['count'],
                 approvalSheetPages: $approvalSheetPages['count'],
-                bodyPagesCount: $bodyPages['count'],
-                bodyPages: $bodyPages['pages'],
+                bodyPagesCount: $totalBodyPages,
+                bodyPages: $mergedBodyPages,
             );
         } catch (PdfCompositionException $exception) {
             throw $exception;
@@ -114,7 +158,15 @@ class FinalPdfComposer
      * @param  array<string, mixed>  $payload
      * @return array{count: int, pages: array<int, array<string, mixed>>}
      */
-    private function importPdf(Fpdi $pdf, string $path, bool $stampBody, array $payload, PdfCompositionMode $mode): array
+    private function importPdf(
+        Fpdi $pdf,
+        string $path,
+        bool $stampBody,
+        array $payload,
+        PdfCompositionMode $mode,
+        int $bodyPageOffset = 0,
+        ?int $totalBodyPages = null,
+    ): array
     {
         $pageCount = $pdf->setSourceFile($path);
         $pages = [];
@@ -155,7 +207,8 @@ class FinalPdfComposer
             );
 
             if ($stampBody) {
-                $this->stampBodyHeaderFooter($pdf, $payload, $pageNumber, $pageCount, $pageWidth, $pageHeight);
+                $bodyPageNumber = $bodyPageOffset + $pageNumber;
+                $this->stampBodyHeaderFooter($pdf, $payload, $bodyPageNumber, $totalBodyPages ?? $pageCount, $pageWidth, $pageHeight);
                 $pages[] = [
                     'source_page' => $pageNumber,
                     'page_width' => $pageWidth,
@@ -169,12 +222,397 @@ class FinalPdfComposer
                         'height' => $placement->height,
                         'scale' => $placement->scale,
                     ],
-                    'page_label' => "{$pageNumber} dari {$pageCount}",
+                    'page_label' => "{$bodyPageNumber} dari ".($totalBodyPages ?? $pageCount),
                 ];
             }
         }
 
         return ['count' => $pageCount, 'pages' => $pages];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $attachments
+     * @return array{count: int, pages: array<int, array<string, mixed>>}
+     */
+    private function appendAttachmentListPages(
+        Fpdi $pdf,
+        array $payload,
+        array $attachments,
+        int $bodyPageOffset,
+        int $totalBodyPages,
+    ): array {
+        $pageWidth = 210.0;
+        $pageHeight = 297.0;
+        $pages = [];
+        $chunks = array_chunk($attachments, 22);
+
+        foreach ($chunks as $chunkIndex => $chunk) {
+            $bodyPageNumber = $bodyPageOffset + $chunkIndex + 1;
+            $pdf->AddPage('P', [$pageWidth, $pageHeight]);
+            $this->stampBodyHeaderFooter($pdf, $payload, $bodyPageNumber, $totalBodyPages, $pageWidth, $pageHeight);
+
+            $x = self::HORIZONTAL_MARGIN + 8;
+            $y = self::BODY_CONTENT_TOP + 4;
+            $numberWidth = 18.0;
+            $contentWidth = $pageWidth - ($x * 2);
+
+            $pdf->SetTextColor(0, 0, 0);
+            $pdf->SetFont('helvetica', 'B', 11);
+            $pdf->MultiCell($numberWidth, 7, '7.', 0, 'L', false, 0, $x, $y);
+            $pdf->MultiCell($contentWidth - $numberWidth, 7, 'LAMPIRAN', 0, 'L', false, 1, $x + $numberWidth, $y);
+
+            $pdf->SetFont('helvetica', '', 10);
+            $rowY = $y + 11;
+
+            foreach ($chunk as $attachment) {
+                $number = (int) ($attachment['number'] ?? 0);
+                $title = $this->value($attachment['title'] ?? null);
+                $pdf->MultiCell($numberWidth, 7, "7.{$number}", 0, 'L', false, 0, $x, $rowY);
+                $pdf->MultiCell($contentWidth - $numberWidth, 7, "Lampiran {$number}. {$title}", 0, 'L', false, 1, $x + $numberWidth, $rowY);
+                $rowY += max(7.0, $pdf->getLastH());
+            }
+
+            $pages[] = [
+                'source_page' => null,
+                'page_width' => $pageWidth,
+                'page_height' => $pageHeight,
+                'orientation' => 'P',
+                'mode' => 'generated_attachment_list',
+                'placement' => null,
+                'page_label' => "{$bodyPageNumber} dari {$totalBodyPages}",
+            ];
+        }
+
+        return ['count' => count($chunks), 'pages' => $pages];
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $attachments
+     * @return array{count: int, pages: array<int, array<string, mixed>>}
+     */
+    private function appendAttachmentPdfs(
+        Fpdi $pdf,
+        array $payload,
+        array $attachments,
+        int $bodyPageOffset,
+        int $totalBodyPages,
+    ): array {
+        $pages = [];
+        $appendedPages = 0;
+
+        foreach ($attachments as $attachment) {
+            $pageCount = (int) $attachment['page_count'];
+
+            if (! ($attachment['mergeable'] ?? false)) {
+                for ($pageNumber = 1; $pageNumber <= $pageCount; $pageNumber++) {
+                    $appendedPages++;
+                    $this->appendAttachmentFallbackPage(
+                        $pdf,
+                        $payload,
+                        $attachment,
+                        $bodyPageOffset + $appendedPages,
+                        $totalBodyPages,
+                    );
+
+                    $pages[] = [
+                        'source_page' => null,
+                        'page_width' => 210.0,
+                        'page_height' => 297.0,
+                        'orientation' => 'P',
+                        'mode' => 'attachment_fallback',
+                        'attachment_number' => $attachment['number'] ?? null,
+                        'attachment_title' => $attachment['title'] ?? null,
+                        'placement' => null,
+                        'page_label' => ($bodyPageOffset + $appendedPages)." dari {$totalBodyPages}",
+                    ];
+                }
+
+                continue;
+            }
+
+            $path = (string) $attachment['resolved_path'];
+            $pdf->setSourceFile($path);
+
+            for ($pageNumber = 1; $pageNumber <= $pageCount; $pageNumber++) {
+                $template = $pdf->importPage($pageNumber);
+                $size = $pdf->getTemplateSize($template);
+                $pageWidth = (float) $size['width'];
+                $pageHeight = (float) $size['height'];
+                $orientation = (string) $size['orientation'];
+                $bodyPageNumber = $bodyPageOffset + $appendedPages + 1;
+
+                $pdf->AddPage($orientation, [$pageWidth, $pageHeight]);
+                $this->stampBodyHeaderFooter($pdf, $payload, $bodyPageNumber, $totalBodyPages, $pageWidth, $pageHeight);
+                $this->stampAttachmentTitle($pdf, $attachment, $pageWidth);
+
+                $availableHeight = $pageHeight - self::BODY_CONTENT_TOP - self::BODY_CONTENT_BOTTOM - 10;
+                $placement = $this->geometry->fitToSafeArea(
+                    $pageWidth,
+                    $pageHeight,
+                    $pageWidth,
+                    $pageHeight,
+                    new PdfSafeArea(
+                        left: self::HORIZONTAL_MARGIN,
+                        top: self::BODY_CONTENT_TOP + 10,
+                        right: self::HORIZONTAL_MARGIN,
+                        bottom: max(self::BODY_CONTENT_BOTTOM, $pageHeight - (self::BODY_CONTENT_TOP + 10 + $availableHeight)),
+                    ),
+                );
+
+                $pdf->useImportedPage(
+                    $template,
+                    $placement->x,
+                    $placement->y,
+                    $placement->width,
+                    $placement->height,
+                );
+
+                $pages[] = [
+                    'source_page' => $pageNumber,
+                    'page_width' => $pageWidth,
+                    'page_height' => $pageHeight,
+                    'orientation' => $orientation,
+                    'mode' => 'attachment',
+                    'attachment_number' => $attachment['number'] ?? null,
+                    'attachment_title' => $attachment['title'] ?? null,
+                    'placement' => [
+                        'x' => $placement->x,
+                        'y' => $placement->y,
+                        'width' => $placement->width,
+                        'height' => $placement->height,
+                        'scale' => $placement->scale,
+                    ],
+                    'page_label' => "{$bodyPageNumber} dari {$totalBodyPages}",
+                ];
+                $appendedPages++;
+            }
+        }
+
+        return ['count' => $appendedPages, 'pages' => $pages];
+    }
+
+    /**
+     * @param  array<string, mixed>  $attachment
+     */
+    private function appendAttachmentFallbackPage(
+        Fpdi $pdf,
+        array $payload,
+        array $attachment,
+        int $bodyPageNumber,
+        int $totalBodyPages,
+    ): void {
+        $pageWidth = 210.0;
+        $pageHeight = 297.0;
+
+        $pdf->AddPage('P', [$pageWidth, $pageHeight]);
+        $this->stampBodyHeaderFooter($pdf, $payload, $bodyPageNumber, $totalBodyPages, $pageWidth, $pageHeight);
+        $this->stampAttachmentTitle($pdf, $attachment, $pageWidth);
+
+        $x = self::HORIZONTAL_MARGIN + 8;
+        $y = self::BODY_CONTENT_TOP + 20;
+        $width = $pageWidth - ($x * 2);
+
+        $pdf->SetTextColor(80, 80, 80);
+        $pdf->SetFont('helvetica', '', 10);
+        $pdf->MultiCell(
+            $width,
+            6,
+            'File lampiran ini terdaftar, tetapi format PDF-nya belum bisa digabung otomatis oleh sistem. Silakan buka file lampiran asli pada daftar dokumen.',
+            0,
+            'L',
+            false,
+            1,
+            $x,
+            $y,
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<int, array<string, mixed>>
+     */
+    private function attachmentPayloads(array $payload, array &$tempFiles): array
+    {
+        return collect($payload['attachments'] ?? [])
+            ->filter(fn (mixed $attachment): bool => is_array($attachment) && filled($attachment['path_file'] ?? null))
+            ->values()
+            ->map(function (array $attachment, int $index) use (&$tempFiles): ?array {
+                $attachment['number'] = (int) ($attachment['number'] ?? ($index + 1));
+                $path = Storage::disk('local')->path((string) $attachment['path_file']);
+
+                if (! $this->isPdfAttachment($attachment)) {
+                    return null;
+                }
+
+                $attachment['mergeable'] = false;
+                $attachment['page_count'] = 1;
+                $attachment['resolved_path'] = $path;
+
+                if (! is_file($path)) {
+                    return $attachment;
+                }
+
+                try {
+                    $attachment['page_count'] = (new Fpdi)->setSourceFile($path);
+                    $attachment['mergeable'] = true;
+                } catch (Throwable) {
+                    $normalizedPath = $this->normalizePdfForImport($path, $tempFiles);
+
+                    if ($normalizedPath !== null) {
+                        try {
+                            $attachment['page_count'] = (new Fpdi)->setSourceFile($normalizedPath);
+                            $attachment['resolved_path'] = $normalizedPath;
+                            $attachment['mergeable'] = true;
+                        } catch (Throwable) {
+                            $attachment['mergeable'] = false;
+                        }
+                    }
+                }
+
+                return $attachment;
+            })
+            ->filter()
+            ->values()
+            ->all();
+    }
+
+    /**
+     * @param  array<int, string>  $tempFiles
+     */
+    private function normalizePdfForImport(string $path, array &$tempFiles): ?string
+    {
+        if (! is_file($path)) {
+            return null;
+        }
+
+        $binary = $this->qpdfBinary();
+
+        if ($binary === null) {
+            return null;
+        }
+
+        $directory = storage_path('app/private/documents/final/tmp');
+        if (! is_dir($directory) && ! mkdir($directory, 0775, true) && ! is_dir($directory)) {
+            return null;
+        }
+
+        $tempPath = tempnam($directory, 'qpdf-');
+        if ($tempPath === false) {
+            return null;
+        }
+
+        $normalizedPath = $tempPath.'.pdf';
+        rename($tempPath, $normalizedPath);
+
+        $process = new Process([
+            $binary,
+            '--object-streams=disable',
+            '--decode-level=generalized',
+            $path,
+            $normalizedPath,
+        ]);
+        $process->setTimeout((float) config('final_documents.qpdf_timeout', 30));
+        $process->run();
+
+        if (! $process->isSuccessful() || ! is_file($normalizedPath) || filesize($normalizedPath) === 0) {
+            @unlink($normalizedPath);
+
+            return null;
+        }
+
+        $tempFiles[] = $normalizedPath;
+
+        return $normalizedPath;
+    }
+
+    private function qpdfBinary(): ?string
+    {
+        $configured = trim((string) config('final_documents.qpdf_binary', 'qpdf'));
+        $candidates = [];
+
+        if ($configured !== '' && $configured !== 'qpdf') {
+            $candidates[] = $configured;
+        }
+
+        if (PHP_OS_FAMILY === 'Windows') {
+            $candidates = array_merge(
+                $candidates,
+                glob('C:\Program Files\qpdf *\bin\qpdf.exe') ?: [],
+                glob('C:\Program Files (x86)\qpdf *\bin\qpdf.exe') ?: [],
+            );
+        }
+
+        if ($configured === 'qpdf') {
+            $candidates[] = $configured;
+        }
+
+        foreach (array_unique($candidates) as $candidate) {
+            if ($candidate === 'qpdf' || is_file($candidate)) {
+                return $candidate;
+            }
+        }
+
+        return null;
+    }
+
+    /**
+     * @param  array<string, mixed>  $attachment
+     */
+    private function isPdfAttachment(array $attachment): bool
+    {
+        return collect([
+            $attachment['original_file_name'] ?? null,
+            $attachment['stored_file_name'] ?? null,
+            $attachment['path_file'] ?? null,
+        ])
+            ->filter()
+            ->contains(fn (mixed $value): bool => Str::of((string) $value)->lower()->endsWith('.pdf'));
+    }
+
+    /**
+     * @param  array<int, array<string, mixed>>  $attachments
+     */
+    private function attachmentListPageCount(array $attachments): int
+    {
+        return max(1, (int) ceil(count($attachments) / 22));
+    }
+
+    private function countPdfPages(string $path): int
+    {
+        if (! is_file($path)) {
+            throw new PdfCompositionException('Source PDF is missing.');
+        }
+
+        return (new Fpdi)->setSourceFile($path);
+    }
+
+    /**
+     * @param  array<string, mixed>  $attachment
+     */
+    private function stampAttachmentTitle(Fpdi $pdf, array $attachment, float $pageWidth): void
+    {
+        $number = (int) ($attachment['number'] ?? 0);
+        $title = $this->value($attachment['title'] ?? null);
+        $x = self::HORIZONTAL_MARGIN + 8;
+        $y = self::BODY_CONTENT_TOP + 1.5;
+        $width = $pageWidth - ($x * 2);
+
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->SetFont('helvetica', '', 10);
+        $pdf->SetX($x);
+        $pdf->SetY($y);
+        $pdf->writeHTMLCell(
+            $width,
+            7,
+            $x,
+            $y,
+            '<strong>Lampiran '.$number.'.</strong> '.e($title),
+            0,
+            1,
+            false,
+            true,
+            'L',
+        );
     }
 
     /**

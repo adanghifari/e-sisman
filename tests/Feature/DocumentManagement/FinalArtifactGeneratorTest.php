@@ -211,6 +211,28 @@ class FinalArtifactGeneratorTest extends TestCase
         $this->assertSame($sourceFile->id, $preparation->payload['source']['id']);
     }
 
+    public function test_payload_includes_attachment_titles_for_final_merge(): void
+    {
+        $document = $this->createDocument();
+        $sourceFile = $this->createDocumentFile($document, 'filled_template');
+        $attachment = $this->createDocumentFile($document, 'attachment', 'attachment body', [
+            'attachment_title' => 'Barcode pengisian daftar hadir safety induction',
+            'original_file_name' => 'barcode.pdf',
+            'stored_file_name' => 'barcode.pdf',
+        ]);
+
+        $payload = app(FinalArtifactGenerator::class)
+            ->prepare($document)
+            ->payload;
+
+        $this->assertSame($sourceFile->id, $payload['source']['id']);
+        $this->assertCount(1, $payload['attachments']);
+        $this->assertSame($attachment->id, $payload['attachments'][0]['id']);
+        $this->assertSame(1, $payload['attachments'][0]['number']);
+        $this->assertSame('Barcode pengisian daftar hadir safety induction', $payload['attachments'][0]['title']);
+        $this->assertSame('barcode.pdf', $payload['attachments'][0]['original_file_name']);
+    }
+
     public function test_revision_document_uses_revision_content_as_source(): void
     {
         $document = $this->createDocument(['request_type' => 'revision']);
@@ -292,12 +314,12 @@ class FinalArtifactGeneratorTest extends TestCase
         return $document;
     }
 
-    private function createDocumentFile(Document $document, string $type, string $contents = 'pdf body'): DocumentFile
+    private function createDocumentFile(Document $document, string $type, string $contents = 'pdf body', array $attributes = []): DocumentFile
     {
-        $path = "documents/{$document->id}/{$type}.pdf";
+        $path = $attributes['path_file'] ?? "documents/{$document->id}/{$type}.pdf";
         Storage::disk('local')->put($path, $contents);
 
-        return DocumentFile::query()->create([
+        return DocumentFile::query()->create($attributes + [
             't_document_id' => $document->id,
             'type_file' => $type,
             'path_file' => $path,

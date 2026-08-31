@@ -22,6 +22,7 @@ use App\Support\FinalDocuments\PdfPageGeometry;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\File;
 use Illuminate\Support\Facades\Storage;
+use Illuminate\Support\Str;
 use setasign\Fpdi\Tcpdf\Fpdi;
 use TCPDF;
 use Tests\TestCase;
@@ -138,6 +139,104 @@ class PdfCompositionTest extends TestCase
         $this->assertEqualsWithDelta(297, $result->bodyPages[1]['page_width'], 0.5);
         $this->assertSame('P', $result->bodyPages[2]['orientation']);
         $this->assertEqualsWithDelta(148, $result->bodyPages[2]['page_width'], 0.5);
+    }
+
+    public function test_composition_adds_attachment_list_and_merges_attachment_pdfs(): void
+    {
+        $body = $this->storeBodyPdf($this->tcpdfBinary([
+            ['text' => 'Body 1'],
+            ['text' => 'Body 2'],
+        ]));
+        Storage::disk('local')->put('documents/10/attachment-a.pdf', $this->tcpdfBinary([
+            ['text' => 'Attachment A'],
+        ]));
+        Storage::disk('local')->put('documents/10/attachment-b.pdf', $this->tcpdfBinary([
+            ['text' => 'Attachment B1'],
+            ['text' => 'Attachment B2'],
+        ]));
+
+        $result = app(FinalPdfComposer::class)->compose(
+            $this->payload([
+                [
+                    'number' => 1,
+                    'title' => 'Barcode pengisian daftar hadir safety induction',
+                    'path_file' => 'documents/10/attachment-a.pdf',
+                ],
+                [
+                    'number' => 2,
+                    'title' => 'Sticker safety induction untuk pekerja proyek',
+                    'path_file' => 'documents/10/attachment-b.pdf',
+                ],
+            ]),
+            $this->tcpdfBinary([['text' => 'Cover']]),
+            $this->tcpdfBinary([['text' => 'Approval']]),
+            $body,
+            PdfCompositionMode::PRESERVE,
+        );
+
+        $this->assertSame(8, $result->totalPages());
+        $this->assertSame(6, $result->bodyPagesCount);
+        $this->assertSame('generated_attachment_list', $result->bodyPages[2]['mode']);
+        $this->assertSame('attachment', $result->bodyPages[3]['mode']);
+        $this->assertSame('1 dari 6', $result->bodyPages[0]['page_label']);
+        $this->assertSame('6 dari 6', $result->bodyPages[5]['page_label']);
+        $this->assertSame(8, $this->pdfPageCount($result->pdf));
+    }
+
+    public function test_invalid_attachment_pdf_gets_fallback_page_without_failing_composition(): void
+    {
+        $body = $this->storeBodyPdf($this->tcpdfBinary([
+            ['text' => 'Body 1'],
+        ]));
+        Storage::disk('local')->put('documents/10/valid-attachment.pdf', $this->tcpdfBinary([
+            ['text' => 'Attachment A'],
+        ]));
+        Storage::disk('local')->put('documents/10/broken-attachment.pdf', '%PDF-1.4 invalid attachment');
+
+        $result = app(FinalPdfComposer::class)->compose(
+            $this->payload([
+                [
+                    'number' => 1,
+                    'title' => 'Lampiran Valid',
+                    'path_file' => 'documents/10/valid-attachment.pdf',
+                    'original_file_name' => 'valid-attachment.pdf',
+                ],
+                [
+                    'number' => 2,
+                    'title' => 'Lampiran Rusak',
+                    'path_file' => 'documents/10/broken-attachment.pdf',
+                    'original_file_name' => 'broken-attachment.pdf',
+                ],
+            ]),
+            $this->tcpdfBinary([['text' => 'Cover']]),
+            $this->tcpdfBinary([['text' => 'Approval']]),
+            $body,
+            PdfCompositionMode::PRESERVE,
+        );
+
+        $this->assertSame(4, $result->bodyPagesCount);
+        $this->assertSame(6, $this->pdfPageCount($result->pdf));
+        $this->assertSame('Lampiran Valid', $result->bodyPages[2]['attachment_title']);
+        $this->assertSame('attachment_fallback', $result->bodyPages[3]['mode']);
+        $this->assertSame('Lampiran Rusak', $result->bodyPages[3]['attachment_title']);
+    }
+
+    public function test_final_document_artifact_generator_includes_attachment_pdfs(): void
+    {
+        $document = $this->approvedDocument();
+        $this->createDocumentFile($document, $this->tcpdfBinary([
+            ['text' => 'Body One'],
+        ]));
+        $this->createAttachmentFile($document, 'Lampiran Safety', $this->tcpdfBinary([
+            ['text' => 'Attachment One'],
+        ]));
+        $generatorUser = User::factory()->create();
+
+        $artifact = app(FinalDocumentArtifactGenerator::class)
+            ->generate($document, $generatorUser, PdfCompositionMode::PRESERVE);
+
+        $this->assertSame(DocumentFinalArtifact::STATUS_GENERATED, $artifact->generation_status);
+        $this->assertSame(5, $this->pdfPageCount(Storage::disk('local')->get($artifact->path_file)));
     }
 
     public function test_missing_source_throws_controlled_exception(): void
@@ -274,7 +373,7 @@ class PdfCompositionTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function payload(): array
+    private function payload(array $attachments = []): array
     {
         return [
             'document' => [
@@ -295,6 +394,7 @@ class PdfCompositionTest extends TestCase
             'preparers' => [],
             'approvals' => [],
             'source' => [],
+            'attachments' => $attachments,
         ];
     }
 
@@ -371,6 +471,24 @@ class PdfCompositionTest extends TestCase
             'updated_at' => now(),
             'original_file_name' => 'filled_template.pdf',
             'stored_file_name' => 'filled_template.pdf',
+            'file_size' => strlen($contents),
+        ]);
+    }
+
+    private function createAttachmentFile(Document $document, string $title, string $contents): DocumentFile
+    {
+        $path = "documents/{$document->id}/attachment-".Str::slug($title).'.pdf';
+        Storage::disk('local')->put($path, $contents);
+
+        return DocumentFile::query()->create([
+            't_document_id' => $document->id,
+            'type_file' => 'attachment',
+            'attachment_title' => $title,
+            'path_file' => $path,
+            'uploaded_by' => $document->user_id,
+            'updated_at' => now(),
+            'original_file_name' => basename($path),
+            'stored_file_name' => basename($path),
             'file_size' => strlen($contents),
         ]);
     }

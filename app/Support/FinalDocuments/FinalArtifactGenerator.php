@@ -149,6 +149,7 @@ class FinalArtifactGenerator
             'businessFunction',
             'departments',
             'officialPreparer.department',
+            'files',
             'approvals.status',
         ]);
 
@@ -190,7 +191,30 @@ class FinalArtifactGenerator
                 'stored_file_name' => $sourceFile->stored_file_name,
                 'file_size' => $sourceFile->file_size,
             ],
+            'attachments' => $this->collectAttachments($document),
         ];
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    public function collectAttachments(Document $document): array
+    {
+        $document->loadMissing('files');
+
+        return $document->files
+            ->where('type_file', 'attachment')
+            ->values()
+            ->map(fn (DocumentFile $file, int $index): array => [
+                'id' => $file->id,
+                'number' => $index + 1,
+                'title' => $file->attachment_title ?: $file->original_file_name,
+                'path_file' => $file->path_file,
+                'original_file_name' => $file->original_file_name,
+                'stored_file_name' => $file->stored_file_name,
+                'file_size' => $file->file_size,
+            ])
+            ->all();
     }
 
     /**
