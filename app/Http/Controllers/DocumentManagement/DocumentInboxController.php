@@ -520,7 +520,14 @@ class DocumentInboxController extends Controller
     {
         $query = Approval::query()
             ->whereNotNull('stages')
-            ->where('stages', '!=', 'TTD Penyusun Resmi');
+            ->where('stages', '!=', 'TTD Penyusun Resmi')
+            ->where(function ($query): void {
+                $query
+                    ->where('stages', '!=', 'Disusun Oleh')
+                    ->orWhereDoesntHave('document', function ($query): void {
+                        $query->whereColumn('t_document.official_preparer_id', 't_approval.user_id');
+                    });
+            });
 
         if ($activeTab === 'processed-history') {
             $query->where(function ($query) use ($request): void {
@@ -556,7 +563,7 @@ class DocumentInboxController extends Controller
         if ($activeTab === 'needs-process') {
             $stages = $stages->push('Belum assign approver');
         } else {
-            $stages = $stages->merge(['Pengajuan Dokumen', 'Pengajuan Revisi', 'Assign Approver', 'TTD Penyusun Resmi']);
+            $stages = $stages->merge(['Pengajuan Dokumen', 'Pengajuan Revisi', 'Assign Approver']);
         }
 
         return ['' => 'Semua Tahap'] + $stages
@@ -577,7 +584,7 @@ class DocumentInboxController extends Controller
         $respondedApproval = $document->approvals->first(
             fn (Approval $approval): bool => $approval->user_id === $user->id
                 && $approval->responded_at !== null
-                && $approval->stages !== 'TTD Penyusun Resmi',
+                && ! $approval->shouldHideAsOfficialPreparerDisplay($document),
         );
 
         if ($respondedApproval !== null) {
@@ -586,7 +593,7 @@ class DocumentInboxController extends Controller
 
         $assignedApproval = $document->approvals->first(
             fn (Approval $approval): bool => $approval->assigned_by === $user->id
-                && $approval->stages !== 'TTD Penyusun Resmi',
+                && ! $approval->shouldHideAsOfficialPreparerDisplay($document),
         );
 
         if ($assignedApproval !== null) {
@@ -597,7 +604,9 @@ class DocumentInboxController extends Controller
             return null;
         }
 
-        return $document->approvals->first();
+        return $document->approvals
+            ->reject(fn (Approval $approval): bool => $approval->shouldHideAsOfficialPreparerDisplay($document))
+            ->first();
     }
 
     private function approvalScope(Request $request, bool $processed, bool $includeAllForDeveloper = true): callable
@@ -784,7 +793,8 @@ class DocumentInboxController extends Controller
         $row['stage'] = match (true) {
             $document->user_id === $user->id && $document->revised_from !== null => 'Pengajuan Revisi',
             $document->user_id === $user->id => 'Pengajuan Dokumen',
-            $document->official_preparer_id === $user->id => 'TTD Penyusun Resmi',
+            $document->official_preparer_id === $user->id && $document->revised_from !== null => 'Pengajuan Revisi',
+            $document->official_preparer_id === $user->id => 'Pengajuan Dokumen',
             default => 'Pengajuan Dokumen',
         };
         $row['waiting_for'] = '-';

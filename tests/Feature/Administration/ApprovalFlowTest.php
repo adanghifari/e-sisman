@@ -36,8 +36,7 @@ class ApprovalFlowTest extends TestCase
         Livewire::test(Index::class)
             ->call('selectDocumentLevel', $level->id)
             ->call('createStage')
-            ->set('keterangan', 'Diperiksa oleh')
-            ->set('nama_tahap', 'Manager')
+            ->set('nama_tahap', 'Diperiksa Oleh')
             ->call('saveStage')
             ->assertHasNoErrors();
 
@@ -48,8 +47,7 @@ class ApprovalFlowTest extends TestCase
         $this->assertDatabaseHas('m_approval_flow_stages', [
             'm_approval_flow_id' => $flow->id,
             'stage_order' => 1,
-            'keterangan' => 'Diperiksa oleh',
-            'nama_tahap' => 'Manager',
+            'nama_tahap' => 'Diperiksa Oleh',
         ]);
     }
 
@@ -64,22 +62,19 @@ class ApprovalFlowTest extends TestCase
         );
         $stage = $flow->stages()->create([
             'stage_order' => 1,
-            'keterangan' => 'Dibuat oleh',
-            'nama_tahap' => 'Staff',
+            'nama_tahap' => 'Dibuat Oleh',
         ]);
 
         Livewire::test(Index::class)
             ->call('selectDocumentLevel', $level->id)
             ->call('editStage', $stage->id)
-            ->set('keterangan', 'Disahkan oleh')
-            ->set('nama_tahap', 'Direktur')
+            ->set('nama_tahap', 'Disahkan Oleh')
             ->call('saveStage')
             ->assertHasNoErrors();
 
         $this->assertDatabaseHas('m_approval_flow_stages', [
             'id' => $stage->id,
-            'keterangan' => 'Disahkan oleh',
-            'nama_tahap' => 'Direktur',
+            'nama_tahap' => 'Disahkan Oleh',
         ]);
     }
 
@@ -94,18 +89,15 @@ class ApprovalFlowTest extends TestCase
         );
         $firstStage = $flow->stages()->create([
             'stage_order' => 1,
-            'keterangan' => 'Dibuat oleh',
-            'nama_tahap' => 'Staff',
+            'nama_tahap' => 'Dibuat Oleh',
         ]);
         $secondStage = $flow->stages()->create([
             'stage_order' => 2,
-            'keterangan' => 'Diperiksa oleh',
-            'nama_tahap' => 'Manager',
+            'nama_tahap' => 'Diperiksa Oleh',
         ]);
         $thirdStage = $flow->stages()->create([
             'stage_order' => 3,
-            'keterangan' => 'Disetujui oleh',
-            'nama_tahap' => 'Kepala Departemen',
+            'nama_tahap' => 'Disetujui Oleh',
         ]);
 
         Livewire::test(Index::class)
@@ -130,7 +122,6 @@ class ApprovalFlowTest extends TestCase
         Livewire::test(Index::class)
             ->call('selectDocumentLevel', $level->id)
             ->call('createStage')
-            ->set('keterangan', 'Dibuat oleh')
             ->set('nama_tahap', '')
             ->call('saveStage')
             ->assertHasErrors(['nama_tahap']);

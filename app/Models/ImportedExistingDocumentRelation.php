@@ -18,13 +18,10 @@ class ImportedExistingDocumentRelation extends Model
 {
     public const SUPERSEDED_BY = 'superseded_by';
 
-    public const RELATED_TO = 'related_to';
-
     public const REFERENCES = 'references';
 
     public const RELATION_TYPES = [
         self::SUPERSEDED_BY,
-        self::RELATED_TO,
         self::REFERENCES,
     ];
 

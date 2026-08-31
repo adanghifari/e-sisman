@@ -69,7 +69,7 @@
                                 </div>
                                 <div class="flex shrink-0 gap-2">
                                     @if (\Illuminate\Support\Str::of($file->original_file_name)->lower()->endsWith('.pdf'))
-                                        <x-ui.icon-button :href="route('documents.existing.imports.files.preview', [$document, $file])" icon="eye" label="Preview file" size="sm" />
+                                        <x-ui.icon-button :href="route('documents.existing.imports.files.preview', [$document, $file])" icon="eye" label="Lihat Dokumen" size="sm" />
                                     @endif
                                     <x-ui.icon-button :href="route('documents.existing.imports.files.show', [$document, $file])" icon="arrow-down-tray" label="Buka file" size="sm" />
                                 </div>

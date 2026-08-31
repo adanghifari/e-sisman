@@ -145,6 +145,7 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Dokumen ini berasal dari imported existing master sebelum go-live')
             ->assertSee(route('documents.existing.imports.files.show', [$importedMaster, $file]), false)
             ->assertSee(route('documents.existing.imports.files.preview', [$importedMaster, $file]), false)
+            ->assertSee('Lihat Dokumen')
             ->assertSee('Revisi');
 
         $this->actingAs($user)
@@ -192,7 +193,7 @@ class DocumentMasterTest extends TestCase
         $this->assertSame(1, substr_count($response->getContent(), 'PS-SMR-REL-OLD'));
     }
 
-    public function test_master_download_logs_master_document_number_snapshot(): void
+    public function test_master_raw_file_download_is_not_available_after_approval(): void
     {
         Storage::fake('local');
 
@@ -228,14 +229,9 @@ class DocumentMasterTest extends TestCase
 
         $this->actingAs($user)
             ->get(route('documents.master.files.show', [$revision, $file]))
-            ->assertOk();
+            ->assertNotFound();
 
-        $log = DocumentDownloadLog::query()->firstOrFail();
-
-        $this->assertSame('master', $log->download_context);
-        $this->assertSame('PS-SMR-SNAP', $log->document_number_snapshot);
-        $this->assertSame('Prosedur Sumber Revisi', $log->document_name_snapshot);
-        $this->assertSame(1, $log->document_revision_snapshot);
+        $this->assertSame(0, DocumentDownloadLog::query()->count());
     }
 
     public function test_master_page_does_not_show_approved_obsolete_request_transaction(): void
@@ -691,11 +687,10 @@ class DocumentMasterTest extends TestCase
             ->assertOk()
             ->assertSee('Nomor Lembar Revisi')
             ->assertSee('FMPS-KSA-02-01')
-            ->assertSee('Isi Dokumen Versi Revisi')
-            ->assertSee('dokumen-revisi.pdf')
-            ->assertSee('Lembar Revisi')
-            ->assertSee('lembar-revisi.pdf')
-            ->assertDontSee('Belum ada file isi dokumen.');
+            ->assertSee('Printout PDF Final')
+            ->assertDontSee('<iframe src="'.route('documents.master.generated.show', $revision), false)
+            ->assertDontSee('dokumen-revisi.pdf')
+            ->assertDontSee('lembar-revisi.pdf');
 
         $this->actingAs($submitter)
             ->get(route('documents.approval.show', $revision))
@@ -728,13 +723,11 @@ class DocumentMasterTest extends TestCase
         ApprovalFlowStage::create([
             'm_approval_flow_id' => $flow->id,
             'stage_order' => 1,
-            'keterangan' => 'Dibuat oleh',
             'nama_tahap' => 'Staff',
         ]);
         ApprovalFlowStage::create([
             'm_approval_flow_id' => $flow->id,
             'stage_order' => 2,
-            'keterangan' => 'Disetujui oleh',
             'nama_tahap' => 'Direktur Utama',
         ]);
         $staffRole = Role::create(['nama_role' => 'Staff']);
@@ -750,7 +743,7 @@ class DocumentMasterTest extends TestCase
             'assigned_by' => $viewer->id,
             'assigned_at' => now()->subDay(),
             'responded_at' => now()->setDate(2026, 8, 18)->setTime(15, 10, 20),
-            'stages' => 'Disetujui oleh Direktur Utama',
+            'stages' => 'Direktur Utama',
         ]);
         Approval::create([
             't_document_id' => $document->id,
@@ -760,21 +753,21 @@ class DocumentMasterTest extends TestCase
             'assigned_by' => $viewer->id,
             'assigned_at' => now(),
             'responded_at' => now()->setDate(2026, 8, 18)->setTime(14, 25, 36),
-            'stages' => 'Dibuat oleh Staff',
+            'stages' => 'Staff',
         ]);
 
         $response = $this->actingAs($viewer)
             ->get(route('documents.master.show', $document))
             ->assertOk()
-            ->assertSee('Dibuat oleh Staff')
+            ->assertSee('Staff')
             ->assertSee('Diproses pada 18 Aug 2026 14:25:36')
-            ->assertSee('Disetujui oleh Direktur Utama')
+            ->assertSee('Direktur Utama')
             ->assertDontSee('Tahap 1')
             ->assertDontSee('Tahap 2');
 
         $this->assertLessThan(
-            strpos($response->getContent(), 'Disetujui oleh Direktur Utama'),
-            strpos($response->getContent(), 'Dibuat oleh Staff'),
+            strpos($response->getContent(), 'Direktur Utama'),
+            strpos($response->getContent(), 'Staff'),
         );
     }
 
@@ -810,8 +803,7 @@ class DocumentMasterTest extends TestCase
             ->assertSee('FMIK-SMR-010-01')
             ->assertSee('00.01')
             ->assertSee('Riwayat Dokumen')
-            ->assertSee('Dokumen dibuat')
-            ->assertSee('Dokumen diajukan')
+            ->assertSee('Dokumen disetujui')
             ->assertDontSee('Dokumen Acuan')
             ->assertDontSee('Revisi Dari')
             ->assertDontSee('PS-SMR-REF - Dokumen Acuan Lama');
@@ -903,8 +895,7 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Dokumen Obsolete')
             ->assertSee('Obsolete')
             ->assertSee('Riwayat Dokumen')
-            ->assertSee('Dokumen dibuat')
-            ->assertSee('Dokumen diajukan')
+            ->assertSee('Dokumen disetujui')
             ->assertDontSee('Ajukan Revisi')
             ->assertDontSee('Pengajuan Obsolete')
             ->assertDontSee('Jadikan Master')
@@ -958,12 +949,16 @@ class DocumentMasterTest extends TestCase
             ->get(route('documents.obsolete.show', $revision))
             ->assertOk()
             ->assertSee('Detail Dokumen Obsolete')
-            ->assertSee('revision.pdf');
+            ->assertSee('Printout PDF Final')
+            ->assertSee('data-lazy-pdf-preview', false)
+            ->assertSee('data-lazy-pdf-load', false)
+            ->assertSee(route('documents.obsolete.generated.show', $revision), false)
+            ->assertDontSee('<iframe src="'.route('documents.obsolete.generated.show', $revision), false)
+            ->assertDontSee('revision.pdf');
 
         $this->actingAs($user)
             ->get(route('documents.obsolete.files.preview', [$revision, $file]))
-            ->assertOk()
-            ->assertHeader('content-type', 'application/pdf');
+            ->assertNotFound();
     }
 
     public function test_regular_user_cannot_restore_obsolete_document_as_master(): void

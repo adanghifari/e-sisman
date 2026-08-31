@@ -4,13 +4,14 @@ namespace App\Http\Controllers\DocumentManagement;
 
 use App\Http\Controllers\Controller;
 use App\Models\ApprovalStatus;
-use App\Models\BusinessProcess;
+use App\Models\BusinessFunction;
 use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentNumberingSetup;
 use App\Models\DocumentNumberRegistry;
 use App\Models\DocumentType;
 use App\Models\StatusDocument;
+use App\Support\FinalDocuments\AutoGenerateApprovalPreview;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
@@ -268,6 +269,11 @@ class DocumentController extends Controller
                 $document->departments()->sync($documentAttributes['department_ids'] ?? []);
 
                 $this->removeExistingDocumentFiles($document, $documentAttributes['remove_existing_files'] ?? []);
+                $this->updateExistingAttachments(
+                    $document,
+                    $documentAttributes['existing_attachment_titles'] ?? [],
+                    $documentAttributes['existing_attachment_orders'] ?? [],
+                );
 
                 if ($request->hasFile('imported_document')) {
                     $this->replaceSingleDocumentFile($document, 'imported_document');
@@ -289,16 +295,23 @@ class DocumentController extends Controller
                     $this->storeDocumentFile($document, $request->file('revision_form'), 'revision_form', $request->user()->id);
                 }
 
-                foreach ($request->file('attachments', []) as $attachment) {
-                    $this->storeDocumentFile($document, $attachment, 'attachment', $request->user()->id);
-                }
+                $this->storeAttachmentFiles($request, $document);
 
                 if ($submittedAt !== null) {
+                    $document->snapshotOfficialPreparer();
                     $this->claimTDocumentNumber($document, $request->user()->id);
                     $this->recordOfficialPreparerApproval($document, $request->user()->id, $submittedAt);
                 }
 
                 $savedDocument = $document;
+
+                if ($submittedAt !== null) {
+                    $documentId = $document->id;
+                    $generatedById = $request->user()->id;
+
+                    DB::afterCommit(fn () => app(AutoGenerateApprovalPreview::class)
+                        ->generateIfNeeded($documentId, $generatedById));
+                }
             });
         } finally {
             if ($documentNumberLockAcquired && $documentNumber !== null) {
@@ -462,6 +475,10 @@ class DocumentController extends Controller
                 'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'remove_existing_files' => ['nullable', 'array'],
                 'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
+                'existing_attachment_titles' => ['nullable', 'array'],
+                'existing_attachment_titles.*' => ['nullable', 'string', 'max:255'],
+                'existing_attachment_orders' => ['nullable', 'array'],
+                'existing_attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
             ];
         }
 
@@ -475,15 +492,24 @@ class DocumentController extends Controller
                 'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
                 'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
                 'nomor_dokumen_suffix' => ['required', 'string', 'max:50'],
+                'tanggal_terbit' => ['nullable', 'date'],
                 'revision_content' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'revision_content')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
                 'revision_form' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'revision_form')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
                 'attachments' => ['nullable', 'array', 'max:10'],
                 'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
+                'attachment_titles' => ['nullable', 'array', 'max:10'],
+                'attachment_titles.*' => ['required_with:attachments.*', 'string', 'max:255'],
+                'attachment_orders' => ['nullable', 'array', 'max:10'],
+                'attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
                 'submit_action' => ['required', Rule::in(['draft', 'submit'])],
                 'revised_from' => ['required', 'integer', Rule::exists('t_document', 'id')],
                 'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'remove_existing_files' => ['nullable', 'array'],
                 'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
+                'existing_attachment_titles' => ['nullable', 'array'],
+                'existing_attachment_titles.*' => ['nullable', 'string', 'max:255'],
+                'existing_attachment_orders' => ['nullable', 'array'],
+                'existing_attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
             ];
         }
 
@@ -496,14 +522,23 @@ class DocumentController extends Controller
             'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
             'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
             'nomor_dokumen_suffix' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:50'],
+            'tanggal_terbit' => ['nullable', 'date'],
             'filled_template' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'filled_template')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
             'attachments' => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
+            'attachment_titles' => ['nullable', 'array', 'max:10'],
+            'attachment_titles.*' => ['required_with:attachments.*', 'string', 'max:255'],
+            'attachment_orders' => ['nullable', 'array', 'max:10'],
+            'attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
             'submit_action' => ['required', Rule::in(['draft', 'submit'])],
             'revised_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'remove_existing_files' => ['nullable', 'array'],
             'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
+            'existing_attachment_titles' => ['nullable', 'array'],
+            'existing_attachment_titles.*' => ['nullable', 'string', 'max:255'],
+            'existing_attachment_orders' => ['nullable', 'array'],
+            'existing_attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
         ];
     }
 
@@ -532,6 +567,14 @@ class DocumentController extends Controller
             'revision_form' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
             'attachments' => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
+            'attachment_titles' => ['nullable', 'array', 'max:10'],
+            'attachment_titles.*' => ['nullable', 'string', 'max:255'],
+            'attachment_orders' => ['nullable', 'array', 'max:10'],
+            'attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
+            'existing_attachment_titles' => ['nullable', 'array'],
+            'existing_attachment_titles.*' => ['nullable', 'string', 'max:255'],
+            'existing_attachment_orders' => ['nullable', 'array'],
+            'existing_attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
         ];
 
         if ($level === 'level-4') {
@@ -637,8 +680,96 @@ class DocumentController extends Controller
             $this->storeDocumentFile($document, $request->file($type), $type, $request->user()->id);
         }
 
-        foreach ($request->file('attachments', []) as $attachment) {
-            $this->storeDocumentFile($document, $attachment, 'attachment', $request->user()->id);
+        $this->updateExistingAttachments(
+            $document,
+            $request->input('existing_attachment_titles', []),
+            $request->input('existing_attachment_orders', []),
+        );
+        $this->storeAttachmentFiles($request, $document);
+    }
+
+    private function storeAttachmentFiles(Request $request, Document $document): void
+    {
+        $titles = collect($request->input('attachment_titles', []))->values();
+        $orders = collect($request->input('attachment_orders', []))->values();
+
+        foreach (array_values($request->file('attachments', [])) as $index => $attachment) {
+            $title = trim((string) $titles->get($index, ''));
+            $order = max(1, (int) ($orders->get($index) ?: ($index + 1)));
+
+            if ($this->hasMatchingAttachment($document, $attachment, $title)) {
+                $this->updateMatchingAttachmentOrder($document, $attachment, $title, $order);
+                continue;
+            }
+
+            $this->storeDocumentFile(
+                $document,
+                $attachment,
+                'attachment',
+                $request->user()->id,
+                $title !== '' ? $title : null,
+                $order,
+            );
+        }
+    }
+
+    private function updateMatchingAttachmentOrder(Document $document, mixed $file, ?string $title, int $order): void
+    {
+        $document->files()
+            ->where('type_file', 'attachment')
+            ->where('original_file_name', $file->getClientOriginalName())
+            ->where('file_size', $file->getSize())
+            ->where(function ($query) use ($title): void {
+                filled($title)
+                    ? $query->where('attachment_title', $title)
+                    : $query->whereNull('attachment_title');
+            })
+            ->update([
+                'attachment_order' => $order,
+                'updated_at' => now(),
+            ]);
+    }
+
+    private function hasMatchingAttachment(Document $document, mixed $file, ?string $title): bool
+    {
+        return $document->files()
+            ->where('type_file', 'attachment')
+            ->where('original_file_name', $file->getClientOriginalName())
+            ->where('file_size', $file->getSize())
+            ->where(function ($query) use ($title): void {
+                filled($title)
+                    ? $query->where('attachment_title', $title)
+                    : $query->whereNull('attachment_title');
+            })
+            ->exists();
+    }
+
+    /**
+     * @param  array<int|string, string|null>  $titles
+     */
+    private function updateExistingAttachments(Document $document, array $titles, array $orders = []): void
+    {
+        if ($titles === [] && $orders === []) {
+            return;
+        }
+
+        $fileIds = collect(array_keys($titles))
+            ->merge(array_keys($orders))
+            ->unique()
+            ->all();
+
+        foreach ($fileIds as $fileId) {
+            $title = $titles[$fileId] ?? null;
+            $order = $orders[$fileId] ?? null;
+
+            $document->files()
+                ->whereKey($fileId)
+                ->where('type_file', 'attachment')
+                ->update([
+                    'attachment_title' => filled($title) ? trim((string) $title) : null,
+                    'attachment_order' => filled($order) ? max(1, (int) $order) : null,
+                    'updated_at' => now(),
+                ]);
         }
     }
 
@@ -996,19 +1127,19 @@ class DocumentController extends Controller
         if ($documentLevel->kode === 'level-1') {
             $segments[] = Str::upper(trim($suffix));
         } elseif ($documentLevel->kode === 'level-2') {
-            if (! filled($validated['m_proses_bisnis_id'] ?? null)) {
+            if (! filled($validated['m_proses_fungsi_id'] ?? null)) {
                 return null;
             }
 
-            $businessProcessCode = BusinessProcess::query()
-                ->whereKey($validated['m_proses_bisnis_id'])
+            $businessFunctionCode = BusinessFunction::query()
+                ->whereKey($validated['m_proses_fungsi_id'])
                 ->value('kode');
 
-            if (! filled($businessProcessCode)) {
+            if (! filled($businessFunctionCode)) {
                 return null;
             }
 
-            $segments[] = $businessProcessCode;
+            $segments[] = $businessFunctionCode;
             $segments[] = Str::upper(trim($suffix));
         } elseif ($documentLevel->kode === 'level-4') {
             $segments[] = Str::upper(trim($suffix));
@@ -1147,12 +1278,14 @@ class DocumentController extends Controller
         return ($major * 100) + $minor;
     }
 
-    protected function storeDocumentFile(Document $document, mixed $file, string $type, int $uploadedBy): void
+    protected function storeDocumentFile(Document $document, mixed $file, string $type, int $uploadedBy, ?string $attachmentTitle = null, ?int $attachmentOrder = null): void
     {
         $path = $file->store("documents/{$document->id}", 'local');
 
         $document->files()->create([
             'type_file' => $type,
+            'attachment_title' => $attachmentTitle,
+            'attachment_order' => $attachmentOrder,
             'path_file' => $path,
             'uploaded_by' => $uploadedBy,
             'updated_at' => now(),
@@ -1199,7 +1332,7 @@ class DocumentController extends Controller
 
         $approvedStatus = ApprovalStatus::findByCode(ApprovalStatus::APPROVED);
 
-        $document->approvals()->create([
+        $approval = $document->approvals()->make([
             'm_approval_status_id' => $approvedStatus->id,
             'user_id' => $document->official_preparer_id,
             'role_id' => null,
@@ -1209,5 +1342,7 @@ class DocumentController extends Controller
             'stages' => 'TTD Penyusun Resmi',
             'catatan' => 'Tanda tangan penyusun resmi tercatat saat submit dokumen.',
         ]);
+
+        $approval->fillResponseSnapshot()->save();
     }
 }

@@ -36,6 +36,7 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
         ->withErrors(['stage_approvers' => 'Halaman assign sudah diperbarui. Silakan simpan ulang dari detail dokumen.']));
     Route::get('documents/inbox/{document}/files/{file}', [DocumentApprovalController::class, 'file'])->name('documents.approval.files.show');
     Route::get('documents/inbox/{document}/files/{file}/preview', [DocumentApprovalController::class, 'preview'])->name('documents.approval.files.preview');
+    Route::get('documents/inbox/{document}/generated', [DocumentApprovalController::class, 'generatedFile'])->name('documents.approval.generated.show');
     Route::get('documents/create', [DocumentController::class, 'index'])->name('documents.create');
     Route::get('documents/drafts', [DocumentController::class, 'drafts'])->name('documents.create.drafts');
     Route::get('documents/drafts/{document}/edit', [DocumentController::class, 'editDraft'])
@@ -82,6 +83,7 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::post('documents/obsolete/{document}/restore', [DocumentObsoleteController::class, 'restore'])->name('documents.obsolete.restore');
     Route::get('documents/obsolete/{document}/files/{file}', [DocumentObsoleteController::class, 'file'])->name('documents.obsolete.files.show');
     Route::get('documents/obsolete/{document}/files/{file}/preview', [DocumentObsoleteController::class, 'preview'])->name('documents.obsolete.files.preview');
+    Route::get('documents/obsolete/{document}/generated', [DocumentObsoleteController::class, 'generatedFile'])->name('documents.obsolete.generated.show');
     Route::get('document-templates', [DocumentTemplateController::class, 'index'])->name('document-templates.index');
     Route::post('document-templates', [DocumentTemplateController::class, 'store'])->name('document-templates.store');
     Route::get('document-templates/files/{file}', [DocumentTemplateController::class, 'file'])->name('document-templates.files.show');
@@ -91,6 +93,7 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::post('documents/master/{document}/restore', [DocumentMasterController::class, 'restore'])->name('documents.master.restore');
     Route::get('documents/master/{document}/files/{file}', [DocumentMasterController::class, 'file'])->name('documents.master.files.show');
     Route::get('documents/master/{document}/files/{file}/preview', [DocumentMasterController::class, 'preview'])->name('documents.master.files.preview');
+    Route::get('documents/master/{document}/generated', [DocumentMasterController::class, 'generatedFile'])->name('documents.master.generated.show');
     Route::view('reports', 'reporting.index')->name('reports.index');
     Route::livewire('users', UserIndex::class)->name('users.index');
     Route::livewire('access-groups', AccessGroupIndex::class)->name('access-groups.index');

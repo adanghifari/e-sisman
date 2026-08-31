@@ -136,6 +136,21 @@
                             @error('m_proses_fungsi_id')
                                 <span class="text-sm font-semibold text-red-500">{{ $message }}</span>
                             @enderror
+                            @unless ($isMasterImport)
+                                <div class="md:col-span-2">
+                                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Digantikan Oleh</span>
+                                    <x-ui.document-search-select
+                                        name="replacement_reference"
+                                        :documents="$relationDocumentOptions"
+                                        :value="old('replacement_reference')"
+                                        placeholder="Belum ditentukan"
+                                        empty-label="Dokumen tidak ditemukan."
+                                    />
+                                    @error('replacement_reference')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </div>
+                            @endunless
                         </div>
                     </div>
 
@@ -165,9 +180,9 @@
 
             <x-ui.panel
                 title="Dokumen Terkait"
-                :description="$isMasterImport ? 'Tambahkan relasi jika dokumen master existing ini berhubungan dengan arsip obsolete legacy lain atau dokumen master V2.' : 'Tambahkan relasi jika arsip ini berhubungan dengan arsip obsolete legacy lain atau dokumen master existing.'"
+                :description="$isMasterImport ? 'Tambahkan relasi jika dokumen master existing ini punya acuan atau menggantikan arsip lain.' : 'Tambahkan relasi legacy jika arsip ini digantikan dokumen lain atau punya dokumen acuan.'"
                 :padded="false"
-                data-rule-dependent-section
+                data-legacy-rule-section
             >
                 @php
                     $oldRelations = collect(old('relations', []))->values();
@@ -181,7 +196,13 @@
                     <div class="space-y-4" data-imported-existing-relation-list>
                         @foreach ($oldRelations as $index => $relation)
                             @php
-                                $targetType = filled($relation['related_document_id'] ?? null) ? 'existing' : 'imported';
+                                $relationReference = $relation['relation_reference'] ?? (
+                                    filled($relation['related_document_id'] ?? null)
+                                        ? 'existing-'.$relation['related_document_id']
+                                        : (filled($relation['related_imported_existing_document_id'] ?? null)
+                                            ? 'imported-'.$relation['related_imported_existing_document_id']
+                                            : null)
+                                );
                             @endphp
 
                             <div class="rounded-lg border border-slate-200 bg-slate-50 p-4" data-imported-existing-relation-row>
@@ -201,28 +222,17 @@
                                         name="relations[{{ $index }}][relation_type]"
                                         :value="$relation['relation_type'] ?? \App\Models\ImportedExistingDocumentRelation::SUPERSEDED_BY"
                                         :options="$relationTypeOptions"
+                                        data-imported-existing-relation-type
                                     />
-                                    <x-ui.select
-                                        label="Target Relasi"
-                                        name="relations[{{ $index }}][target_type]"
-                                        :value="$targetType"
-                                        :options="['imported' => 'Arsip Obsolete Legacy', 'existing' => 'Dokumen Existing / Master']"
-                                        data-imported-existing-target-type
-                                    />
-                                    <div data-imported-existing-imported-target>
-                                        <x-ui.select
-                                            label="Arsip Obsolete Legacy"
-                                            name="relations[{{ $index }}][related_imported_existing_document_id]"
-                                            :value="$relation['related_imported_existing_document_id'] ?? null"
-                                            :options="['' => 'Pilih arsip obsolete legacy'] + $importedDocumentOptions->mapWithKeys(fn ($document) => [$document->id => trim(($document->nomor_dokumen ? $document->nomor_dokumen.' - ' : '').$document->nama_dokumen)])->all()"
-                                        />
-                                    </div>
-                                    <div data-imported-existing-existing-target>
-                                        <x-ui.select
-                                            label="Dokumen Existing / Master"
-                                            name="relations[{{ $index }}][related_document_id]"
-                                            :value="$relation['related_document_id'] ?? null"
-                                            :options="['' => 'Pilih dokumen existing'] + $existingDocumentOptions->mapWithKeys(fn ($document) => [$document->id => trim(($document->nomor_dokumen ? $document->nomor_dokumen.' - ' : '').$document->nama_dokumen)])->all()"
+                                    <div>
+                                        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Target Dokumen</span>
+                                        <x-ui.document-search-select
+                                            name="relations[{{ $index }}][relation_reference]"
+                                            :documents="$relationDocumentOptions"
+                                            :value="$relationReference"
+                                            placeholder="Pilih target dokumen"
+                                            empty-label="Dokumen tidak ditemukan."
+                                            data-relation-target-picker
                                         />
                                     </div>
                                     <div class="lg:col-span-2">
@@ -260,40 +270,21 @@
                         <div class="grid gap-4 lg:grid-cols-2">
                             <label class="block">
                                 <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Jenis Relasi</span>
-                                <select name="relations[__INDEX__][relation_type]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                <select name="relations[__INDEX__][relation_type]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" data-imported-existing-relation-type>
                                     @foreach ($relationTypeOptions as $value => $label)
                                         <option value="{{ $value }}">{{ $label }}</option>
                                     @endforeach
                                 </select>
                             </label>
-                            <label class="block">
-                                <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Target Relasi</span>
-                                <select name="relations[__INDEX__][target_type]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" data-imported-existing-target-type>
-                                    <option value="imported">Arsip Obsolete Legacy</option>
-                                    <option value="existing">Dokumen Existing / Master</option>
-                                </select>
-                            </label>
-                            <div data-imported-existing-imported-target>
-                                <label class="block">
-                                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Arsip Obsolete Legacy</span>
-                                    <select name="relations[__INDEX__][related_imported_existing_document_id]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                        <option value="">Pilih arsip obsolete legacy</option>
-                                        @foreach ($importedDocumentOptions as $optionDocument)
-                                            <option value="{{ $optionDocument->id }}">{{ trim(($optionDocument->nomor_dokumen ? $optionDocument->nomor_dokumen.' - ' : '').$optionDocument->nama_dokumen) }}</option>
-                                        @endforeach
-                                    </select>
-                                </label>
-                            </div>
-                            <div data-imported-existing-existing-target>
-                                <label class="block">
-                                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Dokumen Existing / Master</span>
-                                    <select name="relations[__INDEX__][related_document_id]" class="h-10 w-full rounded-lg border border-slate-200 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                        <option value="">Pilih dokumen existing</option>
-                                        @foreach ($existingDocumentOptions as $optionDocument)
-                                            <option value="{{ $optionDocument->id }}">{{ trim(($optionDocument->nomor_dokumen ? $optionDocument->nomor_dokumen.' - ' : '').$optionDocument->nama_dokumen) }}</option>
-                                        @endforeach
-                                    </select>
-                                </label>
+                            <div>
+                                <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Target Dokumen</span>
+                                <x-ui.document-search-select
+                                    name="relations[__INDEX__][relation_reference]"
+                                    :documents="$relationDocumentOptions"
+                                    placeholder="Pilih target dokumen"
+                                    empty-label="Dokumen tidak ditemukan."
+                                    data-relation-target-picker
+                                />
                             </div>
                             <div class="lg:col-span-2">
                                 <label class="block">
@@ -329,9 +320,11 @@
                     const legacyRuleNote = ruleForm.querySelector('[data-legacy-rule-note]');
                     const dependentFields = document.querySelectorAll('[data-rule-dependent-fields]');
                     const dependentSections = document.querySelectorAll('[data-rule-dependent-section]');
+                    const legacySections = document.querySelectorAll('[data-legacy-rule-section]');
                     const currentRuleAlwaysVisible = currentRuleFields?.hasAttribute('data-always-visible') || false;
                     const hasSelectedRule = Boolean(selectedRule) || currentRuleAlwaysVisible;
                     const isCurrentRule = selectedRule === '{{ \App\Models\ImportedExistingDocument::CURRENT_RULE }}';
+                    const isLegacyRule = selectedRule === '{{ \App\Models\ImportedExistingDocument::LEGACY_RULE }}';
                     const shouldShowCurrentRule = currentRuleAlwaysVisible || isCurrentRule;
 
                     dependentFields.forEach((section) => {
@@ -339,6 +332,14 @@
                     });
                     dependentSections.forEach((section) => {
                         section.classList.toggle('hidden', !hasSelectedRule);
+                    });
+                    legacySections.forEach((section) => {
+                        const hideLegacySection = !hasSelectedRule || !isLegacyRule;
+
+                        section.classList.toggle('hidden', hideLegacySection);
+                        section.querySelectorAll('select, input, textarea').forEach((field) => {
+                            field.disabled = hideLegacySection;
+                        });
                     });
 
                     currentRuleFields?.classList.toggle('hidden', !hasSelectedRule || !shouldShowCurrentRule);
@@ -357,6 +358,138 @@
 
                 syncRuleFields();
             }
+
+            const closeDocumentSearch = (root) => {
+                root?.querySelector('[data-document-search-panel]')?.classList.add('hidden');
+                root?.querySelector('[data-document-search-trigger]')?.setAttribute('aria-expanded', 'false');
+            };
+
+            const clearDocumentSearch = (root) => {
+                root.querySelector('[data-document-search-value]').value = '';
+                root.querySelector('[data-document-search-name]').textContent = root.dataset.placeholder || 'Pilih dokumen';
+                const meta = root.querySelector('[data-document-search-meta]');
+                meta.textContent = '';
+                meta.classList.add('hidden');
+            };
+
+            const setDocumentSearch = (root, option) => {
+                const value = root.querySelector('[data-document-search-value]');
+                const meta = root.querySelector('[data-document-search-meta]');
+
+                value.value = option.dataset.value || '';
+                root.querySelector('[data-document-search-name]').textContent = option.dataset.name || root.dataset.placeholder || 'Pilih dokumen';
+                meta.textContent = option.dataset.meta || '';
+                meta.classList.toggle('hidden', !meta.textContent);
+                value.dispatchEvent(new Event('change', { bubbles: true }));
+            };
+
+            const syncDocumentSearchOptions = (form) => {
+                form.querySelectorAll('[data-document-search-select]').forEach((root) => {
+                    const processSelect = form.querySelector('select[name="m_proses_bisnis_id"]');
+                    const functionSelect = form.querySelector('select[name="m_proses_fungsi_id"]');
+                    const levelInput = form.querySelector('[name="m_document_level_id"]');
+                    const input = root.querySelector('[data-document-search-input]');
+                    const value = root.querySelector('[data-document-search-value]');
+                    const trigger = root.querySelector('[data-document-search-trigger]');
+                    const query = (input?.value || '').trim().toLowerCase();
+                    const levelId = levelInput?.value || '';
+                    const processId = processSelect?.value || '';
+                    const functionId = functionSelect?.value || '';
+                    const filterByContext = root.dataset.filterByContext === 'true';
+                    let visibleCount = 0;
+                    let selectedStillVisible = value.value === '';
+
+                    root.querySelectorAll('[data-document-search-option]').forEach((option) => {
+                        const matchesContext = !filterByContext
+                            || (levelId !== ''
+                                && processId !== ''
+                                && functionId !== ''
+                                && option.dataset.documentLevelId === levelId
+                                && option.dataset.businessProcessId === processId
+                                && option.dataset.businessFunctionId === functionId);
+                        const matchesSearch = query === '' || (option.dataset.search || '').includes(query);
+                        const isVisible = matchesContext && matchesSearch;
+
+                        option.classList.toggle('hidden', !isVisible);
+                        visibleCount += isVisible ? 1 : 0;
+
+                        if (value.value !== '' && option.dataset.value === value.value && isVisible) {
+                            selectedStillVisible = true;
+                        }
+                    });
+
+                    root.querySelector('[data-document-search-empty]')?.classList.toggle('hidden', visibleCount > 0);
+                    trigger.disabled = filterByContext && (levelId === '' || processId === '' || functionId === '');
+
+                    if (!selectedStillVisible) {
+                        clearDocumentSearch(root);
+                    }
+                });
+            };
+
+            document.querySelectorAll('form').forEach((form) => {
+                syncDocumentSearchOptions(form);
+            });
+
+            document.addEventListener('change', (event) => {
+                if (!event.target.closest('[name="m_document_level_id"], select[name="m_proses_bisnis_id"], select[name="m_proses_fungsi_id"], [data-imported-existing-relation-type]')) {
+                    return;
+                }
+
+                const form = event.target.closest('form');
+                if (form) {
+                    syncDocumentSearchOptions(form);
+                }
+            });
+
+            document.addEventListener('input', (event) => {
+                if (!event.target.closest('[data-document-search-input]')) {
+                    return;
+                }
+
+                const form = event.target.closest('form');
+                if (form) {
+                    syncDocumentSearchOptions(form);
+                }
+            });
+
+            document.addEventListener('click', (event) => {
+                const trigger = event.target.closest('[data-document-search-trigger]');
+
+                if (trigger) {
+                    const root = trigger.closest('[data-document-search-select]');
+                    document.querySelectorAll('[data-document-search-select]').forEach((picker) => {
+                        if (picker !== root) {
+                            closeDocumentSearch(picker);
+                        }
+                    });
+                    root?.querySelector('[data-document-search-panel]')?.classList.toggle('hidden');
+                    trigger.setAttribute('aria-expanded', String(!root?.querySelector('[data-document-search-panel]')?.classList.contains('hidden')));
+                    root?.querySelector('[data-document-search-input]')?.focus();
+                    return;
+                }
+
+                const option = event.target.closest('[data-document-search-option]');
+
+                if (option && !option.classList.contains('hidden')) {
+                    const root = option.closest('[data-document-search-select]');
+                    setDocumentSearch(root, option);
+                    closeDocumentSearch(root);
+                    return;
+                }
+
+                document.querySelectorAll('[data-document-search-select]').forEach((root) => {
+                    if (!root.contains(event.target)) {
+                        closeDocumentSearch(root);
+                    }
+                });
+            });
+
+            document.addEventListener('keydown', (event) => {
+                if (event.key === 'Escape') {
+                    document.querySelectorAll('[data-document-search-select]').forEach(closeDocumentSearch);
+                }
+            });
 
             const root = document.querySelector('[data-imported-existing-relations]');
 
@@ -401,6 +534,7 @@
 
                     list.insertAdjacentHTML('beforeend', content);
                     nextIndex += 1;
+                    syncDocumentSearchOptions(event.target.closest('form'));
                     syncAllRows();
                     return;
                 }

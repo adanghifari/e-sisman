@@ -9,6 +9,7 @@ use App\Models\ApprovalFlowStage;
 use App\Models\ApprovalStatus;
 use App\Models\Document;
 use App\Models\DocumentFile;
+use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
 use App\Models\ImportedExistingDocument;
@@ -16,6 +17,10 @@ use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentHistory;
+use App\Support\DocumentRejectionHistory;
+use App\Support\FinalDocuments\AutoGenerateFinalDocument;
+use App\Support\FinalDocuments\DynamicFinalDocumentRenderer;
+use App\Support\FinalDocuments\PdfDocumentContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -24,6 +29,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
 
 class DocumentApprovalController extends Controller
@@ -44,6 +50,7 @@ class DocumentApprovalController extends Controller
             'officialPreparer',
             'departments',
             'files.uploader',
+            'finalArtifacts',
             'approvals.status',
             'approvals.approver',
             'approvals.role',
@@ -78,7 +85,13 @@ class DocumentApprovalController extends Controller
             ])->values(),
             'obsoleteSourceContentFiles' => $obsoleteSourceContentFiles,
             'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
+            'generatedPrintout' => $this->latestGeneratedPrintout($document),
+            'canPreviewGeneratedPrintout' => app(DynamicFinalDocumentRenderer::class)
+                ->canRender($document, $document->status?->nama_status === StatusDocument::APPROVED
+                    ? PdfDocumentContext::FINAL_DOCUMENT
+                    : PdfDocumentContext::APPROVAL_PREVIEW),
             'documentHistory' => app(DocumentHistory::class)->forDocument($document),
+            'rejectionHistory' => app(DocumentRejectionHistory::class)->forDocument($document),
         ]);
     }
 
@@ -88,15 +101,21 @@ class DocumentApprovalController extends Controller
 
         $approval = $this->activeApproval($request, $document);
         abort_if(! $approval, 404);
+        $generatedBy = $request->user();
 
-        DB::transaction(function () use ($request, $document, $approval): void {
-            $approval->update([
+        DB::transaction(function () use ($request, $document, $approval, $generatedBy): void {
+            $approval->fill([
                 'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::APPROVED)->id,
                 'responded_at' => now(),
                 'catatan' => $request->string('catatan')->trim()->value() ?: null,
-            ]);
+            ])->fillResponseSnapshot($this->stageOrderSnapshotForApproval($document, $approval))
+                ->save();
 
-            $this->advanceApprovalFlow($document->refresh());
+            $finalizedDocument = $this->advanceApprovalFlow($document->refresh());
+
+            if ($finalizedDocument !== null) {
+                $this->autoGenerateFinalDocumentAfterCommit($finalizedDocument, $generatedBy);
+            }
         });
 
         return redirect()
@@ -122,11 +141,12 @@ class DocumentApprovalController extends Controller
             $rejectedStatus = ApprovalStatus::findByCode(ApprovalStatus::REJECTED);
             $terminatedStatus = ApprovalStatus::findByCode(ApprovalStatus::TERMINATED);
 
-            $approval->update([
+            $approval->fill([
                 'm_approval_status_id' => $rejectedStatus->id,
                 'responded_at' => now(),
                 'catatan' => $validated['catatan'],
-            ]);
+            ])->fillResponseSnapshot($this->stageOrderSnapshotForApproval($document, $approval))
+                ->save();
 
             Approval::query()
                 ->where('t_document_id', $document->id)
@@ -244,12 +264,22 @@ class DocumentApprovalController extends Controller
                         : null,
                     'created_at' => $approval->created_at ?? now(),
                     'catatan' => null,
-                ])->save();
+                ]);
+
+                if ($alreadySignedAsOfficialPreparer) {
+                    $approval->fillResponseSnapshot((int) $stage->stage_order);
+                }
+
+                $approval->save();
             }
         }
 
         $this->markRevisionRequestAsAssigned($document);
-        $this->advanceApprovalFlow($document);
+        $finalizedDocument = $this->advanceApprovalFlow($document);
+
+        if ($finalizedDocument !== null) {
+            $this->autoGenerateFinalDocumentAfterCommit($finalizedDocument, $request->user());
+        }
 
         return redirect()
             ->route('documents.approval.show', $document)
@@ -293,6 +323,7 @@ class DocumentApprovalController extends Controller
     public function file(Request $request, Document $document, DocumentFile $file, RecordDocumentDownload $recordDocumentDownload): BinaryFileResponse
     {
         $this->authorizeDocumentAccess($request, $document);
+        abort_unless($document->status?->nama_status === StatusDocument::PROPOSED, 404);
         $downloadDocument = $this->authorizedFileDocument($document, $file);
 
         $path = Storage::disk('local')->path($file->path_file);
@@ -313,6 +344,7 @@ class DocumentApprovalController extends Controller
     public function preview(Request $request, Document $document, DocumentFile $file): BinaryFileResponse
     {
         $this->authorizeDocumentAccess($request, $document);
+        abort_unless($document->status?->nama_status === StatusDocument::PROPOSED, 404);
         $this->authorizedFileDocument($document, $file);
         abort_unless(Str::of($file->original_file_name)->lower()->endsWith('.pdf'), 415);
 
@@ -321,6 +353,28 @@ class DocumentApprovalController extends Controller
 
         return response()->file($sourcePath, [
             'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+        ]);
+    }
+
+    public function generatedFile(
+        Request $request,
+        Document $document,
+        DynamicFinalDocumentRenderer $renderer,
+    ): Response
+    {
+        $this->authorizeDocumentAccess($request, $document);
+        abort_if($document->request_type === 'obsolete', 404);
+
+        $context = $document->status?->nama_status === StatusDocument::APPROVED
+            ? PdfDocumentContext::FINAL_DOCUMENT
+            : PdfDocumentContext::APPROVAL_PREVIEW;
+
+        return response($renderer->render($document, $context), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="'.$renderer->fileName($document, $context).'"',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
             'Pragma' => 'no-cache',
             'Expires' => '0',
@@ -338,6 +392,32 @@ class DocumentApprovalController extends Controller
         }
 
         abort(404);
+    }
+
+    private function authorizeApprovalGeneratedArtifact(Document $document, DocumentFinalArtifact $artifact): void
+    {
+        abort_unless($artifact->t_document_id === $document->id, 404);
+        abort_unless($artifact->generation_status === DocumentFinalArtifact::STATUS_GENERATED, 404);
+        abort_unless(in_array($artifact->artifact_type, [
+            DocumentFinalArtifact::TYPE_APPROVAL_PREVIEW,
+            DocumentFinalArtifact::TYPE_FINAL_DOCUMENT,
+        ], true), 404);
+    }
+
+    private function latestGeneratedPrintout(Document $document): ?DocumentFinalArtifact
+    {
+        $preferredType = $document->status?->nama_status === StatusDocument::APPROVED
+            ? DocumentFinalArtifact::TYPE_FINAL_DOCUMENT
+            : DocumentFinalArtifact::TYPE_APPROVAL_PREVIEW;
+
+        return $document->finalArtifacts
+            ->where('artifact_type', $preferredType)
+            ->whereIn('generation_status', [
+                DocumentFinalArtifact::STATUS_GENERATED,
+                DocumentFinalArtifact::STATUS_FAILED,
+            ])
+            ->sortByDesc('generation_number')
+            ->first();
     }
 
     private function approvalDownloadNumber(Document $document, Document $downloadDocument): ?string
@@ -407,6 +487,14 @@ class DocumentApprovalController extends Controller
         }
 
         return $query->orderByDesc('assigned_at')->first();
+    }
+
+    private function stageOrderSnapshotForApproval(Document $document, Approval $approval): ?int
+    {
+        $stage = $this->approvalFlowStages($document)
+            ->first(fn (ApprovalFlowStage $stage): bool => ($stage->display_label ?: 'Approval') === $approval->stages);
+
+        return $stage !== null ? (int) $stage->stage_order : null;
     }
 
     private function approvalFlowStages(Document $document)
@@ -588,13 +676,13 @@ class DocumentApprovalController extends Controller
         return false;
     }
 
-    private function advanceApprovalFlow(Document $document): void
+    private function advanceApprovalFlow(Document $document): ?Document
     {
         if ($this->activateNextStageIfCurrentStageComplete($document)) {
-            return;
+            return null;
         }
 
-        $this->markDocumentApprovedWhenComplete($document);
+        return $this->markDocumentApprovedWhenComplete($document);
     }
 
     private function activateNextStageIfCurrentStageComplete(Document $document): bool
@@ -634,29 +722,28 @@ class DocumentApprovalController extends Controller
         return false;
     }
 
-    private function markDocumentApprovedWhenComplete(Document $document): void
+    private function markDocumentApprovedWhenComplete(Document $document): ?Document
     {
         if (! $this->isApprovalComplete($document)) {
-            return;
+            return null;
         }
 
         $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
 
         if ($document->imported_existing_source_id !== null && $document->request_type === 'revision') {
-            $this->finalizeImportedExistingRevisionApproval($document, $approvedStatus);
-
-            return;
+            return $this->finalizeImportedExistingRevisionApproval($document, $approvedStatus);
         }
 
         if ($document->revised_from !== null && $document->request_type !== 'obsolete') {
-            $this->finalizeRevisionApproval($document, $approvedStatus);
-
-            return;
+            return $this->finalizeRevisionApproval($document, $approvedStatus);
         }
+
+        $approvedAt = now();
 
         $document->update([
             'm_status_document_id' => $approvedStatus->id,
-            'approved_at' => now(),
+            'tanggal_terbit' => $document->tanggal_terbit ?? $approvedAt->toDateString(),
+            'approved_at' => $approvedAt,
             'rejected_at' => null,
         ]);
 
@@ -665,16 +752,16 @@ class DocumentApprovalController extends Controller
         if ($document->request_type === 'obsolete') {
             $this->obsoleteSourceMasterDocument($document);
 
-            return;
+            return null;
         }
 
-        $document->refresh();
+        return $document->refresh();
     }
 
-    private function finalizeRevisionApproval(Document $document, StatusDocument $approvedStatus): void
+    private function finalizeRevisionApproval(Document $document, StatusDocument $approvedStatus): ?Document
     {
         if ($document->revised_from === null || $document->request_type === 'obsolete') {
-            return;
+            return null;
         }
 
         $obsoleteStatus = StatusDocument::findByName(StatusDocument::OBSOLETE);
@@ -725,6 +812,8 @@ class DocumentApprovalController extends Controller
             throw new ConflictHttpException('Family dokumen sudah memiliki master aktif lain.');
         }
 
+        $approvedAt = now();
+
         $lockedDocument->update([
             'm_document_level_id' => $source->m_document_level_id,
             'm_status_document_id' => $approvedStatus->id,
@@ -737,7 +826,8 @@ class DocumentApprovalController extends Controller
             'nomor_dokumen' => $source->nomor_dokumen,
             'nomor_lembar_revisi' => $lockedDocument->nomor_lembar_revisi
                 ?: $this->revisionFormNumber($source, (int) $lockedDocument->nomor_revisi),
-            'approved_at' => now(),
+            'tanggal_terbit' => $lockedDocument->tanggal_terbit ?? $approvedAt->toDateString(),
+            'approved_at' => $approvedAt,
             'rejected_at' => null,
         ]);
 
@@ -753,12 +843,14 @@ class DocumentApprovalController extends Controller
             ->update([
                 'm_status_document_id' => $obsoleteStatus->id,
             ]);
+
+        return $lockedDocument->refresh();
     }
 
-    private function finalizeImportedExistingRevisionApproval(Document $document, StatusDocument $approvedStatus): void
+    private function finalizeImportedExistingRevisionApproval(Document $document, StatusDocument $approvedStatus): ?Document
     {
         if ($document->imported_existing_source_id === null || $document->request_type !== 'revision') {
-            return;
+            return null;
         }
 
         $lockedDocument = Document::query()
@@ -774,6 +866,8 @@ class DocumentApprovalController extends Controller
             throw new ConflictHttpException('Imported existing master sumber sudah berubah.');
         }
 
+        $approvedAt = now();
+
         $lockedDocument->update([
             'm_document_level_id' => $source->m_document_level_id,
             'm_status_document_id' => $approvedStatus->id,
@@ -781,7 +875,8 @@ class DocumentApprovalController extends Controller
             'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
             'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
             'nomor_dokumen' => $source->nomor_dokumen,
-            'approved_at' => now(),
+            'tanggal_terbit' => $lockedDocument->tanggal_terbit ?? $approvedAt->toDateString(),
+            'approved_at' => $approvedAt,
             'rejected_at' => null,
         ]);
 
@@ -802,6 +897,24 @@ class DocumentApprovalController extends Controller
                 'created_by' => $lockedDocument->user_id,
             ],
         );
+
+        return $lockedDocument->refresh();
+    }
+
+    private function autoGenerateFinalDocumentAfterCommit(Document $document, ?User $generatedBy): void
+    {
+        $documentId = $document->id;
+        $generatedById = $generatedBy?->id;
+        $callback = fn () => app(AutoGenerateFinalDocument::class)
+            ->generateIfNeeded($documentId, $generatedById);
+
+        if (DB::connection()->transactionLevel() > 0) {
+            DB::afterCommit($callback);
+
+            return;
+        }
+
+        $callback();
     }
 
     private function revisionFormNumber(Document $source, int $revision): string

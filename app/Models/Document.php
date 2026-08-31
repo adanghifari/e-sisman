@@ -17,6 +17,9 @@ use Illuminate\Support\Collection;
     'm_proses_fungsi_id',
     'user_id',
     'official_preparer_id',
+    'official_preparer_name_snapshot',
+    'official_preparer_position_snapshot',
+    'official_preparer_department_snapshot',
     'reference',
     'revised_from',
     'imported_existing_source_id',
@@ -86,6 +89,29 @@ class Document extends Model
     public function officialPreparer(): BelongsTo
     {
         return $this->belongsTo(User::class, 'official_preparer_id');
+    }
+
+    public function snapshotOfficialPreparer(): void
+    {
+        if ($this->official_preparer_id === null) {
+            return;
+        }
+
+        if (
+            $this->official_preparer_name_snapshot !== null
+            || $this->official_preparer_position_snapshot !== null
+            || $this->official_preparer_department_snapshot !== null
+        ) {
+            return;
+        }
+
+        $this->loadMissing('officialPreparer.department');
+
+        $this->forceFill([
+            'official_preparer_name_snapshot' => $this->officialPreparer?->name,
+            'official_preparer_position_snapshot' => $this->officialPreparer?->jabatan,
+            'official_preparer_department_snapshot' => $this->officialPreparer?->department?->nama_department,
+        ])->save();
     }
 
     public function referenceDocument(): BelongsTo
@@ -192,5 +218,10 @@ class Document extends Model
     {
         // Newer file records win when legacy/concurrent data contains duplicates.
         return $this->hasMany(DocumentFile::class, 't_document_id')->orderByDesc('id');
+    }
+
+    public function finalArtifacts(): HasMany
+    {
+        return $this->hasMany(DocumentFinalArtifact::class, 't_document_id');
     }
 }

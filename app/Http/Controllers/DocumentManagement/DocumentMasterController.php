@@ -7,6 +7,7 @@ use App\Http\Controllers\Controller;
 use App\Models\BusinessProcess;
 use App\Models\Document;
 use App\Models\DocumentFile;
+use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
 use App\Models\ImportedExistingDocument;
 use App\Models\ImportedExistingDocumentFile;
@@ -14,6 +15,8 @@ use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentHistory;
+use App\Support\FinalDocuments\DynamicFinalDocumentRenderer;
+use App\Support\FinalDocuments\PdfDocumentContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -22,6 +25,7 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 class DocumentMasterController extends Controller
 {
@@ -159,6 +163,7 @@ class DocumentMasterController extends Controller
             'officialPreparer',
             'departments',
             'files.uploader',
+            'finalArtifacts',
             'approvals.status',
             'approvals.approver',
             'approvals.role',
@@ -187,6 +192,9 @@ class DocumentMasterController extends Controller
                 ?? collect(),
             'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document', 'revision_content'])->values(),
             'attachmentFiles' => $document->files->whereIn('type_file', ['attachment', 'revision_form'])->values(),
+            'generatedPrintout' => $this->latestGeneratedPrintout($document),
+            'canPreviewGeneratedPrintout' => app(DynamicFinalDocumentRenderer::class)
+                ->canRender($document, PdfDocumentContext::FINAL_DOCUMENT),
             'documentHistory' => app(DocumentHistory::class)->forDocument($document),
             'relatedObsoleteDocuments' => $this->relatedImportedObsoleteForWorkflowMaster($document),
         ]);
@@ -351,6 +359,21 @@ class DocumentMasterController extends Controller
         ]);
     }
 
+    public function generatedFile(Document $document, DynamicFinalDocumentRenderer $renderer): Response
+    {
+        $this->authorizeMasterGeneratedPreviewAccess($document);
+
+        $context = PdfDocumentContext::FINAL_DOCUMENT;
+
+        return response($renderer->render($document, $context), 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="'.$renderer->fileName($document, $context).'"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+        ]);
+    }
+
     private function authorizeMasterFileAccess(Document $document, DocumentFile $file): void
     {
         $document->loadMissing('status');
@@ -358,6 +381,27 @@ class DocumentMasterController extends Controller
         abort_unless($file->t_document_id === $document->id, 404);
         abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
         abort_unless($this->isVisibleMasterRecord($document), 404);
+        abort(404);
+    }
+
+    private function authorizeMasterGeneratedPreviewAccess(Document $document): void
+    {
+        $document->loadMissing('status');
+
+        abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
+        abort_unless($this->isVisibleMasterRecord($document), 404);
+    }
+
+    private function latestGeneratedPrintout(Document $document): ?DocumentFinalArtifact
+    {
+        return $document->finalArtifacts
+            ->where('artifact_type', DocumentFinalArtifact::TYPE_FINAL_DOCUMENT)
+            ->whereIn('generation_status', [
+                DocumentFinalArtifact::STATUS_GENERATED,
+                DocumentFinalArtifact::STATUS_FAILED,
+            ])
+            ->sortByDesc('generation_number')
+            ->first();
     }
 
     private function whereVisibleMasterRecord($query): void

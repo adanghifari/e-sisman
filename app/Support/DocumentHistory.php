@@ -32,8 +32,9 @@ class DocumentHistory
         return $events
             ->filter(fn (array $event): bool => $event['timestamp'] !== null)
             ->sortBy(fn (array $event): string => sprintf(
-                '%010d-%010d-%010d-%s',
+                '%010d-%03d-%010d-%010d-%s',
                 $event['timestamp']->timestamp,
+                $this->eventSortPriority($event),
                 $event['document_id'],
                 $event['source_id'] ?? 0,
                 $event['label'],
@@ -109,6 +110,7 @@ class DocumentHistory
         $events = [];
 
         $document->approvals
+            ->reject(fn (Approval $approval): bool => $approval->shouldHideAsOfficialPreparerDisplay($document))
             ->groupBy(fn (Approval $approval): string => $approval->stages ?: 'Approval')
             ->each(function (Collection $stageApprovals, string $stage) use (&$events, $document): void {
                 $assigned = $stageApprovals
@@ -196,5 +198,36 @@ class DocumentHistory
     private function documentNumber(Document $document): string
     {
         return $document->nomor_dokumen ?: '-';
+    }
+
+    /**
+     * @param  array<string, mixed>  $event
+     */
+    private function eventSortPriority(array $event): int
+    {
+        $label = (string) ($event['label'] ?? '');
+        $description = (string) ($event['description'] ?? '');
+
+        if ($label === 'Dibuat' || $label === 'Diajukan ulang') {
+            return 10;
+        }
+
+        if ($label === 'Diajukan') {
+            return 20;
+        }
+
+        if ($label === 'Approval') {
+            return 40;
+        }
+
+        if ($label === 'Disetujui') {
+            return 90;
+        }
+
+        if ($label === 'Obsolete' && str_starts_with($description, 'Otomatis obsolete')) {
+            return 100;
+        }
+
+        return 50;
     }
 }
