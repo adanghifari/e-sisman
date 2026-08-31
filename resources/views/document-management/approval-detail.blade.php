@@ -196,10 +196,7 @@
                                         </a>
                                     </div>
 
-                                    <iframe
-                                        src="{{ route('documents.approval.generated.show', $document) }}#view=FitH&navpanes=0"
-                                        class="min-h-[760px] w-full bg-white xl:h-[82vh]"
-                                    ></iframe>
+                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.generated.show', $document).'#view=FitH&navpanes=0'" />
                                 </section>
                             @else
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
@@ -231,10 +228,7 @@
                                             </a>
                                         </div>
 
-                                        <iframe
-                                            src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
-                                            class="min-h-[760px] w-full bg-white xl:h-[82vh]"
-                                        ></iframe>
+                                        <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#view=FitH&navpanes=0'" />
                                     </section>
                                 @empty
                                     <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
@@ -256,10 +250,10 @@
                                                 </a>
                                             </div>
 
-                                            <iframe
-                                                src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
-                                                class="h-[620px] w-full bg-white 2xl:h-[72vh]"
-                                            ></iframe>
+                                            <x-documents.lazy-pdf-preview
+                                                :src="route('documents.approval.files.preview', [$document, $file]).'#view=FitH&navpanes=0'"
+                                                height-class="h-[620px] 2xl:h-[72vh]"
+                                            />
                                         </section>
                                     @endforeach
                                 </div>
@@ -277,10 +271,7 @@
                                         </a>
                                     </div>
 
-                                    <iframe
-                                        src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
-                                        class="min-h-[760px] w-full bg-white xl:h-[82vh]"
-                                    ></iframe>
+                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#view=FitH&navpanes=0'" />
                                 </section>
                             @endforeach
 
@@ -302,10 +293,7 @@
                                     </a>
                                 </div>
 
-                                <iframe
-                                    src="{{ route('documents.approval.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
-                                    class="min-h-[760px] w-full bg-white xl:h-[82vh]"
-                                ></iframe>
+                                <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#view=FitH&navpanes=0'" />
                             </section>
                         @empty
                             <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">

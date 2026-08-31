@@ -145,6 +145,7 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Dokumen ini berasal dari imported existing master sebelum go-live')
             ->assertSee(route('documents.existing.imports.files.show', [$importedMaster, $file]), false)
             ->assertSee(route('documents.existing.imports.files.preview', [$importedMaster, $file]), false)
+            ->assertSee('Lihat Dokumen')
             ->assertSee('Revisi');
 
         $this->actingAs($user)
@@ -687,7 +688,7 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Nomor Lembar Revisi')
             ->assertSee('FMPS-KSA-02-01')
             ->assertSee('Printout PDF Final')
-            ->assertDontSee('Dokumen Revisi')
+            ->assertDontSee('<iframe src="'.route('documents.master.generated.show', $revision), false)
             ->assertDontSee('dokumen-revisi.pdf')
             ->assertDontSee('lembar-revisi.pdf');
 
@@ -949,6 +950,10 @@ class DocumentMasterTest extends TestCase
             ->assertOk()
             ->assertSee('Detail Dokumen Obsolete')
             ->assertSee('Printout PDF Final')
+            ->assertSee('data-lazy-pdf-preview', false)
+            ->assertSee('data-lazy-pdf-load', false)
+            ->assertSee(route('documents.obsolete.generated.show', $revision), false)
+            ->assertDontSee('<iframe src="'.route('documents.obsolete.generated.show', $revision), false)
             ->assertDontSee('revision.pdf');
 
         $this->actingAs($user)

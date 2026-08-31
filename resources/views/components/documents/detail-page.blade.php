@@ -157,10 +157,7 @@
                                         </a>
                                     </div>
 
-                                    <iframe
-                                        src="{{ route($fileRoutePrefix.'.generated.show', $document) }}#view=FitH&navpanes=0"
-                                        class="min-h-[760px] w-full bg-white xl:h-[82vh]"
-                                    ></iframe>
+                                    <x-documents.lazy-pdf-preview :src="route($fileRoutePrefix.'.generated.show', $document).'#view=FitH&navpanes=0'" />
                                 </section>
                             @else
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
@@ -187,10 +184,7 @@
                                     </div>
 
                                     @if (\Illuminate\Support\Str::of($file->original_file_name)->lower()->endsWith('.pdf'))
-                                        <iframe
-                                            src="{{ route($fileRoutePrefix.'.files.preview', [$document, $file]) }}#view=FitH&navpanes=0"
-                                            class="min-h-[760px] w-full bg-white xl:h-[82vh]"
-                                        ></iframe>
+                                        <x-documents.lazy-pdf-preview :src="route($fileRoutePrefix.'.files.preview', [$document, $file]).'#view=FitH&navpanes=0'" />
                                     @else
                                         <div class="px-4 py-8 text-center text-sm font-medium text-slate-500">
                                             Preview hanya tersedia untuk PDF. Gunakan tombol Buka untuk melihat file ini.

@@ -1869,8 +1869,11 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Dokumen sudah tidak digunakan lagi.')
             ->assertSee('Dokumen yang Akan Diobsoletekan')
             ->assertSee('master-obsolete.pdf')
+            ->assertSee('data-lazy-pdf-preview', false)
+            ->assertSee('data-lazy-pdf-load', false)
             ->assertSee(route('documents.approval.files.show', [$request, $sourceFile]), false)
             ->assertSee(route('documents.approval.files.preview', [$request, $sourceFile]), false)
+            ->assertDontSee('<iframe src="'.route('documents.approval.files.preview', [$request, $sourceFile]), false)
             ->assertDontSee(route('documents.master.files.show', [$source, $sourceFile]), false)
             ->assertDontSee('Detail Dokumen Level IV')
             ->assertDontSee('Belum ada file isi dokumen.');
