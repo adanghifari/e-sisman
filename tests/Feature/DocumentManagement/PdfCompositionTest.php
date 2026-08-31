@@ -257,7 +257,7 @@ class PdfCompositionTest extends TestCase
 
         $this->assertSame('generated_attachment_list', $result->bodyPages[1]['mode']);
         $this->assertSame([
-            'Form Lembar Revisi (FMIK-OPS-01-01-08)',
+            'Lampiran 1. Form Lembar Revisi (FMIK-OPS-01-01-08)',
             'Lampiran 2. Lampiran Pendukung',
         ], $result->bodyPages[1]['attachment_titles']);
         $this->assertSame('revision_form', $result->bodyPages[2]['header']);

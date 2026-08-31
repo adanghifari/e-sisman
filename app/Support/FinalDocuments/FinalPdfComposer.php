@@ -644,7 +644,7 @@ class FinalPdfComposer
             $document = $payload['document'] ?? [];
             $revisionFormNumber = $this->value($document['revision_form_number'] ?? ($document['number'] ?? null));
 
-            return 'Form Lembar Revisi ('.$revisionFormNumber.')';
+            return 'Lampiran '.$number.'. Form Lembar Revisi ('.$revisionFormNumber.')';
         }
 
         return 'Lampiran '.$number.'. '.$this->value($attachment['title'] ?? null);

@@ -17,6 +17,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\StatusDocument;
 use App\Models\User;
+use App\Support\DocumentHistory;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -1701,6 +1702,18 @@ class DocumentInboxTest extends TestCase
 
         $this->assertSame(StatusDocument::APPROVED, $revision->refresh()->status->nama_status);
         $this->assertSame(StatusDocument::OBSOLETE, $source->refresh()->status->nama_status);
+
+        $historyDescriptions = app(DocumentHistory::class)
+            ->forDocument($revision)
+            ->pluck('description')
+            ->values()
+            ->all();
+
+        $this->assertSame([
+            'Memasuki tahap approval Manager',
+            'Revisi menjadi master',
+            'Otomatis obsolete saat revisi 00.01 menjadi master',
+        ], array_slice($historyDescriptions, -3));
 
         $this->actingAs($approver)
             ->get(route('documents.approval.show', $revision))
