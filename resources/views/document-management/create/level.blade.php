@@ -219,7 +219,7 @@
         </div>
 
         @if ($levelKey === 'level-1')
-            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]" data-document-autosave-form data-autosave-url="{{ route('documents.autosave', $levelKey) }}">
+            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]" data-document-autosave-form data-autosave-url="{{ route('documents.autosave', $levelKey) }}" data-loading-overlay-form data-loading-overlay-timeout="60000" data-loading-overlay-title="Loading..." data-loading-overlay-description="Dokumen sedang diproses. Mohon tunggu sebentar.">
                 @csrf
                 <input type="hidden" name="draft_id" value="{{ $draft?->id }}" data-autosave-draft-id>
                 @if ($revisionSource)
@@ -340,7 +340,7 @@
                 </aside>
             </form>
         @else
-            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]" data-document-create-form data-document-autosave-form data-autosave-url="{{ route('documents.autosave', $levelKey) }}" data-max-total-file-size-kb="25600">
+            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]" data-document-create-form data-document-autosave-form data-autosave-url="{{ route('documents.autosave', $levelKey) }}" data-max-total-file-size-kb="25600" data-loading-overlay-form data-loading-overlay-timeout="60000" data-loading-overlay-title="Loading..." data-loading-overlay-description="Dokumen sedang diproses. Mohon tunggu sebentar.">
                 @csrf
                 <input type="hidden" name="draft_id" value="{{ $draft?->id }}" data-autosave-draft-id>
                 @if ($revisionSource)
@@ -660,7 +660,7 @@
                             <p class="text-center text-xs font-semibold text-slate-500 sm:col-span-2" data-autosave-status>
                                 Draft akan tersimpan otomatis saat Anda mengisi form.
                             </p>
-                            <button type="submit" name="submit_action" value="draft" formnovalidate class="inline-flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:bg-slate-50">
+                            <button type="submit" name="submit_action" value="draft" formnovalidate data-loading-overlay-skip="true" class="inline-flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:bg-slate-50">
                                 Simpan Draft
                             </button>
                             <button type="submit" name="submit_action" value="submit" class="inline-flex h-12 items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
@@ -1144,4 +1144,6 @@
             })();
         </script>
     @endonce
+
+    <x-ui.loading-overlay />
 </x-layouts::app>
