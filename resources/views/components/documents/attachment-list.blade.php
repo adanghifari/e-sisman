@@ -20,6 +20,7 @@
             @endphp
 
             <div class="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.9fr)_auto]" data-existing-attachment-row>
+                <input type="hidden" name="existing_attachment_orders[{{ $file['id'] ?? '' }}]" value="{{ $file['order'] ?? $loop->iteration }}" data-attachment-order-input>
                 <label class="block min-w-0">
                     <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nama Dokumen/Lampiran</span>
                     <input
@@ -61,6 +62,7 @@
 
     <template data-attachment-row-template>
         <div class="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.9fr)_auto]" data-attachment-row>
+            <input type="hidden" name="attachment_orders[]" value="" data-attachment-order-input>
             <label class="block min-w-0">
                 <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nama Dokumen/Lampiran</span>
                 <input
@@ -136,6 +138,12 @@
                 icon.textContent = 'PDF';
             };
 
+            const renumberRows = (root) => {
+                root?.querySelectorAll('[data-attachment-order-input]').forEach((input, index) => {
+                    input.value = index + 1;
+                });
+            };
+
             document.addEventListener('click', (event) => {
                 const addButton = event.target.closest('[data-add-attachment-row]');
 
@@ -149,6 +157,7 @@
                     }
 
                     list.insertAdjacentHTML('beforeend', template.innerHTML);
+                    renumberRows(root);
                     list.lastElementChild?.querySelector('input[name="attachment_titles[]"]')?.focus();
                     return;
                 }
@@ -156,7 +165,9 @@
                 const removeButton = event.target.closest('[data-remove-attachment-row]');
 
                 if (removeButton) {
+                    const root = removeButton.closest('[data-attachment-list]');
                     removeButton.closest('[data-attachment-row]')?.remove();
+                    renumberRows(root);
                     return;
                 }
 
@@ -176,6 +187,7 @@
                     }
 
                     row?.remove();
+                    renumberRows(root);
                 }
             });
 
@@ -186,6 +198,8 @@
                     renderSelectedFile(input);
                 }
             });
+
+            document.querySelectorAll('[data-attachment-list]').forEach(renumberRows);
         })();
     </script>
 @endonce

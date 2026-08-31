@@ -200,15 +200,17 @@ class FinalArtifactGenerator
      */
     public function collectAttachments(Document $document): array
     {
-        $document->loadMissing('files');
-
-        return $document->files
+        return $document->files()
             ->where('type_file', 'attachment')
-            ->values()
+            ->orderByRaw('CASE WHEN attachment_order IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('attachment_order')
+            ->orderBy('id')
+            ->get()
             ->map(fn (DocumentFile $file, int $index): array => [
                 'id' => $file->id,
                 'number' => $index + 1,
                 'title' => $file->attachment_title ?: $file->original_file_name,
+                'order' => $file->attachment_order,
                 'path_file' => $file->path_file,
                 'original_file_name' => $file->original_file_name,
                 'stored_file_name' => $file->stored_file_name,

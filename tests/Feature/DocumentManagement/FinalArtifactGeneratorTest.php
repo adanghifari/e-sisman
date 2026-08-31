@@ -215,8 +215,15 @@ class FinalArtifactGeneratorTest extends TestCase
     {
         $document = $this->createDocument();
         $sourceFile = $this->createDocumentFile($document, 'filled_template');
-        $attachment = $this->createDocumentFile($document, 'attachment', 'attachment body', [
+        $secondAttachment = $this->createDocumentFile($document, 'attachment', 'attachment body 2', [
+            'attachment_title' => 'Matriks Komunikasi',
+            'attachment_order' => 2,
+            'original_file_name' => 'matriks.pdf',
+            'stored_file_name' => 'matriks.pdf',
+        ]);
+        $firstAttachment = $this->createDocumentFile($document, 'attachment', 'attachment body 1', [
             'attachment_title' => 'Barcode pengisian daftar hadir safety induction',
+            'attachment_order' => 1,
             'original_file_name' => 'barcode.pdf',
             'stored_file_name' => 'barcode.pdf',
         ]);
@@ -226,11 +233,14 @@ class FinalArtifactGeneratorTest extends TestCase
             ->payload;
 
         $this->assertSame($sourceFile->id, $payload['source']['id']);
-        $this->assertCount(1, $payload['attachments']);
-        $this->assertSame($attachment->id, $payload['attachments'][0]['id']);
+        $this->assertCount(2, $payload['attachments']);
+        $this->assertSame($firstAttachment->id, $payload['attachments'][0]['id']);
         $this->assertSame(1, $payload['attachments'][0]['number']);
         $this->assertSame('Barcode pengisian daftar hadir safety induction', $payload['attachments'][0]['title']);
         $this->assertSame('barcode.pdf', $payload['attachments'][0]['original_file_name']);
+        $this->assertSame($secondAttachment->id, $payload['attachments'][1]['id']);
+        $this->assertSame(2, $payload['attachments'][1]['number']);
+        $this->assertSame('Matriks Komunikasi', $payload['attachments'][1]['title']);
     }
 
     public function test_revision_document_uses_revision_content_as_source(): void

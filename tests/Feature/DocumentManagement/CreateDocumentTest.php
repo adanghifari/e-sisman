@@ -1913,9 +1913,11 @@ class CreateDocumentTest extends TestCase
                 'official_preparer_id' => $user->id,
                 'nomor_dokumen_suffix' => '001',
                 'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
-                'attachment_titles' => ['Catatan Brainstorming'],
+                'attachment_titles' => ['Catatan Brainstorming', 'Matriks Komunikasi'],
+                'attachment_orders' => [1, 2],
                 'attachments' => [
                     UploadedFile::fake()->create('lampiran.pdf', 24, 'application/pdf'),
+                    UploadedFile::fake()->create('matriks.pdf', 24, 'application/pdf'),
                 ],
                 'submit_action' => 'draft',
             ])
@@ -1924,7 +1926,14 @@ class CreateDocumentTest extends TestCase
         $this->assertDatabaseHas('t_document_files', [
             'type_file' => 'attachment',
             'attachment_title' => 'Catatan Brainstorming',
+            'attachment_order' => 1,
             'original_file_name' => 'lampiran.pdf',
+        ]);
+        $this->assertDatabaseHas('t_document_files', [
+            'type_file' => 'attachment',
+            'attachment_title' => 'Matriks Komunikasi',
+            'attachment_order' => 2,
+            'original_file_name' => 'matriks.pdf',
         ]);
     }
 

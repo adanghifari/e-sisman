@@ -6,10 +6,17 @@
         $draftFilesByType = $draft?->files?->groupBy('type_file') ?? collect();
         $existingFilePayload = fn (string $type) => $draftFilesByType
             ->get($type, collect())
+            ->sortBy(fn ($file) => sprintf(
+                '%d-%010d-%010d',
+                $file->attachment_order === null ? 1 : 0,
+                $file->attachment_order ?? 0,
+                $file->id,
+            ))
             ->map(fn ($file) => [
                 'id' => $file->id,
                 'name' => $file->original_file_name,
                 'title' => $file->attachment_title,
+                'order' => $file->attachment_order,
                 'size' => $file->file_size,
             ])
             ->values();

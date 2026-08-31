@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     't_document_files_id',
     'type_file',
     'attachment_title',
+    'attachment_order',
     'path_file',
     'uploaded_by',
     'updated_at',
@@ -30,6 +31,7 @@ class DocumentFile extends Model
         return [
             'updated_at' => 'datetime',
             'file_size' => 'integer',
+            'attachment_order' => 'integer',
         ];
     }
 
