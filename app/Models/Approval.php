@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -15,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'assigned_at',
     'responded_at',
     'stages',
+    'm_approval_flow_stage_id',
     'catatan',
     'stage_name_snapshot',
     'stage_order_snapshot',
@@ -57,6 +59,21 @@ class Approval extends Model
         ]);
     }
 
+    public function scopeForApprovalFlowStage(Builder $query, ApprovalFlowStage $stage): Builder
+    {
+        $stageLabel = $stage->display_label ?: 'Approval';
+
+        return $query->where(function (Builder $query) use ($stage, $stageLabel): void {
+            $query
+                ->where('m_approval_flow_stage_id', $stage->id)
+                ->orWhere(function (Builder $query) use ($stageLabel): void {
+                    $query
+                        ->whereNull('m_approval_flow_stage_id')
+                        ->where('stages', $stageLabel);
+                });
+        });
+    }
+
     public function shouldHideAsOfficialPreparerDisplay(Document $document): bool
     {
         if ($document->official_preparer_id === null || $this->user_id !== $document->official_preparer_id) {
@@ -91,6 +108,11 @@ class Approval extends Model
     public function role(): BelongsTo
     {
         return $this->belongsTo(Role::class, 'role_id');
+    }
+
+    public function approvalFlowStage(): BelongsTo
+    {
+        return $this->belongsTo(ApprovalFlowStage::class, 'm_approval_flow_stage_id');
     }
 
     public function assignedBy(): BelongsTo
