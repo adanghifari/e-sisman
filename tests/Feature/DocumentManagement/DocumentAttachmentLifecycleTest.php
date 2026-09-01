@@ -310,8 +310,11 @@ class DocumentAttachmentLifecycleTest extends TestCase
                 'Lampiran Master Sebelumnya',
                 'Invoice',
                 'FMPS-SMR-010-02',
+                'Cantumkan',
+                'Perbarui',
                 'sketsa',
                 'FMPS-SMR-010-03',
+                'Tambah Lampiran',
             ]);
     }
 

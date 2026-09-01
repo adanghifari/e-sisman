@@ -619,7 +619,7 @@
                                     </span>
                                 </div>
 
-                                <x-documents.attachment-list :existing-files="$existingFilePayload('attachment')" />
+                                <x-documents.attachment-list :existing-files="$existingFilePayload('attachment')" :show-create-controls="false" />
 
                                 @if ($revisionSource && $revisionSourceAttachments->isNotEmpty())
                                     <div class="mt-5 border-t border-slate-200 pt-5">
@@ -636,25 +636,24 @@
                                                         $isEditingDraft ? $carriedForwardSourceFileIds : $revisionSourceAttachments->pluck('id')->map(fn ($id) => (string) $id)->all(),
                                                     );
                                                 @endphp
-                                                <div class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(240px,0.7fr)]">
-                                                    <label class="flex min-w-0 items-start gap-3">
-                                                        <input
-                                                            type="checkbox"
-                                                            name="included_attachment_ids[]"
-                                                            value="{{ $sourceAttachment->id }}"
-                                                            @checked(in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true))
-                                                            class="mt-1 size-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                                                        >
-                                                        <span class="min-w-0">
-                                                            <span class="block truncate text-sm font-bold text-slate-900">{{ $sourceAttachment->attachment_title ?: $sourceAttachment->original_file_name }}</span>
-                                                            <span class="mt-1 block truncate text-xs font-medium text-slate-500">{{ $sourceAttachment->document_number ?: 'Nomor lampiran akan disinkronkan saat submit' }}</span>
-                                                        </span>
-                                                    </label>
+                                                <div
+                                                    class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto]"
+                                                    data-master-attachment-row
+                                                    data-included="{{ in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true) ? 'true' : 'false' }}"
+                                                >
+                                                    <input
+                                                        type="hidden"
+                                                        name="included_attachment_ids[]"
+                                                        value="{{ $sourceAttachment->id }}"
+                                                        data-master-attachment-include
+                                                        @disabled(! in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true))
+                                                    >
 
-                                                    <div class="block min-w-0">
-                                                        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Revisi File</span>
-                                                        <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-3" data-revised-attachment-file>
-                                                            <label class="flex min-h-16 cursor-pointer items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 transition hover:border-sky-300 hover:bg-sky-50">
+                                                    <div class="min-w-0">
+                                                        <span class="block truncate text-sm font-bold text-slate-900">{{ $sourceAttachment->attachment_title ?: $sourceAttachment->original_file_name }}</span>
+                                                        <span class="mt-1 block truncate text-xs font-medium text-slate-500">{{ $sourceAttachment->document_number ?: 'Nomor lampiran akan disinkronkan saat submit' }}</span>
+                                                        <div class="mt-3 hidden max-w-xl" data-revised-attachment-file>
+                                                            <label class="grid min-h-16 cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 transition hover:border-sky-300 hover:bg-sky-50">
                                                                 <span class="grid size-12 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500" data-revised-attachment-icon>
                                                                     <flux:icon name="arrow-up-tray" class="size-6" />
                                                                 </span>
@@ -670,21 +669,43 @@
                                                                     data-revised-attachment-input
                                                                 >
                                                             </label>
-                                                            <button
-                                                                type="button"
-                                                                class="inline-flex size-16 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                                                                data-revised-attachment-clear
-                                                                aria-label="Hapus file revisi"
-                                                            >
-                                                                <flux:icon name="trash" class="size-6" />
-                                                            </button>
                                                         </div>
+                                                    </div>
+
+                                                    <div class="flex flex-wrap items-start gap-2 md:justify-end">
+                                                        <button
+                                                            type="button"
+                                                            class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 data-[active=true]:border-sky-200 data-[active=true]:bg-sky-50 data-[active=true]:text-sky-700"
+                                                            data-master-attachment-include-button
+                                                            data-active="{{ in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true) ? 'true' : 'false' }}"
+                                                        >
+                                                            Cantumkan
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+                                                            data-master-attachment-update-button
+                                                        >
+                                                            Perbarui
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            class="hidden size-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                                                            data-revised-attachment-clear
+                                                            aria-label="Hapus file revisi"
+                                                        >
+                                                            <flux:icon name="x-mark" class="size-5" />
+                                                        </button>
                                                     </div>
                                                 </div>
                                             @endforeach
                                         </div>
                                     </div>
                                 @endif
+
+                                <div @class(['mt-5' => $revisionSource && $revisionSourceAttachments->isNotEmpty()])>
+                                    <x-documents.attachment-list :existing-files="collect()" />
+                                </div>
 
                                 @error('attachments')
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -1251,17 +1272,36 @@
                         : `${sizeKb} KB`;
                 };
 
-                const resetPicker = (root) => {
-                    const input = root?.querySelector('[data-revised-attachment-input]');
-                    const name = root?.querySelector('[data-revised-attachment-name]');
-                    const meta = root?.querySelector('[data-revised-attachment-meta]');
-                    const icon = root?.querySelector('[data-revised-attachment-icon]');
+                const setIncluded = (row, included) => {
+                    const input = row?.querySelector('[data-master-attachment-include]');
+                    const includeButton = row?.querySelector('[data-master-attachment-include-button]');
 
-                    if (!input || !name || !meta || !icon) {
+                    if (!row || !input || !includeButton) {
+                        return;
+                    }
+
+                    row.dataset.included = included ? 'true' : 'false';
+                    input.disabled = !included;
+                    includeButton.dataset.active = included ? 'true' : 'false';
+                };
+
+                const pickerForRow = (row) => row?.querySelector('[data-revised-attachment-file]');
+
+                const resetPicker = (picker) => {
+                    const input = picker?.querySelector('[data-revised-attachment-input]');
+                    const name = picker?.querySelector('[data-revised-attachment-name]');
+                    const meta = picker?.querySelector('[data-revised-attachment-meta]');
+                    const icon = picker?.querySelector('[data-revised-attachment-icon]');
+                    const clearButton = picker?.closest('[data-master-attachment-row]')?.querySelector('[data-revised-attachment-clear]');
+
+                    if (!picker || !input || !name || !meta || !icon || !clearButton) {
                         return;
                     }
 
                     input.value = '';
+                    picker.classList.add('hidden');
+                    clearButton.classList.add('hidden');
+                    clearButton.classList.remove('inline-flex');
                     name.textContent = 'Pilih file PDF';
                     meta.textContent = 'Maksimal 10 MB';
                     icon.className = 'grid size-12 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500';
@@ -1275,18 +1315,21 @@
                         return;
                     }
 
-                    const root = input.closest('[data-revised-attachment-file]');
+                    const picker = input.closest('[data-revised-attachment-file]');
+                    const row = input.closest('[data-master-attachment-row]');
                     const file = input.files?.[0];
 
                     if (!file) {
-                        resetPicker(root);
+                        resetPicker(picker);
 
                         return;
                     }
 
-                    const name = root?.querySelector('[data-revised-attachment-name]');
-                    const meta = root?.querySelector('[data-revised-attachment-meta]');
-                    const icon = root?.querySelector('[data-revised-attachment-icon]');
+                    setIncluded(row, true);
+
+                    const name = picker?.querySelector('[data-revised-attachment-name]');
+                    const meta = picker?.querySelector('[data-revised-attachment-meta]');
+                    const icon = picker?.querySelector('[data-revised-attachment-icon]');
 
                     if (!name || !meta || !icon) {
                         return;
@@ -1299,13 +1342,37 @@
                 });
 
                 document.addEventListener('click', (event) => {
-                    const button = event.target.closest('[data-revised-attachment-clear]');
+                    const includeButton = event.target.closest('[data-master-attachment-include-button]');
 
-                    if (!button) {
+                    if (includeButton) {
+                        const row = includeButton.closest('[data-master-attachment-row]');
+                        setIncluded(row, true);
+                        resetPicker(pickerForRow(row));
+
                         return;
                     }
 
-                    resetPicker(button.closest('[data-revised-attachment-file]'));
+                    const updateButton = event.target.closest('[data-master-attachment-update-button]');
+
+                    if (updateButton) {
+                        const row = updateButton.closest('[data-master-attachment-row]');
+                        const picker = pickerForRow(row);
+                        const clearButton = row?.querySelector('[data-revised-attachment-clear]');
+
+                        setIncluded(row, true);
+                        picker?.classList.remove('hidden');
+                        clearButton?.classList.remove('hidden');
+                        clearButton?.classList.add('inline-flex');
+                        picker?.querySelector('[data-revised-attachment-input]')?.click();
+
+                        return;
+                    }
+
+                    const clearButton = event.target.closest('[data-revised-attachment-clear]');
+
+                    if (clearButton) {
+                        resetPicker(pickerForRow(clearButton.closest('[data-master-attachment-row]')));
+                    }
                 });
             })();
         </script>
