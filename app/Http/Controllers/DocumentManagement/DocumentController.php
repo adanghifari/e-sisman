@@ -7,6 +7,7 @@ use App\Models\ApprovalStatus;
 use App\Models\BusinessFunction;
 use App\Models\Document;
 use App\Models\DocumentFile;
+use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
 use App\Models\DocumentNumberingSetup;
 use App\Models\DocumentNumberRegistry;
@@ -176,6 +177,7 @@ class DocumentController extends Controller
                 $currentRevisionFormNumber = $revisionFormNumber;
                 $currentDocumentRevision = $documentRevision;
                 $resubmittedFromId = null;
+                $rewriteRejectedRevision = false;
 
                 if ($revisionSource !== null) {
                     $lockedRevisionSource = Document::query()
@@ -212,6 +214,7 @@ class DocumentController extends Controller
                     $rejectedRevisionAttempt = $draft === null
                         ? $this->latestRejectedRevisionAttempt($lockedRevisionSource)
                         : null;
+                    $rewriteRejectedRevision = $rejectedRevisionAttempt !== null;
                     $currentDocumentRevision = match (true) {
                         $draft !== null && $draft->revised_from !== null => (int) $draft->nomor_revisi,
                         $rejectedRevisionAttempt !== null => (int) $rejectedRevisionAttempt->nomor_revisi,
@@ -221,7 +224,6 @@ class DocumentController extends Controller
                     $currentRevisionFormNumber = $draft?->nomor_lembar_revisi
                         ?: $rejectedRevisionAttempt?->nomor_lembar_revisi
                         ?: $this->buildRevisionFormNumber($lockedRevisionSource, (int) $currentDocumentRevision);
-                    $resubmittedFromId = $rejectedRevisionAttempt?->id;
 
                     $documentAttributes['m_proses_bisnis_id'] = $lockedRevisionSource->m_proses_bisnis_id;
                     $documentAttributes['m_proses_fungsi_id'] = $lockedRevisionSource->m_proses_fungsi_id;
@@ -258,15 +260,22 @@ class DocumentController extends Controller
                     'catatan_revisi' => $documentAttributes['catatan_revisi'] ?? null,
                     'tanggal_terbit' => $documentAttributes['tanggal_terbit'] ?? null,
                     'submitted_at' => $submittedAt ?? $draft?->submitted_at,
+                    'approved_at' => null,
+                    'rejected_at' => null,
+                    'cancelled_at' => null,
                 ];
 
-                $document = $draft;
+                $document = $draft ?: ($rewriteRejectedRevision ? $rejectedRevisionAttempt : null);
 
                 if ($document === null) {
                     $attributes['created_at'] = now();
                     $document = Document::create($attributes);
                 } else {
                     $document->update($attributes);
+
+                    if ($rewriteRejectedRevision) {
+                        $this->purgeRejectedRevisionAttemptPayload($document);
+                    }
                 }
 
                 $document->unsetRelation('status');
@@ -1522,6 +1531,25 @@ class DocumentController extends Controller
     {
         Storage::disk('local')->delete($file->path_file);
         $file->delete();
+    }
+
+    private function purgeRejectedRevisionAttemptPayload(Document $document): void
+    {
+        $document->files()
+            ->get()
+            ->each(fn (DocumentFile $file) => $this->deleteDocumentFile($file));
+
+        $document->approvals()->delete();
+
+        $document->finalArtifacts()
+            ->get()
+            ->each(function (DocumentFinalArtifact $artifact): void {
+                if (filled($artifact->path_file)) {
+                    Storage::disk('local')->delete($artifact->path_file);
+                }
+
+                $artifact->delete();
+            });
     }
 
     private function recordOfficialPreparerApproval(Document $document, int $assignedBy, mixed $respondedAt): void

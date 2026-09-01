@@ -16,6 +16,12 @@
         $printoutDescription = $showSourceFiles
             ? 'Preview dinamis. Lembar pengesahan akan tersedia setelah semua approval selesai.'
             : 'Versi final lengkap dengan cover, kop, footer, lembar pengesahan, dan lampiran.';
+        $printoutVersion = collect([
+            $document->updated_at?->timestamp,
+            $document->files->max(fn ($file) => $file->updated_at?->timestamp),
+            $document->files->max('id'),
+            $document->finalArtifacts->max('id'),
+        ])->filter()->implode('-');
         $ownerLabel = $isObsoleteRequest ? 'Pengaju Awal Dokumen' : ($isLevelOne ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses');
         $contentSectionTitle = match (true) {
             $isObsoleteRequest => 'Dokumen yang Akan Diobsoletekan',
@@ -193,7 +199,7 @@
                                         </div>
                                     </div>
 
-                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.generated.show', $document).'#toolbar=0&view=FitH&navpanes=0'" />
+                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.generated.show', [$document, 'v' => $printoutVersion]).'#toolbar=0&view=FitH&navpanes=0'" />
                                 </section>
                             @else
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">

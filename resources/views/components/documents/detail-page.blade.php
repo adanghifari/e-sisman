@@ -41,6 +41,12 @@
                         'revision_form' => 'Lembar Revisi',
                         'attachment' => 'Lampiran',
     ];
+    $printoutVersion = collect([
+        $document->updated_at?->timestamp,
+        $document->files->max(fn ($file) => $file->updated_at?->timestamp),
+        $document->files->max('id'),
+        $document->finalArtifacts->max('id'),
+    ])->filter()->implode('-');
     $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
 @endphp
 
@@ -154,7 +160,7 @@
                                         </div>
                                     </div>
 
-                                    <x-documents.lazy-pdf-preview :src="route($fileRoutePrefix.'.generated.show', $document).'#toolbar=0&view=FitH&navpanes=0'" />
+                                    <x-documents.lazy-pdf-preview :src="route($fileRoutePrefix.'.generated.show', [$document, 'v' => $printoutVersion]).'#toolbar=0&view=FitH&navpanes=0'" />
                                 </section>
                             @else
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">

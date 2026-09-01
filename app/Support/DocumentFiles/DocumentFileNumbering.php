@@ -4,6 +4,7 @@ namespace App\Support\DocumentFiles;
 
 use App\Models\Document;
 use App\Models\DocumentFile;
+use App\Models\StatusDocument;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 
@@ -175,6 +176,14 @@ class DocumentFileNumbering
 
         return Document::query()
             ->where('nomor_dokumen', $document->nomor_dokumen)
+            ->where(function ($query) use ($document): void {
+                $query
+                    ->whereKey($document->id)
+                    ->orWhereHas('status', fn ($query) => $query->whereIn('nama_status', [
+                        StatusDocument::APPROVED,
+                        StatusDocument::OBSOLETE,
+                    ]));
+            })
             ->pluck('id')
             ->pipe(fn (Collection $documentIds): Collection => $documentIds->isEmpty()
                 ? collect()
