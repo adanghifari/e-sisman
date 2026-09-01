@@ -943,12 +943,15 @@ class FinalPdfComposer
 
         if ($this->attachmentHeaderType($attachment) === 'revision_form') {
             $document = $payload['document'] ?? [];
-            $revisionFormNumber = $this->value($document['revision_form_number'] ?? ($document['number'] ?? null));
+            $revisionFormNumber = $this->value($attachment['document_number'] ?? ($document['revision_form_number'] ?? ($document['number'] ?? null)));
 
             return 'Lampiran '.$number.'. Form Lembar Revisi ('.$revisionFormNumber.')';
         }
 
-        return 'Lampiran '.$number.'. '.$this->value($attachment['title'] ?? null);
+        $attachmentNumber = $this->value($attachment['document_number'] ?? null);
+        $title = 'Lampiran '.$number.'. '.$this->value($attachment['title'] ?? null);
+
+        return $attachmentNumber === '-' ? $title : $title.' ('.$attachmentNumber.')';
     }
 
     /**

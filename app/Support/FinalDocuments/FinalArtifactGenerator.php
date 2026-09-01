@@ -196,6 +196,7 @@ class FinalArtifactGenerator
             'source' => [
                 'id' => $sourceFile->id,
                 'type' => $sourceFile->type_file,
+                'document_number' => $sourceFile->document_number,
                 'path_file' => $sourceFile->path_file,
                 'original_file_name' => $sourceFile->original_file_name,
                 'stored_file_name' => $sourceFile->stored_file_name,
@@ -266,6 +267,7 @@ class FinalArtifactGenerator
             ->map(fn (DocumentFile $file, int $index): array => [
                 'id' => $file->id,
                 'number' => $index + 1,
+                'document_number' => $file->document_number,
                 'title' => $file->type_file === 'revision_form'
                     ? ($file->attachment_title ?: 'Lembar Revisi')
                     : ($file->attachment_title ?: $file->original_file_name),

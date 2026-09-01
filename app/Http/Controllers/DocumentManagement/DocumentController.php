@@ -6,11 +6,13 @@ use App\Http\Controllers\Controller;
 use App\Models\ApprovalStatus;
 use App\Models\BusinessFunction;
 use App\Models\Document;
+use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentNumberingSetup;
 use App\Models\DocumentNumberRegistry;
 use App\Models\DocumentType;
 use App\Models\StatusDocument;
+use App\Support\DocumentFiles\DocumentFileNumbering;
 use App\Support\FinalDocuments\AutoGenerateApprovalPreview;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\JsonResponse;
@@ -186,6 +188,7 @@ class DocumentController extends Controller
                         'businessProcess',
                         'businessFunction',
                         'departments',
+                        'files',
                         'referenceDocument',
                         'revisedFrom.documentLevel',
                     ]);
@@ -266,6 +269,9 @@ class DocumentController extends Controller
                     $document->update($attributes);
                 }
 
+                $document->unsetRelation('status');
+                $document->unsetRelation('files');
+
                 $document->departments()->sync($documentAttributes['department_ids'] ?? []);
 
                 $this->removeExistingDocumentFiles($document, $documentAttributes['remove_existing_files'] ?? []);
@@ -274,6 +280,14 @@ class DocumentController extends Controller
                     $documentAttributes['existing_attachment_titles'] ?? [],
                     $documentAttributes['existing_attachment_orders'] ?? [],
                 );
+
+                if ($lockedRevisionSource !== null) {
+                    $this->carryForwardIncludedAttachments(
+                        $document,
+                        $lockedRevisionSource,
+                        $documentAttributes['included_attachment_ids'] ?? [],
+                    );
+                }
 
                 if ($request->hasFile('imported_document')) {
                     $this->replaceSingleDocumentFile($document, 'imported_document');
@@ -300,6 +314,7 @@ class DocumentController extends Controller
                 if ($submittedAt !== null) {
                     $document->snapshotOfficialPreparer();
                     $this->claimTDocumentNumber($document, $request->user()->id);
+                    app(DocumentFileNumbering::class)->assignMissingNumbers($document);
                     $this->recordOfficialPreparerApproval($document, $request->user()->id, $submittedAt);
                 }
 
@@ -425,6 +440,9 @@ class DocumentController extends Controller
                 $document->update($attributes);
             }
 
+            $document->unsetRelation('status');
+            $document->unsetRelation('files');
+
             $document->departments()->sync($validated['department_ids'] ?? []);
             $this->storeAutosaveFiles($request, $document);
 
@@ -501,6 +519,8 @@ class DocumentController extends Controller
                 'attachment_titles.*' => ['required_with:attachments.*', 'string', 'max:255'],
                 'attachment_orders' => ['nullable', 'array', 'max:10'],
                 'attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
+                'included_attachment_ids' => ['nullable', 'array', 'max:20'],
+                'included_attachment_ids.*' => ['integer', Rule::exists('t_document_files', 'id')],
                 'submit_action' => ['required', Rule::in(['draft', 'submit'])],
                 'revised_from' => ['required', 'integer', Rule::exists('t_document', 'id')],
                 'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
@@ -571,6 +591,8 @@ class DocumentController extends Controller
             'attachment_titles.*' => ['nullable', 'string', 'max:255'],
             'attachment_orders' => ['nullable', 'array', 'max:10'],
             'attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
+            'included_attachment_ids' => ['nullable', 'array', 'max:20'],
+            'included_attachment_ids.*' => ['integer', Rule::exists('t_document_files', 'id')],
             'existing_attachment_titles' => ['nullable', 'array'],
             'existing_attachment_titles.*' => ['nullable', 'string', 'max:255'],
             'existing_attachment_orders' => ['nullable', 'array'],
@@ -693,12 +715,28 @@ class DocumentController extends Controller
         $titles = collect($request->input('attachment_titles', []))->values();
         $orders = collect($request->input('attachment_orders', []))->values();
 
-        foreach (array_values($request->file('attachments', [])) as $index => $attachment) {
-            $title = trim((string) $titles->get($index, ''));
-            $order = max(1, (int) ($orders->get($index) ?: ($index + 1)));
+        $attachments = collect(array_values($request->file('attachments', [])))
+            ->map(function (mixed $attachment, int $index) use ($titles, $orders): array {
+                return [
+                    'file' => $attachment,
+                    'title' => trim((string) $titles->get($index, '')),
+                    'order' => max(1, (int) ($orders->get($index) ?: ($index + 1))),
+                    'index' => $index,
+                ];
+            })
+            ->sortBy([
+                ['order', 'asc'],
+                ['index', 'asc'],
+            ]);
+
+        foreach ($attachments as $attachmentData) {
+            $attachment = $attachmentData['file'];
+            $title = $attachmentData['title'];
+            $order = $attachmentData['order'];
 
             if ($this->hasMatchingAttachment($document, $attachment, $title)) {
                 $this->updateMatchingAttachmentOrder($document, $attachment, $title, $order);
+
                 continue;
             }
 
@@ -711,6 +749,67 @@ class DocumentController extends Controller
                 $order,
             );
         }
+    }
+
+    /**
+     * @param  array<int, int|string>  $sourceFileIds
+     */
+    private function carryForwardIncludedAttachments(Document $document, Document $source, array $sourceFileIds): void
+    {
+        $ids = collect($sourceFileIds)
+            ->map(fn (int|string $id): int => (int) $id)
+            ->filter()
+            ->unique()
+            ->values();
+
+        if ($ids->isEmpty()) {
+            return;
+        }
+
+        $sourceFiles = $source->files()
+            ->whereIn('id', $ids)
+            ->where('type_file', 'attachment')
+            ->orderByRaw('CASE WHEN attachment_order IS NULL THEN 1 ELSE 0 END')
+            ->orderBy('attachment_order')
+            ->orderBy('id')
+            ->get();
+
+        foreach ($sourceFiles as $sourceFile) {
+            if ($document->files()->where('source_file_id', $sourceFile->id)->exists()) {
+                continue;
+            }
+
+            if (! Storage::disk('local')->exists($sourceFile->path_file)) {
+                continue;
+            }
+
+            $path = $this->copyDocumentFileToDocument($sourceFile, $document);
+
+            $document->files()->create([
+                'type_file' => 'attachment',
+                'document_number' => $sourceFile->document_number,
+                'attachment_title' => $sourceFile->attachment_title,
+                'attachment_order' => $sourceFile->attachment_order,
+                'path_file' => $path,
+                'uploaded_by' => $sourceFile->uploaded_by,
+                'updated_at' => now(),
+                'original_file_name' => $sourceFile->original_file_name,
+                'stored_file_name' => basename($path),
+                'source_file_id' => $sourceFile->id,
+                'file_size' => $sourceFile->file_size,
+            ]);
+        }
+    }
+
+    private function copyDocumentFileToDocument(DocumentFile $sourceFile, Document $targetDocument): string
+    {
+        $extension = pathinfo($sourceFile->stored_file_name ?: $sourceFile->path_file, PATHINFO_EXTENSION);
+        $fileName = Str::random(40).($extension ? '.'.$extension : '');
+        $targetPath = "documents/{$targetDocument->id}/{$fileName}";
+
+        Storage::disk('local')->copy($sourceFile->path_file, $targetPath);
+
+        return $targetPath;
     }
 
     private function updateMatchingAttachmentOrder(Document $document, mixed $file, ?string $title, int $order): void
@@ -1179,26 +1278,11 @@ class DocumentController extends Controller
 
     protected function buildRevisionFormNumber(Document $source, int $revision): string
     {
-        $sourceLevelKey = $this->effectiveRevisionSourceLevelKey($source);
-        $revisionPrefix = match ($sourceLevelKey) {
-            'level-1' => 'FMSM',
-            'level-2' => 'FMPS',
-            'level-3' => 'FMIK',
-            default => 'FM',
-        };
-        $sourceSegments = collect(explode('-', (string) $this->revisionSourceMasterNumber($source)))
-            ->filter()
-            ->values();
+        $source->forceFill([
+            'nomor_dokumen' => $this->revisionSourceMasterNumber($source),
+        ]);
 
-        if ($sourceSegments->isNotEmpty()) {
-            $sourceSegments->shift();
-        }
-
-        return collect([$revisionPrefix])
-            ->merge($sourceSegments)
-            ->push(str_pad((string) $revision, 2, '0', STR_PAD_LEFT))
-            ->filter()
-            ->implode('-');
+        return (string) app(DocumentFileNumbering::class)->revisionFormNumber($source);
     }
 
     protected function effectiveRevisionSourceLevelKey(Document $source): ?string
@@ -1278,12 +1362,20 @@ class DocumentController extends Controller
         return ($major * 100) + $minor;
     }
 
-    protected function storeDocumentFile(Document $document, mixed $file, string $type, int $uploadedBy, ?string $attachmentTitle = null, ?int $attachmentOrder = null): void
-    {
+    protected function storeDocumentFile(
+        Document $document,
+        mixed $file,
+        string $type,
+        int $uploadedBy,
+        ?string $attachmentTitle = null,
+        ?int $attachmentOrder = null,
+        ?int $sourceFileId = null,
+    ): void {
         $path = $file->store("documents/{$document->id}", 'local');
 
         $document->files()->create([
             'type_file' => $type,
+            'document_number' => $this->documentFileNumber($document, $type, $attachmentOrder),
             'attachment_title' => $attachmentTitle,
             'attachment_order' => $attachmentOrder,
             'path_file' => $path,
@@ -1291,8 +1383,36 @@ class DocumentController extends Controller
             'updated_at' => now(),
             'original_file_name' => $file->getClientOriginalName(),
             'stored_file_name' => basename($path),
+            'source_file_id' => $sourceFileId ?? ($type === 'revision_form' ? $this->latestRevisionFormSourceFileId($document) : null),
             'file_size' => $file->getSize(),
         ]);
+    }
+
+    private function documentFileNumber(Document $document, string $type, ?int $attachmentOrder = null): ?string
+    {
+        $document->loadMissing('status');
+
+        if ($document->status?->nama_status === StatusDocument::DRAFT) {
+            return null;
+        }
+
+        return app(DocumentFileNumbering::class)->numberFor($document, $type, $attachmentOrder);
+    }
+
+    private function latestRevisionFormSourceFileId(Document $document): ?int
+    {
+        if ($document->request_type !== 'revision' || ! filled($document->nomor_dokumen)) {
+            return null;
+        }
+
+        return DocumentFile::query()
+            ->join('t_document', 't_document_files.t_document_id', '=', 't_document.id')
+            ->where('t_document.nomor_dokumen', $document->nomor_dokumen)
+            ->where('t_document.id', '!=', $document->id)
+            ->where('t_document_files.type_file', 'revision_form')
+            ->orderByDesc('t_document.nomor_revisi')
+            ->orderByDesc('t_document_files.id')
+            ->value('t_document_files.id');
     }
 
     private function replaceSingleDocumentFile(Document $document, string $type): void

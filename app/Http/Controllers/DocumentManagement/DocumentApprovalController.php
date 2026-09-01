@@ -15,6 +15,7 @@ use App\Models\ImportedExistingDocument;
 use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
 use App\Models\User;
+use App\Support\DocumentFiles\DocumentFileNumbering;
 use App\Support\DocumentHistory;
 use App\Support\DocumentRejectionHistory;
 use App\Support\FinalDocuments\AutoGenerateFinalDocument;
@@ -896,25 +897,7 @@ class DocumentApprovalController extends Controller
 
     private function revisionFormNumber(Document $source, int $revision): string
     {
-        $prefix = match ($source->documentLevel?->kode) {
-            'level-1' => 'FMSM',
-            'level-2' => 'FMPS',
-            'level-3' => 'FMIK',
-            default => 'FM',
-        };
-        $segments = collect(explode('-', (string) $source->nomor_dokumen))
-            ->filter()
-            ->values();
-
-        if ($segments->isNotEmpty()) {
-            $segments->shift();
-        }
-
-        return collect([$prefix])
-            ->merge($segments)
-            ->push(str_pad((string) $revision, 2, '0', STR_PAD_LEFT))
-            ->filter()
-            ->implode('-');
+        return (string) app(DocumentFileNumbering::class)->revisionFormNumber($source);
     }
 
     private function obsoleteSourceMasterDocument(Document $document): void

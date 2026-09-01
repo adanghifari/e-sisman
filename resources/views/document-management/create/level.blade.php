@@ -1,7 +1,7 @@
 <x-layouts::app :title="__('Tambah Dokumen')">
     @php
-        $draft ??= null;
-        $revisionSource ??= null;
+        $draft = $draft ?? null;
+        $revisionSource = $revisionSource ?? null;
         $isEditingDraft = $draft !== null;
         $draftFilesByType = $draft?->files?->groupBy('type_file') ?? collect();
         $existingFilePayload = fn (string $type) => $draftFilesByType
@@ -18,8 +18,25 @@
                 'title' => $file->attachment_title,
                 'order' => $file->attachment_order,
                 'size' => $file->file_size,
+                'document_number' => $file->document_number,
             ])
             ->values();
+        $revisionSourceAttachments = $revisionSource
+            ? $revisionSource->files()
+                ->where('type_file', 'attachment')
+                ->orderByRaw('CASE WHEN attachment_order IS NULL THEN 1 ELSE 0 END')
+                ->orderBy('attachment_order')
+                ->orderBy('id')
+                ->get()
+            : collect();
+        $carriedForwardSourceFileIds = $draft
+            ? $draft->files
+                ->where('type_file', 'attachment')
+                ->pluck('source_file_id')
+                ->filter()
+                ->map(fn ($id) => (string) $id)
+                ->all()
+            : [];
         $levelKey ??= request()->route('level') ?? $draft?->documentLevel?->kode;
         $level = config("document-levels.{$levelKey}");
         $levelNumbers = [
@@ -593,6 +610,39 @@
                                 </div>
 
                                 <x-documents.attachment-list :existing-files="$existingFilePayload('attachment')" />
+
+                                @if ($revisionSource && $revisionSourceAttachments->isNotEmpty())
+                                    <div class="mt-5 border-t border-slate-200 pt-5">
+                                        <div class="mb-3">
+                                            <p class="text-sm font-bold text-slate-900">Lampiran Master Sebelumnya</p>
+                                        </div>
+
+                                        <div class="space-y-2">
+                                            @foreach ($revisionSourceAttachments as $sourceAttachment)
+                                                @php
+                                                    $sourceAttachmentId = (string) $sourceAttachment->id;
+                                                    $checkedSourceAttachmentIds = old(
+                                                        'included_attachment_ids',
+                                                        $isEditingDraft ? $carriedForwardSourceFileIds : $revisionSourceAttachments->pluck('id')->map(fn ($id) => (string) $id)->all(),
+                                                    );
+                                                @endphp
+                                                <label class="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
+                                                    <input
+                                                        type="checkbox"
+                                                        name="included_attachment_ids[]"
+                                                        value="{{ $sourceAttachment->id }}"
+                                                        @checked(in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true))
+                                                        class="mt-1 size-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                                                    >
+                                                    <span class="min-w-0">
+                                                        <span class="block truncate text-sm font-bold text-slate-900">{{ $sourceAttachment->attachment_title ?: $sourceAttachment->original_file_name }}</span>
+                                                        <span class="mt-1 block truncate text-xs font-medium text-slate-500">{{ $sourceAttachment->document_number ?: 'Nomor lampiran akan disinkronkan saat submit' }}</span>
+                                                    </span>
+                                                </label>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                @endif
 
                                 @error('attachments')
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
