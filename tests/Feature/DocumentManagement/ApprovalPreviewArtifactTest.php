@@ -264,6 +264,21 @@ class ApprovalPreviewArtifactTest extends TestCase
         $this->assertSame('Matriks Komunikasi', $payload['attachments'][1]['title']);
     }
 
+    public function test_revision_approval_preview_does_not_stamp_revision_approval_before_all_approvals_complete(): void
+    {
+        [, $revision, $approver] = $this->revisionFixture();
+        $this->createApproval($revision, $approver, ApprovalStatus::APPROVED, 'Approval Revisi Sebagian');
+        $this->storeDocumentFile($revision, 'revision_form', $this->pdfBinary(['Revision form']));
+        $this->storeDocumentFile($revision, 'revision_content', $this->pdfBinary(['Revision body']));
+
+        $payload = app(FinalArtifactGenerator::class)
+            ->prepareApprovalPreview($revision)
+            ->payload;
+
+        $this->assertSame(StatusDocument::PROPOSED, $revision->status->nama_status);
+        $this->assertSame([], $payload['revision_approvals']);
+    }
+
     public function test_revision_approval_preview_cover_uses_source_document_level_and_type(): void
     {
         [$source, $revision] = $this->revisionFixture();

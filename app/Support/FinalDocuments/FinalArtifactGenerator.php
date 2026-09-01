@@ -147,6 +147,7 @@ class FinalArtifactGenerator
     public function buildPayload(Document $document, DocumentFile $sourceFile): array
     {
         $document->loadMissing([
+            'status',
             'documentLevel',
             'documentType',
             'businessProcess',
@@ -191,9 +192,7 @@ class FinalArtifactGenerator
             ],
             'preparers' => $this->collectPreparers($document),
             'approvals' => $this->collectApprovals($document),
-            'revision_approvals' => $document->request_type === 'revision'
-                ? $this->collectApprovals($document)
-                : [],
+            'revision_approvals' => $this->collectRevisionApprovals($document),
             'source' => [
                 'id' => $sourceFile->id,
                 'type' => $sourceFile->type_file,
@@ -361,6 +360,22 @@ class FinalArtifactGenerator
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function collectRevisionApprovals(Document $document): array
+    {
+        if ($document->request_type !== 'revision') {
+            return [];
+        }
+
+        if (! in_array($document->status?->nama_status, [StatusDocument::APPROVED, StatusDocument::OBSOLETE], true)) {
+            return [];
+        }
+
+        return $this->collectApprovals($document);
     }
 
     private function isOfficialPreparerSignatureStage(Approval $approval): bool
