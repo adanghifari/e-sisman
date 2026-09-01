@@ -1,7 +1,7 @@
 <div class="space-y-6">
     <x-ui.page-header
         title="Approval Flow"
-        description="Atur pihak yang masuk ke lembar pengesahan untuk setiap level dokumen."
+        description="Atur nama tahap approval untuk setiap level dokumen."
     />
 
     <div class="grid gap-5 xl:grid-cols-[360px_minmax(0,1fr)]">
@@ -57,7 +57,7 @@
                                 @if ($selectedLevelInheritsApprovalFlow)
                                     {{ $selectedDocumentLevel->nama_dokumen }} mengikuti approval flow dokumen induk yang sedang direvisi.
                                 @else
-                                    {{ $selectedDocumentLevel->nama_dokumen }}. Pihak dibawah ini akan tampil sebagai penanda tangan pada lembar pengesahan.
+                                    {{ $selectedDocumentLevel->nama_dokumen }}. Nama tahap dibawah ini akan dipakai pada alur approval dokumen.
                                 @endif
                             </p>
                         </div>
@@ -79,7 +79,7 @@
                         @else
                             @forelse ($approvalStages as $stage)
                             <section class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
-                                <div class="grid gap-3 lg:grid-cols-[56px_120px_minmax(180px,260px)_minmax(0,1fr)_88px] lg:items-center">
+                                <div class="grid gap-3 lg:grid-cols-[56px_120px_minmax(0,1fr)_88px] lg:items-center">
                                     <div class="flex size-10 items-center justify-center self-center rounded-lg bg-sky-100 text-sm font-bold text-sky-700">
                                         {{ $stage->stage_order }}
                                     </div>
@@ -90,11 +90,6 @@
 
                                     <div>
                                         <p class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Nama Tahap</p>
-                                        <p class="text-sm font-semibold text-slate-800">{{ $stage->keterangan ?: '-' }}</p>
-                                    </div>
-
-                                    <div>
-                                        <p class="mb-1.5 text-xs font-semibold uppercase tracking-wide text-slate-500">Pihak Approval</p>
                                         <p class="text-sm font-semibold text-slate-800">{{ $stage->nama_tahap }}</p>
                                     </div>
 
@@ -142,22 +137,15 @@
     @if ($showStageForm)
         <x-ui.modal
             :title="$editingStageId ? 'Edit Tahap Approval' : 'Tambah Tahap Approval'"
-            description="Lengkapi nama tahap dan pihak approval yang akan tampil pada lembar pengesahan."
+            description="Lengkapi nama tahap approval untuk level dokumen ini."
             close-action="cancelStageForm"
         >
             <form wire:submit="saveStage" class="space-y-5 px-6 py-5">
                 <x-ui.form-input
                     label="Nama Tahap"
-                    name="keterangan"
-                    wire:model="keterangan"
-                    placeholder="Contoh: Disahkan oleh"
-                />
-
-                <x-ui.form-input
-                    label="Pihak Approval"
                     name="nama_tahap"
                     wire:model="nama_tahap"
-                    placeholder="Contoh: Superintendent"
+                    placeholder="Contoh: Disusun Oleh"
                 />
 
                 <div class="flex justify-end gap-2 border-t border-slate-100 pt-5">

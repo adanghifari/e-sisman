@@ -7,16 +7,20 @@ use App\Http\Controllers\Controller;
 use App\Models\BusinessProcess;
 use App\Models\Document;
 use App\Models\DocumentFile;
+use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
 use App\Models\StatusDocument;
 use App\Support\DocumentHistory;
-use Illuminate\Http\RedirectResponse;
+use App\Support\FinalDocuments\DynamicFinalDocumentRenderer;
+use App\Support\FinalDocuments\PdfDocumentContext;
 use Illuminate\Contracts\View\View;
+use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
+use Symfony\Component\HttpFoundation\Response;
 
 class DocumentObsoleteController extends Controller
 {
@@ -43,7 +47,7 @@ class DocumentObsoleteController extends Controller
                 'revisedFrom',
             ])
             ->where('m_status_document_id', $obsoleteStatusId)
-            ->whereNull('request_type');
+            ->where(fn ($query) => $this->whereVisibleMasterRecord($query));
 
         if ($filters['search'] !== '') {
             $search = $filters['search'];
@@ -124,6 +128,8 @@ class DocumentObsoleteController extends Controller
             'typeOptions' => $typeOptions,
             'processOptions' => $processOptions,
             'canCreateObsolete' => $request->user()?->hasPermission('documents.obsolete.create') ?? false,
+            'canViewImportedExisting' => $request->user()?->hasPermission('documents.existing.imports.view') ?? false,
+            'canCreateImportedExisting' => $request->user()?->hasPermission('documents.obsolete.imports.create') ?? false,
             'sortOptions' => [
                 'newest' => 'Terbaru',
                 'oldest' => 'Terlama',
@@ -146,6 +152,7 @@ class DocumentObsoleteController extends Controller
             'officialPreparer',
             'departments',
             'files.uploader',
+            'finalArtifacts',
             'approvals.status',
             'approvals.approver',
             'approvals.role',
@@ -154,7 +161,7 @@ class DocumentObsoleteController extends Controller
         ]);
 
         abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
-        abort_unless($document->request_type === null, 404);
+        abort_unless($document->request_type !== 'obsolete', 404);
 
         return view('document-management.obsolete.show', [
             'document' => $document,
@@ -169,6 +176,9 @@ class DocumentObsoleteController extends Controller
                 ?? collect(),
             'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document', 'revision_content'])->values(),
             'attachmentFiles' => $document->files->whereIn('type_file', ['attachment', 'revision_form'])->values(),
+            'generatedPrintout' => $this->latestGeneratedPrintout($document),
+            'canPreviewGeneratedPrintout' => app(DynamicFinalDocumentRenderer::class)
+                ->canRender($document, PdfDocumentContext::FINAL_DOCUMENT),
             'documentHistory' => app(DocumentHistory::class)->forDocument($document),
         ]);
     }
@@ -178,7 +188,7 @@ class DocumentObsoleteController extends Controller
         $document->loadMissing('status');
 
         abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
-        abort_unless($this->canRestoreMaster($request, $document), 403);
+        abort_unless($this->canAccessRestoreAction($request, $document), 403);
 
         $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
         $obsoleteStatus = StatusDocument::findByName(StatusDocument::OBSOLETE);
@@ -187,7 +197,7 @@ class DocumentObsoleteController extends Controller
         $activeMaster = $family
             ->first(fn (Document $revision): bool => $revision->id !== $document->id
                 && $revision->m_status_document_id === $approvedStatus->id
-                && $revision->request_type === null);
+                && $this->isVisibleMasterRecord($revision));
 
         if ($activeMaster !== null) {
             return redirect()
@@ -203,7 +213,7 @@ class DocumentObsoleteController extends Controller
                 ->whereIn('id', $familyIds)
                 ->where('id', '!=', $document->id)
                 ->where('m_status_document_id', $approvedStatus->id)
-                ->whereNull('request_type')
+                ->where(fn ($query) => $this->whereVisibleMasterRecord($query))
                 ->update([
                     'm_status_document_id' => $obsoleteStatus->id,
                 ]);
@@ -257,22 +267,107 @@ class DocumentObsoleteController extends Controller
         ];
     }
 
+    public function generatedFile(
+        Request $request,
+        Document $document,
+        DynamicFinalDocumentRenderer $renderer,
+        RecordDocumentDownload $recordDocumentDownload,
+    ): Response {
+        $this->authorizeObsoleteGeneratedPreviewAccess($document);
+
+        $context = PdfDocumentContext::FINAL_DOCUMENT;
+        $pdf = $renderer->render($document, $context);
+
+        if ($request->boolean('download')) {
+            $recordDocumentDownload->handle($request, $document, null, [
+                'name' => $document->nama_dokumen,
+                'number' => $this->masterDisplayNumber($document),
+                'revision' => $document->nomor_revisi,
+                'context' => 'obsolete',
+            ]);
+        }
+
+        return response($pdf, 200, [
+            'Content-Type' => 'application/pdf',
+            'Content-Disposition' => 'inline; filename="'.$renderer->fileName($document, $context).'"',
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+        ]);
+    }
+
     private function authorizeObsoleteFileAccess(Document $document, DocumentFile $file): void
     {
         $document->loadMissing('status');
 
         abort_unless($file->t_document_id === $document->id, 404);
         abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
-        abort_unless($document->request_type === null, 404);
+        abort_unless($document->request_type !== 'obsolete', 404);
+        abort(404);
+    }
+
+    private function authorizeObsoleteGeneratedPreviewAccess(Document $document): void
+    {
+        $document->loadMissing('status');
+
+        abort_unless($document->status?->nama_status === StatusDocument::OBSOLETE, 404);
+        abort_unless($document->request_type !== 'obsolete', 404);
+    }
+
+    private function latestGeneratedPrintout(Document $document): ?DocumentFinalArtifact
+    {
+        return $document->finalArtifacts
+            ->where('artifact_type', DocumentFinalArtifact::TYPE_FINAL_DOCUMENT)
+            ->whereIn('generation_status', [
+                DocumentFinalArtifact::STATUS_GENERATED,
+                DocumentFinalArtifact::STATUS_FAILED,
+            ])
+            ->sortByDesc('generation_number')
+            ->first();
     }
 
     private function canRestoreMaster(Request $request, Document $document): bool
+    {
+        if (! $this->canAccessRestoreAction($request, $document)) {
+            return false;
+        }
+
+        if ($this->activeMasterInFamily($document) !== null) {
+            return false;
+        }
+
+        return $request->user()?->hasPermission('documents.obsolete.restore') ?? false;
+    }
+
+    private function canAccessRestoreAction(Request $request, Document $document): bool
     {
         if ($document->status?->nama_status !== StatusDocument::OBSOLETE) {
             return false;
         }
 
         return $request->user()?->hasPermission('documents.obsolete.restore') ?? false;
+    }
+
+    private function activeMasterInFamily(Document $document): ?Document
+    {
+        $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
+
+        return $document->revisionFamily()
+            ->first(fn (Document $revision): bool => $revision->id !== $document->id
+                && $revision->m_status_document_id === $approvedStatus->id
+                && $this->isVisibleMasterRecord($revision));
+    }
+
+    private function whereVisibleMasterRecord($query): void
+    {
+        $query
+            ->whereNull('request_type')
+            ->orWhere('request_type', '!=', 'obsolete');
+    }
+
+    private function isVisibleMasterRecord(Document $document): bool
+    {
+        return $document->request_type !== 'obsolete';
     }
 
     private function restoreBlockedMessage(Document $document, Document $activeMaster): string

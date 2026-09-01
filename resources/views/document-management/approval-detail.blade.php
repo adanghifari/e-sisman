@@ -11,6 +11,11 @@
         $statusCode = $activeApproval?->status?->kode_status ?? $document->status?->nama_status ?? '-';
         $statusLabel = $activeApproval?->status?->nama_status ?? $document->status?->nama_status ?? '-';
         $isObsoleteRequest = $document->request_type === 'obsolete';
+        $showSourceFiles = $document->status?->nama_status === \App\Models\StatusDocument::PROPOSED;
+        $printoutTitle = $showSourceFiles ? 'Printout PDF Sementara' : 'Printout PDF Final';
+        $printoutDescription = $showSourceFiles
+            ? 'Preview dinamis. Lembar pengesahan akan tersedia setelah semua approval selesai.'
+            : 'Versi final lengkap dengan cover, kop, footer, lembar pengesahan, dan lampiran.';
         $ownerLabel = $isObsoleteRequest ? 'Pengaju Awal Dokumen' : ($isLevelOne ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses');
         $contentSectionTitle = match (true) {
             $isObsoleteRequest => 'Dokumen yang Akan Diobsoletekan',
@@ -28,13 +33,13 @@
         $contentFileLabels = [
             'filled_template' => 'Template Dokumen',
             'imported_document' => 'Dokumen Import',
-            'revision_content' => 'Isi Dokumen Versi Revisi',
+            'revision_content' => 'Dokumen Revisi',
             'revision_form' => 'Lembar Revisi',
             'revision_before' => 'Semula',
             'revision_after' => 'Menjadi',
         ];
         $revisionMainFiles = $levelKey === 'level-4'
-            ? collect(['revision_content', 'revision_form'])
+            ? collect(['revision_form', 'revision_content'])
                 ->map(fn ($type) => $contentFiles
                     ->where('type_file', $type)
                     ->sortByDesc('id')
@@ -176,55 +181,65 @@
                     </x-documents.form-section>
                 @endif
 
-                <x-documents.form-section :title="$contentSectionTitle" icon="document-text">
-                    <div class="space-y-4 px-6 py-6">
-                        @if ($isObsoleteRequest)
-                            @forelse ($obsoleteSourceContentFiles as $file)
-                                @php
-                                    $obsoleteSourceFileRoutePrefix = $document->revisedFrom?->status?->nama_status === \App\Models\StatusDocument::OBSOLETE
-                                        ? 'documents.obsolete'
-                                        : 'documents.master';
-                                @endphp
+                @if (! $isObsoleteRequest)
+                    <x-documents.form-section :title="$printoutTitle" icon="document-check">
+                        <div class="space-y-4 px-6 py-6">
+                            @if ($canPreviewGeneratedPrintout)
                                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                    <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                    <div class="border-b border-slate-200 bg-white px-4 py-3">
                                         <div class="min-w-0">
-                                            <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
-                                            <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                            <p class="truncate text-sm font-bold text-slate-900">{{ $printoutTitle }}</p>
+                                            <p class="text-xs font-medium text-slate-500">{{ $printoutDescription }}</p>
                                         </div>
-                                        <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                            Buka
-                                        </a>
                                     </div>
 
-                                    <iframe
-                                        src="{{ route('documents.approval.files.preview', [$document, $file]) }}?v={{ $file->updated_at?->timestamp ?? $file->id }}#view=FitH&navpanes=0"
-                                        class="min-h-[760px] w-full bg-white xl:h-[82vh]"
-                                    ></iframe>
+                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.generated.show', $document).'#toolbar=0&view=FitH&navpanes=0'" />
                                 </section>
-                            @empty
+                            @else
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                    Belum ada file isi dokumen.
+                                    {{ $printoutTitle }} belum tersedia karena file sumber dokumen belum lengkap.
                                 </p>
-                            @endforelse
-                        @elseif ($levelKey === 'level-4')
+                            @endif
+                        </div>
+                    </x-documents.form-section>
+                @endif
+
+                @if ($showSourceFiles)
+                    <x-documents.form-section :title="$contentSectionTitle" icon="document-text">
+                        <div class="space-y-4 px-6 py-6">
+                            @if ($isObsoleteRequest)
+                                @forelse ($obsoleteSourceContentFiles as $file)
+                                    <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                        <div class="border-b border-slate-200 bg-white px-4 py-3">
+                                            <div class="min-w-0">
+                                                <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
+                                                <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                            </div>
+                                        </div>
+
+                                        <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
+                                    </section>
+                                @empty
+                                    <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                        Belum ada file isi dokumen.
+                                    </p>
+                                @endforelse
+                            @elseif ($levelKey === 'level-4')
                             @if ($revisionMainFiles->isNotEmpty())
                                 <div class="grid gap-4 2xl:grid-cols-2">
                                     @foreach ($revisionMainFiles as $file)
                                         <section class="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                            <div class="flex min-h-20 items-start justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                            <div class="min-h-20 border-b border-slate-200 bg-white px-4 py-3">
                                                 <div class="min-w-0">
                                                     <p class="text-sm font-bold text-slate-900">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                                     <p class="mt-1 truncate text-xs font-semibold text-slate-500">{{ $file->original_file_name }}</p>
                                                 </div>
-                                                <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                                    Buka
-                                                </a>
                                             </div>
 
-                                            <iframe
-                                                src="{{ route('documents.approval.files.preview', [$document, $file]) }}?v={{ $file->updated_at?->timestamp ?? $file->id }}#view=FitH&navpanes=0"
-                                                class="h-[620px] w-full bg-white 2xl:h-[72vh]"
-                                            ></iframe>
+                                            <x-documents.lazy-pdf-preview
+                                                :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'"
+                                                height-class="h-[620px] 2xl:h-[72vh]"
+                                            />
                                         </section>
                                     @endforeach
                                 </div>
@@ -232,20 +247,14 @@
 
                             @foreach ($otherContentFiles as $file)
                                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                    <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                    <div class="border-b border-slate-200 bg-white px-4 py-3">
                                         <div class="min-w-0">
                                             <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                             <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                         </div>
-                                        <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                            Buka
-                                        </a>
                                     </div>
 
-                                    <iframe
-                                        src="{{ route('documents.approval.files.preview', [$document, $file]) }}?v={{ $file->updated_at?->timestamp ?? $file->id }}#view=FitH&navpanes=0"
-                                        class="min-h-[760px] w-full bg-white xl:h-[82vh]"
-                                    ></iframe>
+                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
                                 </section>
                             @endforeach
 
@@ -257,49 +266,41 @@
                         @else
                         @forelse ($contentFiles as $file)
                             <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                <div class="border-b border-slate-200 bg-white px-4 py-3">
                                     <div class="min-w-0">
                                         <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                         <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                     </div>
-                                    <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                        Buka
-                                    </a>
                                 </div>
 
-                                <iframe
-                                    src="{{ route('documents.approval.files.preview', [$document, $file]) }}?v={{ $file->updated_at?->timestamp ?? $file->id }}#view=FitH&navpanes=0"
-                                    class="min-h-[760px] w-full bg-white xl:h-[82vh]"
-                                ></iframe>
+                                <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
                             </section>
                         @empty
                             <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
                                 Belum ada file isi dokumen.
                             </p>
                         @endforelse
-                        @endif
-                    </div>
-                </x-documents.form-section>
+                            @endif
+                        </div>
+                    </x-documents.form-section>
 
-                <x-documents.form-section title="Lampiran" icon="paper-clip">
-                    <div class="space-y-3 px-6 py-6">
-                        @forelse ($attachmentFiles as $file)
-                            <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
-                                <div class="min-w-0">
-                                    <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
-                                    <p class="text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
+                    <x-documents.form-section title="Lampiran" icon="paper-clip">
+                        <div class="space-y-3 px-6 py-6">
+                            @forelse ($attachmentFiles as $file)
+                                <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
+                                    <div class="min-w-0">
+                                        <p class="truncate text-sm font-bold text-slate-900">{{ $file->attachment_title ?: $file->original_file_name }}</p>
+                                        <p class="text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
+                                    </div>
                                 </div>
-                                <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                    Buka
-                                </a>
-                            </div>
-                        @empty
-                            <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                Tidak ada lampiran.
-                            </p>
-                        @endforelse
-                    </div>
-                </x-documents.form-section>
+                            @empty
+                                <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                    Tidak ada lampiran.
+                                </p>
+                            @endforelse
+                        </div>
+                    </x-documents.form-section>
+                @endif
             </div>
 
             <aside class="space-y-6 xl:sticky xl:top-8">
@@ -345,6 +346,39 @@
                         </div>
                     </div>
                 </section>
+
+                @if ($rejectionHistory->isNotEmpty())
+                    <section class="overflow-hidden rounded-lg border border-red-100 bg-white shadow-sm">
+                        <div class="border-b border-red-100 px-6 py-5">
+                            <h3 class="text-sm font-bold text-red-950">Riwayat Penolakan</h3>
+                        </div>
+                        <div class="space-y-2 px-6 py-5">
+                            @foreach ($rejectionHistory as $item)
+                                <div class="rounded-lg bg-red-50 px-3 py-3">
+                                    <div class="flex items-start justify-between gap-3">
+                                        <div class="min-w-0">
+                                            <p class="text-sm font-semibold text-red-950">
+                                                Transaksi #{{ $item['document_id'] }}
+                                            </p>
+                                            <p class="mt-1 text-xs font-medium text-red-700">
+                                                {{ $item['stage'] }} oleh {{ $item['approver_name'] }}
+                                            </p>
+                                            @if ($item['responded_at'])
+                                                <p class="mt-1 text-xs font-medium text-red-700">
+                                                    {{ $item['responded_at']->translatedFormat('d M Y H:i:s') }}
+                                                </p>
+                                            @endif
+                                        </div>
+                                        <x-ui.status-badge label="Ditolak" tone="red" class="shrink-0" />
+                                    </div>
+                                    @if ($item['catatan'])
+                                        <p class="mt-2 rounded-md bg-white px-2 py-1 text-xs text-slate-600">{{ $item['catatan'] }}</p>
+                                    @endif
+                                </div>
+                            @endforeach
+                        </div>
+                    </section>
+                @endif
 
                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                     <div class="border-b border-slate-100 px-6 py-5">
@@ -419,40 +453,6 @@
                         @endforelse
                     </div>
                 </section>
-
-                @if ($rejectionHistory->isNotEmpty())
-                    <section class="overflow-hidden rounded-lg border border-red-100 bg-white shadow-sm">
-                        <div class="border-b border-red-100 bg-red-50 px-6 py-5">
-                            <h3 class="text-sm font-bold text-red-900">Riwayat Penolakan Sebelumnya</h3>
-                            <p class="mt-1 text-xs font-semibold text-red-700">Catatan ini diambil dari approval attempt sebelumnya.</p>
-                        </div>
-                        <div class="space-y-3 px-6 py-5">
-                            @foreach ($rejectionHistory as $index => $rejection)
-                                <div class="rounded-lg border border-red-100 bg-red-50/60 px-3 py-3">
-                                    <div class="flex items-start justify-between gap-3">
-                                        <div class="min-w-0">
-                                            <p class="text-sm font-bold text-slate-900">Penolakan {{ $index + 1 }}</p>
-                                            <p class="mt-1 text-xs font-semibold text-slate-600">
-                                                {{ $rejection['approver_name'] }} &bull; {{ $rejection['stage'] }}
-                                            </p>
-                                            @if ($rejection['responded_at'])
-                                                <p class="mt-1 text-xs font-medium text-slate-500">
-                                                    Diproses pada {{ $rejection['responded_at']->translatedFormat('d M Y H:i:s') }}
-                                                </p>
-                                            @endif
-                                        </div>
-                                        <span class="shrink-0 rounded-full bg-white px-2.5 py-1 text-xs font-bold text-red-700">
-                                            Attempt #{{ $rejection['document_id'] }}
-                                        </span>
-                                    </div>
-                                    <p class="mt-3 rounded-md bg-white px-3 py-2 text-xs font-medium text-slate-700">
-                                        {{ $rejection['catatan'] ?: '-' }}
-                                    </p>
-                                </div>
-                            @endforeach
-                        </div>
-                    </section>
-                @endif
 
                 <x-documents.history-section :document-history="$documentHistory" />
 
@@ -573,8 +573,7 @@
                                             {{ $stage->stage_order }}
                                         </span>
                                         <div class="min-w-0">
-                                            <h3 class="text-base font-bold text-slate-900">{{ $stage->keterangan ?: 'Tahap Approval' }}</h3>
-                                            <p class="mt-1 text-sm font-semibold text-slate-500">{{ $stage->nama_tahap }}</p>
+                                            <h3 class="text-base font-bold text-slate-900">{{ $stage->nama_tahap ?: 'Tahap Approval' }}</h3>
                                         </div>
                                     </div>
 

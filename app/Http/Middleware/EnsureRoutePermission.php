@@ -10,7 +10,7 @@ use Symfony\Component\HttpFoundation\Response;
 class EnsureRoutePermission
 {
     /**
-     * @param Closure(Request): Response $next
+     * @param  Closure(Request): Response  $next
      */
     public function handle(Request $request, Closure $next): Response
     {
@@ -24,6 +24,10 @@ class EnsureRoutePermission
             in_array($routeName, ['documents.create.level', 'documents.store'], true)
             && $request->filled('revised_from')
         ) {
+            return $next($request);
+        }
+
+        if ($this->canAccessGeneratedDocumentRoute($request, $routeName)) {
             return $next($request);
         }
 
@@ -42,5 +46,21 @@ class EnsureRoutePermission
         }
 
         abort(403);
+    }
+
+    private function canAccessGeneratedDocumentRoute(Request $request, ?string $routeName): bool
+    {
+        $permissionCodes = match ($routeName) {
+            'documents.master.generated.show' => $request->boolean('download')
+                ? ['documents.master.download', 'documents.master.generated']
+                : ['documents.master.detail', 'documents.master.generated'],
+            'documents.obsolete.generated.show' => $request->boolean('download')
+                ? ['documents.obsolete.download', 'documents.obsolete.generated']
+                : ['documents.obsolete.detail', 'documents.obsolete.generated'],
+            default => [],
+        };
+
+        return $permissionCodes !== []
+            && ($request->user()?->hasAnyPermission($permissionCodes) ?? false);
     }
 }

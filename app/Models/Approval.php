@@ -16,9 +16,19 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'responded_at',
     'stages',
     'catatan',
+    'stage_name_snapshot',
+    'stage_order_snapshot',
+    'approver_name_snapshot',
+    'approver_position_snapshot',
+    'approver_department_snapshot',
 ])]
 class Approval extends Model
 {
+    private const OFFICIAL_PREPARER_DISPLAY_STAGES = [
+        'TTD Penyusun Resmi',
+        'Disusun Oleh',
+    ];
+
     protected $table = 't_approval';
 
     public $timestamps = false;
@@ -28,7 +38,39 @@ class Approval extends Model
         return [
             'assigned_at' => 'datetime',
             'responded_at' => 'datetime',
+            'stage_order_snapshot' => 'integer',
         ];
+    }
+
+    public function fillResponseSnapshot(?int $stageOrder = null): self
+    {
+        $approver = $this->approver()
+            ->with('department')
+            ->first();
+
+        return $this->fill([
+            'stage_name_snapshot' => $this->stages,
+            'stage_order_snapshot' => $stageOrder,
+            'approver_name_snapshot' => $approver?->name,
+            'approver_position_snapshot' => $approver?->jabatan,
+            'approver_department_snapshot' => $approver?->department?->nama_department,
+        ]);
+    }
+
+    public function shouldHideAsOfficialPreparerDisplay(Document $document): bool
+    {
+        if ($document->official_preparer_id === null || $this->user_id !== $document->official_preparer_id) {
+            return false;
+        }
+
+        $stageNames = [
+            trim((string) $this->stages),
+            trim((string) $this->stage_name_snapshot),
+        ];
+
+        return collect($stageNames)
+            ->filter()
+            ->contains(fn (string $stage): bool => in_array($stage, self::OFFICIAL_PREPARER_DISPLAY_STAGES, true));
     }
 
     public function document(): BelongsTo

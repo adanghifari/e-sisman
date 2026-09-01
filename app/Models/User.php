@@ -200,6 +200,16 @@ class User extends Authenticatable implements PasskeyUser
         return $this->hasMany(DocumentFile::class, 'uploaded_by');
     }
 
+    public function importedExistingDocuments(): HasMany
+    {
+        return $this->hasMany(ImportedExistingDocument::class, 'uploaded_by');
+    }
+
+    public function importedExistingDocumentFiles(): HasMany
+    {
+        return $this->hasMany(ImportedExistingDocumentFile::class, 'uploaded_by');
+    }
+
     public function uploadedDocumentTemplates(): HasMany
     {
         return $this->hasMany(DocumentTemplate::class, 'uploaded_by');

@@ -6,7 +6,7 @@
     <div class="border-b border-slate-100 px-6 py-5">
         <h3 class="text-sm font-bold text-slate-900">Riwayat Dokumen</h3>
     </div>
-    <div class="max-h-80 space-y-2 overflow-y-auto px-6 py-5 app-scrollbar">
+    <div class="max-h-[30rem] space-y-2 overflow-y-auto px-6 py-5 app-scrollbar">
         @forelse ($documentHistory as $history)
             @php
                 $historyTimestamp = $history['timestamp'];
@@ -19,8 +19,16 @@
                             {{ $history['document_number'] }} - Revisi {{ $history['revision'] }}
                         </p>
                         <p class="mt-1 text-xs font-medium text-slate-500">
+                            Transaksi #{{ $history['document_id'] }}
+                        </p>
+                        <p class="mt-1 text-xs font-medium text-slate-500">
                             {{ $historyTimestamp ? $historyTimestamp->translatedFormat('d M Y H:i:s') : 'Belum tercatat' }}
                         </p>
+                        @if (filled($history['note'] ?? null))
+                            <p class="mt-2 rounded-md bg-white px-2 py-1 text-xs text-slate-600">
+                                {{ $history['note'] }}
+                            </p>
+                        @endif
                     </div>
                     <x-ui.status-badge
                         :label="$history['label']"

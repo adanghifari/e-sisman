@@ -26,8 +26,6 @@ class Index extends Component
 
     public ?int $deletingStageId = null;
 
-    public string $keterangan = '';
-
     public string $nama_tahap = '';
 
     public bool $showStageForm = false;
@@ -75,7 +73,6 @@ class Index extends Component
             ->findOrFail($stageId);
 
         $this->editingStageId = $stage->id;
-        $this->keterangan = $stage->keterangan ?? '';
         $this->nama_tahap = $stage->nama_tahap;
         $this->showStageForm = true;
     }
@@ -97,7 +94,6 @@ class Index extends Component
         $approvalFlow = $this->approvalFlow();
 
         $data = [
-            'keterangan' => $this->keterangan,
             'nama_tahap' => $this->nama_tahap,
         ];
 
@@ -214,7 +210,6 @@ class Index extends Component
     {
         $this->reset([
             'editingStageId',
-            'keterangan',
             'nama_tahap',
             'showStageForm',
         ]);

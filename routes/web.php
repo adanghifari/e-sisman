@@ -1,12 +1,14 @@
 <?php
 
 use App\Http\Controllers\Dashboard\DashboardController;
+use App\Http\Controllers\DigitalSignatureVerificationController;
 use App\Http\Controllers\DocumentManagement\DocumentApprovalController;
 use App\Http\Controllers\DocumentManagement\DocumentController;
 use App\Http\Controllers\DocumentManagement\DocumentInboxController;
 use App\Http\Controllers\DocumentManagement\DocumentMasterController;
 use App\Http\Controllers\DocumentManagement\DocumentObsoleteController;
 use App\Http\Controllers\DocumentManagement\DocumentTemplateController;
+use App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController;
 use App\Http\Controllers\Log\ActivityLogController;
 use App\Http\Controllers\Log\ActivityLogExportController;
 use App\Http\Middleware\EnsureRoutePermission;
@@ -21,6 +23,8 @@ use App\Livewire\MasterData\DocumentType\Index as DocumentTypeIndex;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
+Route::get('ttd-digital/{approval}', DigitalSignatureVerificationController::class)
+    ->name('digital-signatures.verify');
 
 Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
@@ -35,6 +39,7 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
         ->withErrors(['stage_approvers' => 'Halaman assign sudah diperbarui. Silakan simpan ulang dari detail dokumen.']));
     Route::get('documents/inbox/{document}/files/{file}', [DocumentApprovalController::class, 'file'])->name('documents.approval.files.show');
     Route::get('documents/inbox/{document}/files/{file}/preview', [DocumentApprovalController::class, 'preview'])->name('documents.approval.files.preview');
+    Route::get('documents/inbox/{document}/generated', [DocumentApprovalController::class, 'generatedFile'])->name('documents.approval.generated.show');
     Route::get('documents/create', [DocumentController::class, 'index'])->name('documents.create');
     Route::get('documents/drafts', [DocumentController::class, 'drafts'])->name('documents.create.drafts');
     Route::get('documents/drafts/{document}/edit', [DocumentController::class, 'editDraft'])
@@ -47,20 +52,51 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::post('documents/create/{level}', [DocumentController::class, 'store'])
         ->whereIn('level', array_keys(config('document-levels')))
         ->name('documents.store');
+    Route::post('documents/create/{level}/autosave', [DocumentController::class, 'autosave'])
+        ->whereIn('level', array_keys(config('document-levels')))
+        ->name('documents.autosave');
     Route::get('documents/master', DocumentMasterController::class)->name('documents.master');
+    Route::get('documents/master/imports/create', [ImportedExistingDocumentController::class, 'createMaster'])->name('documents.master.imports.create');
+    Route::get('documents/master/imports/create/{level}', [ImportedExistingDocumentController::class, 'createMasterLevel'])
+        ->whereIn('level', ['level-1', 'level-2', 'level-3'])
+        ->name('documents.master.imports.create.level');
+    Route::post('documents/master/imports', [ImportedExistingDocumentController::class, 'storeMaster'])->name('documents.master.imports.store');
+    Route::post('documents/master/imports/{level}', [ImportedExistingDocumentController::class, 'storeMasterLevel'])
+        ->whereIn('level', ['level-1', 'level-2', 'level-3'])
+        ->name('documents.master.imports.store.level');
     Route::get('documents/obsolete', DocumentObsoleteController::class)->name('documents.obsolete');
+    Route::get('documents/obsolete/imports/create', fn () => redirect()->route('documents.obsolete.imports.create'));
+    Route::get('documents/obsolete/imports/create/legacy', fn () => redirect()->route('documents.obsolete.imports.create.legacy'));
+    Route::get('documents/obsolete/imports', [ImportedExistingDocumentController::class, 'createObsolete'])->name('documents.obsolete.imports.create');
+    Route::get('documents/obsolete/imports/legacy', [ImportedExistingDocumentController::class, 'createObsoleteLegacy'])->name('documents.obsolete.imports.create.legacy');
+    Route::get('documents/obsolete/imports/{level}', [ImportedExistingDocumentController::class, 'createObsoleteLevel'])
+        ->whereIn('level', ['level-1', 'level-2', 'level-3'])
+        ->name('documents.obsolete.imports.create.level');
+    Route::post('documents/obsolete/imports', [ImportedExistingDocumentController::class, 'storeObsolete'])->name('documents.obsolete.imports.store');
+    Route::post('documents/obsolete/imports/{level}', [ImportedExistingDocumentController::class, 'storeObsoleteLevel'])
+        ->whereIn('level', ['level-1', 'level-2', 'level-3'])
+        ->name('documents.obsolete.imports.store.level');
+    Route::get('documents/existing/imports', [ImportedExistingDocumentController::class, 'index'])->name('documents.existing.imports.index');
+    Route::post('documents/existing/imports/numbering-setups', [ImportedExistingDocumentController::class, 'storeNumberingSetup'])->name('documents.existing.imports.numbering-setups.store');
+    Route::get('documents/existing/imports/{importedExistingDocument}', [ImportedExistingDocumentController::class, 'show'])->name('documents.existing.imports.show');
+    Route::post('documents/existing/imports/{importedExistingDocument}/revision', [ImportedExistingDocumentController::class, 'storeRevision'])->name('documents.existing.imports.revisions.store');
+    Route::get('documents/existing/imports/{importedExistingDocument}/files/{file}', [ImportedExistingDocumentController::class, 'file'])->name('documents.existing.imports.files.show');
+    Route::get('documents/existing/imports/{importedExistingDocument}/files/{file}/preview', [ImportedExistingDocumentController::class, 'preview'])->name('documents.existing.imports.files.preview');
     Route::get('documents/obsolete/{document}', [DocumentObsoleteController::class, 'show'])->name('documents.obsolete.show');
     Route::post('documents/obsolete/{document}/restore', [DocumentObsoleteController::class, 'restore'])->name('documents.obsolete.restore');
     Route::get('documents/obsolete/{document}/files/{file}', [DocumentObsoleteController::class, 'file'])->name('documents.obsolete.files.show');
     Route::get('documents/obsolete/{document}/files/{file}/preview', [DocumentObsoleteController::class, 'preview'])->name('documents.obsolete.files.preview');
+    Route::get('documents/obsolete/{document}/generated', [DocumentObsoleteController::class, 'generatedFile'])->name('documents.obsolete.generated.show');
     Route::get('document-templates', [DocumentTemplateController::class, 'index'])->name('document-templates.index');
     Route::post('document-templates', [DocumentTemplateController::class, 'store'])->name('document-templates.store');
     Route::get('document-templates/files/{file}', [DocumentTemplateController::class, 'file'])->name('document-templates.files.show');
+    Route::get('documents/master/imported/{importedExistingDocument}', [DocumentMasterController::class, 'showImported'])->name('documents.master.imported.show');
     Route::get('documents/master/{document}', [DocumentMasterController::class, 'show'])->name('documents.master.show');
     Route::post('documents/master/{document}/obsolete', [DocumentMasterController::class, 'obsolete'])->name('documents.master.obsolete');
     Route::post('documents/master/{document}/restore', [DocumentMasterController::class, 'restore'])->name('documents.master.restore');
     Route::get('documents/master/{document}/files/{file}', [DocumentMasterController::class, 'file'])->name('documents.master.files.show');
     Route::get('documents/master/{document}/files/{file}/preview', [DocumentMasterController::class, 'preview'])->name('documents.master.files.preview');
+    Route::get('documents/master/{document}/generated', [DocumentMasterController::class, 'generatedFile'])->name('documents.master.generated.show');
     Route::view('reports', 'reporting.index')->name('reports.index');
     Route::livewire('users', UserIndex::class)->name('users.index');
     Route::livewire('access-groups', AccessGroupIndex::class)->name('access-groups.index');

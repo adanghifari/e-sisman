@@ -6,9 +6,17 @@
         $draftFilesByType = $draft?->files?->groupBy('type_file') ?? collect();
         $existingFilePayload = fn (string $type) => $draftFilesByType
             ->get($type, collect())
+            ->sortBy(fn ($file) => sprintf(
+                '%d-%010d-%010d',
+                $file->attachment_order === null ? 1 : 0,
+                $file->attachment_order ?? 0,
+                $file->id,
+            ))
             ->map(fn ($file) => [
                 'id' => $file->id,
                 'name' => $file->original_file_name,
+                'title' => $file->attachment_title,
+                'order' => $file->attachment_order,
                 'size' => $file->file_size,
             ])
             ->values();
@@ -99,7 +107,7 @@
                 ->where('nomor_revisi', 0)
                 ->whereNotNull('nomor_dokumen')
                 ->get()
-                ->groupBy(fn ($document) => $document->m_proses_bisnis_id.'-'.$document->m_proses_fungsi_id)
+                ->groupBy(fn ($document) => $document->m_proses_fungsi_id)
                 ->map(fn ($documents) => str_pad((string) ($documents->count() + 1), 2, '0', STR_PAD_LEFT))
                 ->all()
             : [];
@@ -161,8 +169,8 @@
             : ($revisionSource
             ? \App\Models\Document::formatRevisionNumber($rejectedRevisionAttempt?->nomor_revisi ?? (($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1))
             : '00.00');
-        $selectedBusinessProcess = $businessProcesses->firstWhere('id', (int) $selectedBusinessProcessId);
-        $documentNumberProcessCode = $selectedBusinessProcess?->kode ?: 'SMR';
+        $selectedBusinessFunction = $businessFunctions->firstWhere('id', (int) $selectedBusinessFunctionId);
+        $documentNumberFunctionCode = $selectedBusinessFunction?->kode ?: 'SMR';
         $selectedProcedureReference = $procedureReferences->firstWhere('id', (int) $selectedReferenceId);
         $procedureReferenceSegments = fn ($procedure) => collect(explode('-', (string) ($procedure?->procedure_reference_number ?: $procedure?->nomor_dokumen)))
             ->filter()
@@ -176,7 +184,7 @@
             ])
             ->all();
         $documentNumberSegments = match ($levelKey) {
-            'level-2' => [['value' => $documentNumberProcessCode, 'target' => 'business-process']],
+            'level-2' => [['value' => $documentNumberFunctionCode, 'target' => 'business-function']],
             'level-3' => [
                 ['value' => $selectedProcedureNumberSegments->get(0, 'XXX'), 'target' => 'procedure-reference-0'],
                 ['value' => $selectedProcedureNumberSegments->get(1, 'YY'), 'target' => 'procedure-reference-1'],
@@ -211,11 +219,9 @@
         </div>
 
         @if ($levelKey === 'level-1')
-            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]">
+            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]" data-document-autosave-form data-autosave-url="{{ route('documents.autosave', $levelKey) }}" data-loading-overlay-form data-loading-overlay-timeout="60000" data-loading-overlay-title="Loading..." data-loading-overlay-description="Dokumen sedang diproses. Mohon tunggu sebentar.">
                 @csrf
-                @if ($draft)
-                    <input type="hidden" name="draft_id" value="{{ $draft->id }}">
-                @endif
+                <input type="hidden" name="draft_id" value="{{ $draft?->id }}" data-autosave-draft-id>
                 @if ($revisionSource)
                     <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
                 @endif
@@ -324,6 +330,9 @@
                     </div>
 
                     <div class="border-t border-dashed border-slate-200 px-6 py-5">
+                        <p class="mb-3 text-center text-xs font-semibold text-slate-500" data-autosave-status>
+                            Draft akan tersimpan otomatis saat Anda mengisi form.
+                        </p>
                         <button type="submit" class="inline-flex h-12 w-full items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
                             Import Dokumen
                         </button>
@@ -331,11 +340,9 @@
                 </aside>
             </form>
         @else
-            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]" data-document-create-form data-max-total-file-size-kb="25600">
+            <form method="POST" action="{{ route('documents.store', $levelKey) }}" enctype="multipart/form-data" class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_520px]" data-document-create-form data-document-autosave-form data-autosave-url="{{ route('documents.autosave', $levelKey) }}" data-max-total-file-size-kb="25600" data-loading-overlay-form data-loading-overlay-timeout="60000" data-loading-overlay-title="Loading..." data-loading-overlay-description="Dokumen sedang diproses. Mohon tunggu sebentar.">
                 @csrf
-                @if ($draft)
-                    <input type="hidden" name="draft_id" value="{{ $draft->id }}">
-                @endif
+                <input type="hidden" name="draft_id" value="{{ $draft?->id }}" data-autosave-draft-id>
                 @if ($revisionSource)
                     <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
                 @endif
@@ -431,7 +438,6 @@
                                         @foreach ($businessProcesses as $businessProcess)
                                             <option
                                                 value="{{ $businessProcess->id }}"
-                                                data-process-code="{{ $businessProcess->kode }}"
                                                 @selected((string) $selectedBusinessProcessId === (string) $businessProcess->id)
                                             >
                                                 {{ $formatBusinessProcess($businessProcess) }}
@@ -448,7 +454,11 @@
                                     <select name="m_proses_fungsi_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                                         <option value="">-Pilih-</option>
                                         @foreach ($businessFunctions as $businessFunction)
-                                            <option value="{{ $businessFunction->id }}" @selected((string) $selectedBusinessFunctionId === (string) $businessFunction->id)>
+                                            <option
+                                                value="{{ $businessFunction->id }}"
+                                                data-function-code="{{ $businessFunction->kode }}"
+                                                @selected((string) $selectedBusinessFunctionId === (string) $businessFunction->id)
+                                            >
                                                 {{ $formatBusinessFunction($businessFunction) }}
                                             </option>
                                         @endforeach
@@ -509,28 +519,7 @@
 
                             @if ($levelKey === 'level-4')
                                 <x-documents.upload-toggle-card
-                                    title="1. Isi Dokumen Versi Revisi"
-                                    button-label="Upload Dokumen Revisi"
-                                    tone="sky"
-                                >
-                                    <x-ui.file-upload
-                                        label="Upload Isi Dokumen Versi Revisi"
-                                        name="revision_content"
-                                        accept=".pdf,application/pdf"
-                                        hint="Upload dokumen utama yang sudah direvisi. Format PDF, maksimal 10 MB."
-                                        :max-files="1"
-                                        :max-file-size-kb="10240"
-                                        :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content', collect())->isEmpty()"
-                                        :existing-files="$existingFilePayload('revision_content')"
-                                    />
-
-                                    @error('revision_content')
-                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                    @enderror
-                                </x-documents.upload-toggle-card>
-
-                                <x-documents.upload-toggle-card
-                                    title="2. Lembar Revisi"
+                                    title="1. Lembar Revisi"
                                     button-label="Upload Lembar Revisi"
                                     tone="sky"
                                 >
@@ -546,6 +535,27 @@
                                     />
 
                                     @error('revision_form')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </x-documents.upload-toggle-card>
+
+                                <x-documents.upload-toggle-card
+                                    title="2. Dokumen Revisi"
+                                    button-label="Upload Dokumen Revisi"
+                                    tone="sky"
+                                >
+                                    <x-ui.file-upload
+                                        label="Upload Dokumen Revisi"
+                                        name="revision_content"
+                                        accept=".pdf,application/pdf"
+                                        hint="Upload dokumen utama yang sudah direvisi. Format PDF, maksimal 10 MB."
+                                        :max-files="1"
+                                        :max-file-size-kb="10240"
+                                        :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content', collect())->isEmpty()"
+                                        :existing-files="$existingFilePayload('revision_content')"
+                                    />
+
+                                    @error('revision_content')
                                         <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                     @enderror
                                 </x-documents.upload-toggle-card>
@@ -572,21 +582,17 @@
                                 </x-documents.upload-toggle-card>
                             @endif
 
-                            <x-documents.upload-toggle-card
-                                title="Daftar Dokumen"
-                                button-label="Tambah Dokumen"
-                                badge="Lampiran"
-                            >
-                                <x-ui.file-upload
-                                    label="Upload Lampiran"
-                                    name="attachments[]"
-                                    accept=".pdf,application/pdf"
-                                    hint="Bisa lebih dari satu file. Format PDF."
-                                    multiple
-                                    :max-files="10"
-                                    :max-file-size-kb="10240"
-                                    :existing-files="$existingFilePayload('attachment')"
-                                />
+                            <div class="rounded-lg border border-slate-200 bg-white px-4 py-4">
+                                <div class="mb-4 flex flex-wrap items-start justify-between gap-4">
+                                    <span class="min-w-0">
+                                        <span class="block text-base font-bold text-slate-900">Daftar Lampiran</span>
+                                        <span class="mt-2 inline-flex rounded-full bg-slate-50 px-3 py-1 text-xs font-semibold text-slate-500 ring-1 ring-slate-200">
+                                            Lampiran
+                                        </span>
+                                    </span>
+                                </div>
+
+                                <x-documents.attachment-list :existing-files="$existingFilePayload('attachment')" />
 
                                 @error('attachments')
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -594,7 +600,13 @@
                                 @error('attachments.*')
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                 @enderror
-                            </x-documents.upload-toggle-card>
+                                @error('attachment_titles.*')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                                @error('existing_attachment_titles.*')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                            </div>
                         </div>
                     </x-documents.form-section>
                 </div>
@@ -645,7 +657,10 @@
                         </div>
 
                         <div class="grid gap-3 border-t border-dashed border-slate-200 px-6 py-5 sm:grid-cols-2">
-                            <button type="submit" name="submit_action" value="draft" formnovalidate class="inline-flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:bg-slate-50">
+                            <p class="text-center text-xs font-semibold text-slate-500 sm:col-span-2" data-autosave-status>
+                                Draft akan tersimpan otomatis saat Anda mengisi form.
+                            </p>
+                            <button type="submit" name="submit_action" value="draft" formnovalidate data-loading-overlay-skip="true" class="inline-flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:bg-slate-50">
                                 Simpan Draft
                             </button>
                             <button type="submit" name="submit_action" value="submit" class="inline-flex h-12 items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
@@ -657,6 +672,185 @@
             </form>
         @endif
     </div>
+
+    @once
+        <script>
+            (() => {
+                const AUTOSAVE_DELAY = 1500;
+                const autosaveForms = document.querySelectorAll('[data-document-autosave-form]');
+
+                if (autosaveForms.length === 0) {
+                    return;
+                }
+
+                const setStatus = (form, message, tone = 'muted') => {
+                    const status = form.querySelector('[data-autosave-status]');
+
+                    if (!status) {
+                        return;
+                    }
+
+                    status.textContent = message;
+                    status.classList.toggle('text-emerald-600', tone === 'success');
+                    status.classList.toggle('text-red-600', tone === 'error');
+                    status.classList.toggle('text-slate-500', tone === 'muted');
+                };
+
+                const hasMeaningfulPayload = (form) => {
+                    const fields = Array.from(form.querySelectorAll('input, select, textarea'))
+                        .filter((field) => !['_token', 'draft_id', 'revised_from'].includes(field.name || ''))
+                        .filter((field) => field.type !== 'file')
+                        .filter((field) => field.type !== 'hidden' || field.value);
+
+                    return fields.some((field) => {
+                        if (field.type === 'checkbox' || field.type === 'radio') {
+                            return field.checked;
+                        }
+
+                        return String(field.value || '').trim() !== '';
+                    }) || Array.from(form.querySelectorAll('input[type="file"]')).some((input) => (input.files || []).length > 0);
+                };
+
+                const autosavePayload = (form, includeFiles = false) => {
+                    const formData = new FormData();
+
+                    Array.from(form.elements).forEach((field) => {
+                        if (!field.name || field.disabled) {
+                            return;
+                        }
+
+                        if (field.type === 'submit' || field.type === 'button') {
+                            return;
+                        }
+
+                        if (field.type === 'file') {
+                            if (!includeFiles) {
+                                return;
+                            }
+
+                            Array.from(field.files || []).forEach((file) => {
+                                formData.append(field.name, file);
+                            });
+
+                            return;
+                        }
+
+                        if ((field.type === 'checkbox' || field.type === 'radio') && !field.checked) {
+                            return;
+                        }
+
+                        formData.append(field.name, field.value);
+                    });
+
+                    formData.set('submit_action', 'draft');
+
+                    return formData;
+                };
+
+                const applyAutosaveResponse = async (form, response) => {
+                    if (!response.ok) {
+                        setStatus(form, 'Autosave gagal. Draft manual masih tersedia.', 'error');
+                        return;
+                    }
+
+                    const payload = await response.json();
+
+                    if (!payload.saved) {
+                        return;
+                    }
+
+                    const draftInput = form.querySelector('[data-autosave-draft-id]');
+
+                    if (draftInput && payload.draft_id) {
+                        draftInput.value = payload.draft_id;
+                    }
+
+                    setStatus(form, `Draft tersimpan otomatis ${payload.saved_at || ''}`.trim(), 'success');
+                };
+
+                const autosave = async (form, includeFiles = false) => {
+                    if (form.dataset.autosaveSubmitting === 'true' || !hasMeaningfulPayload(form)) {
+                        return;
+                    }
+
+                    setStatus(form, 'Menyimpan draft otomatis...', 'muted');
+
+                    try {
+                        const response = await fetch(form.dataset.autosaveUrl, {
+                            method: 'POST',
+                            body: autosavePayload(form, includeFiles),
+                            credentials: 'same-origin',
+                            headers: {
+                                'X-Requested-With': 'XMLHttpRequest',
+                                'Accept': 'application/json',
+                            },
+                            keepalive: !includeFiles,
+                        });
+
+                        await applyAutosaveResponse(form, response);
+                    } catch (error) {
+                        setStatus(form, 'Autosave belum berhasil. Perubahan berikutnya akan dicoba lagi.', 'error');
+                    }
+                };
+
+                const autosaveWithBeacon = (form) => {
+                    if (!navigator.sendBeacon || !hasMeaningfulPayload(form)) {
+                        return;
+                    }
+
+                    navigator.sendBeacon(form.dataset.autosaveUrl, autosavePayload(form, false));
+                };
+
+                autosaveForms.forEach((form) => {
+                    let autosaveTimer = null;
+
+                    const scheduleAutosave = () => {
+                        window.clearTimeout(autosaveTimer);
+                        autosaveTimer = window.setTimeout(() => autosave(form), AUTOSAVE_DELAY);
+                    };
+
+                    form.addEventListener('input', (event) => {
+                        if (event.target.closest('input[type="file"]')) {
+                            return;
+                        }
+
+                        scheduleAutosave();
+                    });
+
+                    form.addEventListener('change', (event) => {
+                        if (event.target.closest('input[type="file"]')) {
+                            autosave(form, true);
+                            return;
+                        }
+
+                        scheduleAutosave();
+                    });
+
+                    form.addEventListener('submit', () => {
+                        form.dataset.autosaveSubmitting = 'true';
+                    });
+
+                    document.addEventListener('visibilitychange', () => {
+                        if (document.visibilityState === 'hidden') {
+                            autosaveWithBeacon(form);
+                        }
+                    });
+
+                    window.addEventListener('beforeunload', () => {
+                        autosaveWithBeacon(form);
+                    });
+
+                    document.addEventListener('click', (event) => {
+                        const link = event.target.closest('a[href]');
+
+                        if (link && !link.href.includes('#')) {
+                            autosaveWithBeacon(form);
+                        }
+                    }, { capture: true });
+                });
+            })();
+        </script>
+    @endonce
 
     @once
         <script>
@@ -739,18 +933,18 @@
                 });
 
                 document.addEventListener('change', (event) => {
-                    const select = event.target.closest('select[name="m_proses_bisnis_id"]');
+                    const select = event.target.closest('select[name="m_proses_fungsi_id"]');
 
                     if (!select) {
                         return;
                     }
 
-                    const segment = document.querySelector('[data-document-number-segment="business-process"]');
+                    const segment = document.querySelector('[data-document-number-segment="business-function"]');
                     const selectedOption = select.selectedOptions[0];
-                    const processCode = selectedOption?.dataset.processCode;
+                    const functionCode = selectedOption?.dataset.functionCode;
 
-                    if (segment && processCode) {
-                        segment.value = processCode;
+                    if (segment && functionCode) {
+                        segment.value = functionCode;
                     }
                 });
 
@@ -825,14 +1019,13 @@
                         return;
                     }
 
-                    const processId = processSelect.value;
                     const functionId = functionSelect.value;
 
-                    if (processId === '' || functionId === '') {
+                    if (functionId === '') {
                         return;
                     }
 
-                    suffixInput.value = documentNumberSuggestions[`${processId}-${functionId}`] ?? '01';
+                    suffixInput.value = documentNumberSuggestions[functionId] ?? '01';
                 };
 
                 document.querySelectorAll('form').forEach((form) => {
@@ -951,4 +1144,6 @@
             })();
         </script>
     @endonce
+
+    <x-ui.loading-overlay />
 </x-layouts::app>
