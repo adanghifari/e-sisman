@@ -27,6 +27,10 @@ class EnsureRoutePermission
             return $next($request);
         }
 
+        if ($this->canAccessGeneratedDocumentRoute($request, $routeName)) {
+            return $next($request);
+        }
+
         $routeHasConfiguredPermission = collect(config('access.permissions', []))
             ->contains(fn (array $permission): bool => ($permission['route'] ?? null) === $routeName);
 
@@ -42,5 +46,21 @@ class EnsureRoutePermission
         }
 
         abort(403);
+    }
+
+    private function canAccessGeneratedDocumentRoute(Request $request, ?string $routeName): bool
+    {
+        $permissionCodes = match ($routeName) {
+            'documents.master.generated.show' => $request->boolean('download')
+                ? ['documents.master.download', 'documents.master.generated']
+                : ['documents.master.detail', 'documents.master.generated'],
+            'documents.obsolete.generated.show' => $request->boolean('download')
+                ? ['documents.obsolete.download', 'documents.obsolete.generated']
+                : ['documents.obsolete.detail', 'documents.obsolete.generated'],
+            default => [],
+        };
+
+        return $permissionCodes !== []
+            && ($request->user()?->hasAnyPermission($permissionCodes) ?? false);
     }
 }

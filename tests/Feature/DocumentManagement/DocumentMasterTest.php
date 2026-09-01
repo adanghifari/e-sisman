@@ -21,6 +21,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\StatusDocument;
 use App\Models\User;
+use App\Support\FinalDocuments\DynamicFinalDocumentRenderer;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
@@ -197,10 +198,7 @@ class DocumentMasterTest extends TestCase
     {
         Storage::fake('local');
 
-        $user = User::factory()->create([
-            'nik' => '000000',
-            'email' => 'developer@example.com',
-        ]);
+        $user = $this->userWithPermission('documents.master.download');
         $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
 
         $source = $this->createDocument($user, $approvedStatus, [
@@ -232,6 +230,103 @@ class DocumentMasterTest extends TestCase
             ->assertNotFound();
 
         $this->assertSame(0, DocumentDownloadLog::query()->count());
+    }
+
+    public function test_master_detail_moves_printout_download_button_to_document_summary_and_logs_download_click(): void
+    {
+        $user = $this->userWithPermission('documents.master.download');
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $document = $this->createDocument($user, $approvedStatus, [
+            'nama_dokumen' => 'Master Dengan Printout',
+            'nomor_dokumen' => 'PS-SMR-PRINT',
+        ]);
+
+        $this->mock(DynamicFinalDocumentRenderer::class, function ($mock): void {
+            $mock->shouldReceive('canRender')->andReturn(true);
+            $mock->shouldReceive('render')->andReturn("%PDF-1.4\nfixture");
+            $mock->shouldReceive('fileName')->andReturn('final-document.pdf');
+        });
+
+        $downloadUrl = route('documents.master.generated.show', [$document, 'download' => 1]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.show', $document))
+            ->assertOk()
+            ->assertSee('Printout PDF Final')
+            ->assertDontSee('>Buka<', false)
+            ->assertSee('Download Printout PDF')
+            ->assertSee($downloadUrl, false);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.generated.show', $document))
+            ->assertOk();
+
+        $this->assertSame(0, DocumentDownloadLog::query()->count());
+
+        $this->actingAs($user)
+            ->get($downloadUrl)
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
+
+        $log = DocumentDownloadLog::query()->firstOrFail();
+
+        $this->assertSame($document->id, $log->t_document_id);
+        $this->assertNull($log->t_document_file_id);
+        $this->assertSame($user->id, $log->user_id);
+        $this->assertSame('master', $log->download_context);
+        $this->assertSame('Master Dengan Printout', $log->document_name_snapshot);
+        $this->assertSame('PS-SMR-PRINT', $log->document_number_snapshot);
+    }
+
+    public function test_obsolete_generated_printout_download_click_is_logged(): void
+    {
+        $user = $this->userWithPermission('documents.obsolete.detail');
+        $downloadPermission = Permission::query()->firstOrCreate(
+            ['code' => 'documents.obsolete.download'],
+            [
+                'name' => 'documents.obsolete.download',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.obsolete.files.show',
+                'action' => 'download',
+            ],
+        );
+        $user->roles()->firstOrFail()->permissions()->syncWithoutDetaching([$downloadPermission->id]);
+        StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        $document = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Obsolete Dengan Printout',
+            'nomor_dokumen' => 'PS-SMR-OBS-PRINT',
+            'request_type' => 'revision',
+        ]);
+
+        $this->mock(DynamicFinalDocumentRenderer::class, function ($mock): void {
+            $mock->shouldReceive('canRender')->andReturn(true);
+            $mock->shouldReceive('render')->andReturn("%PDF-1.4\nfixture");
+            $mock->shouldReceive('fileName')->andReturn('final-document.pdf');
+        });
+
+        $downloadUrl = route('documents.obsolete.generated.show', [$document, 'download' => 1]);
+
+        $this->actingAs($user)
+            ->get(route('documents.obsolete.show', $document))
+            ->assertOk()
+            ->assertDontSee('>Buka<', false)
+            ->assertSee('Download Printout PDF')
+            ->assertSee($downloadUrl, false);
+
+        $this->actingAs($user)
+            ->get($downloadUrl)
+            ->assertOk()
+            ->assertHeader('content-type', 'application/pdf');
+
+        $log = DocumentDownloadLog::query()->firstOrFail();
+
+        $this->assertSame($document->id, $log->t_document_id);
+        $this->assertNull($log->t_document_file_id);
+        $this->assertSame($user->id, $log->user_id);
+        $this->assertSame('obsolete', $log->download_context);
+        $this->assertSame('Obsolete Dengan Printout', $log->document_name_snapshot);
+        $this->assertSame('PS-SMR-OBS-PRINT', $log->document_number_snapshot);
     }
 
     public function test_master_page_does_not_show_approved_obsolete_request_transaction(): void

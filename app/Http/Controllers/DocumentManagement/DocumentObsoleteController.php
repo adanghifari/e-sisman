@@ -267,13 +267,27 @@ class DocumentObsoleteController extends Controller
         ]);
     }
 
-    public function generatedFile(Document $document, DynamicFinalDocumentRenderer $renderer): Response
-    {
+    public function generatedFile(
+        Request $request,
+        Document $document,
+        DynamicFinalDocumentRenderer $renderer,
+        RecordDocumentDownload $recordDocumentDownload,
+    ): Response {
         $this->authorizeObsoleteGeneratedPreviewAccess($document);
 
         $context = PdfDocumentContext::FINAL_DOCUMENT;
+        $pdf = $renderer->render($document, $context);
 
-        return response($renderer->render($document, $context), 200, [
+        if ($request->boolean('download')) {
+            $recordDocumentDownload->handle($request, $document, null, [
+                'name' => $document->nama_dokumen,
+                'number' => $this->masterDisplayNumber($document),
+                'revision' => $document->nomor_revisi,
+                'context' => 'obsolete',
+            ]);
+        }
+
+        return response($pdf, 200, [
             'Content-Type' => 'application/pdf',
             'Content-Disposition' => 'inline; filename="'.$renderer->fileName($document, $context).'"',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',

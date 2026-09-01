@@ -147,14 +147,11 @@
                         <div class="space-y-4 px-6 py-6">
                             @if ($canPreviewGeneratedPrintout)
                                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                    <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                    <div class="border-b border-slate-200 bg-white px-4 py-3">
                                         <div class="min-w-0">
                                             <p class="truncate text-sm font-bold text-slate-900">Printout PDF Final</p>
                                             <p class="text-xs font-medium text-slate-500">Preview dinamis lengkap dengan lembar pengesahan.</p>
                                         </div>
-                                        <a href="{{ route($fileRoutePrefix.'.generated.show', $document).'#toolbar=0&view=FitH&navpanes=0' }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                            Buka
-                                        </a>
                                     </div>
 
                                     <x-documents.lazy-pdf-preview :src="route($fileRoutePrefix.'.generated.show', $document).'#toolbar=0&view=FitH&navpanes=0'" />
@@ -283,6 +280,19 @@
                             </div>
                         </div>
                     </div>
+
+                    @if ($showGeneratedPrintout && $canPreviewGeneratedPrintout)
+                        <div class="border-t border-dashed border-slate-200 px-6 py-5">
+                            <a
+                                href="{{ route($fileRoutePrefix.'.generated.show', [$document, 'download' => 1]) }}"
+                                target="_blank"
+                                class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
+                            >
+                                <flux:icon name="arrow-down-tray" class="size-4" />
+                                Download Printout PDF
+                            </a>
+                        </div>
+                    @endif
 
                     {{ $actions ?? '' }}
 
