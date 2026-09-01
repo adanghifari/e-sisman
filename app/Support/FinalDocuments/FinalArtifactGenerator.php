@@ -160,6 +160,7 @@ class FinalArtifactGenerator
         ]);
         $coverDocumentLevel = $this->coverDocumentLevel($document);
         $coverDocumentType = $this->coverDocumentType($document);
+
         return [
             'document' => [
                 'id' => $document->id,
@@ -231,10 +232,9 @@ class FinalArtifactGenerator
     {
         $attachments = $document->files()
             ->where('type_file', 'attachment')
-            ->orderByRaw('CASE WHEN attachment_order IS NULL THEN 1 ELSE 0 END')
-            ->orderBy('attachment_order')
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->sortBy(fn (DocumentFile $file): string => $this->attachmentSortKey($file));
 
         if ($document->request_type === 'revision') {
             $revisionForm = $document->files()
@@ -264,6 +264,29 @@ class FinalArtifactGenerator
                 'file_size' => $file->file_size,
             ])
             ->all();
+    }
+
+    private function attachmentSortKey(DocumentFile $file): string
+    {
+        $suffix = $this->documentNumberSuffix($file->document_number);
+
+        return sprintf(
+            '%010d-%010d-%010d',
+            $suffix ?? PHP_INT_MAX,
+            $file->attachment_order ?? PHP_INT_MAX,
+            $file->id,
+        );
+    }
+
+    private function documentNumberSuffix(?string $documentNumber): ?int
+    {
+        if (! filled($documentNumber)) {
+            return null;
+        }
+
+        $suffix = Str::afterLast($documentNumber, '-');
+
+        return ctype_digit($suffix) ? (int) $suffix : null;
     }
 
     /**

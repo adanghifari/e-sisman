@@ -15,6 +15,7 @@ use App\Models\Permission;
 use App\Models\Role;
 use App\Models\StatusDocument;
 use App\Models\User;
+use App\Support\FinalDocuments\FinalArtifactGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -258,6 +259,30 @@ class DocumentAttachmentLifecycleTest extends TestCase
         $this->assertTrue($revision->files()->where('type_file', 'revision_content')->where('document_number', 'PS-SMR-120')->exists());
         $this->assertTrue($revision->files()->where('type_file', 'revision_form')->where('document_number', 'FMPS-SMR-120-01')->exists());
         $this->assertTrue($revision->files()->where('type_file', 'attachment')->where('document_number', 'FMPS-SMR-120-02')->exists());
+    }
+
+    public function test_final_attachment_payload_order_follows_official_document_number(): void
+    {
+        [$source] = $this->revisionFixture();
+        $this->storeDocumentFile($source, 'attachment', [
+            'attachment_title' => 'sketsa',
+            'attachment_order' => 1,
+            'document_number' => 'FMPS-SMR-010-03',
+        ]);
+        $this->storeDocumentFile($source, 'attachment', [
+            'attachment_title' => 'Invoice',
+            'attachment_order' => 2,
+            'document_number' => 'FMPS-SMR-010-02',
+        ]);
+
+        $attachments = app(FinalArtifactGenerator::class)->collectAttachments($source);
+
+        $this->assertSame('Invoice', $attachments[0]['title']);
+        $this->assertSame('FMPS-SMR-010-02', $attachments[0]['document_number']);
+        $this->assertSame(1, $attachments[0]['number']);
+        $this->assertSame('sketsa', $attachments[1]['title']);
+        $this->assertSame('FMPS-SMR-010-03', $attachments[1]['document_number']);
+        $this->assertSame(2, $attachments[1]['number']);
     }
 
     private function baseFixture(): array
