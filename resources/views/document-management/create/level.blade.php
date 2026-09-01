@@ -626,19 +626,31 @@
                                                         $isEditingDraft ? $carriedForwardSourceFileIds : $revisionSourceAttachments->pluck('id')->map(fn ($id) => (string) $id)->all(),
                                                     );
                                                 @endphp
-                                                <label class="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3">
-                                                    <input
-                                                        type="checkbox"
-                                                        name="included_attachment_ids[]"
-                                                        value="{{ $sourceAttachment->id }}"
-                                                        @checked(in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true))
-                                                        class="mt-1 size-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
-                                                    >
-                                                    <span class="min-w-0">
-                                                        <span class="block truncate text-sm font-bold text-slate-900">{{ $sourceAttachment->attachment_title ?: $sourceAttachment->original_file_name }}</span>
-                                                        <span class="mt-1 block truncate text-xs font-medium text-slate-500">{{ $sourceAttachment->document_number ?: 'Nomor lampiran akan disinkronkan saat submit' }}</span>
-                                                    </span>
-                                                </label>
+                                                <div class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-3 md:grid-cols-[minmax(0,1fr)_minmax(240px,0.7fr)]">
+                                                    <label class="flex min-w-0 items-start gap-3">
+                                                        <input
+                                                            type="checkbox"
+                                                            name="included_attachment_ids[]"
+                                                            value="{{ $sourceAttachment->id }}"
+                                                            @checked(in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true))
+                                                            class="mt-1 size-4 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                                                        >
+                                                        <span class="min-w-0">
+                                                            <span class="block truncate text-sm font-bold text-slate-900">{{ $sourceAttachment->attachment_title ?: $sourceAttachment->original_file_name }}</span>
+                                                            <span class="mt-1 block truncate text-xs font-medium text-slate-500">{{ $sourceAttachment->document_number ?: 'Nomor lampiran akan disinkronkan saat submit' }}</span>
+                                                        </span>
+                                                    </label>
+
+                                                    <label class="block min-w-0">
+                                                        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Revisi File</span>
+                                                        <input
+                                                            type="file"
+                                                            name="revised_attachments[{{ $sourceAttachment->id }}]"
+                                                            accept=".pdf,application/pdf"
+                                                            class="block w-full text-xs font-semibold text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-700 hover:file:bg-sky-50"
+                                                        >
+                                                    </label>
+                                                </div>
                                             @endforeach
                                         </div>
                                     </div>
@@ -654,6 +666,9 @@
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                 @enderror
                                 @error('existing_attachment_titles.*')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                                @error('revised_attachments.*')
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                 @enderror
                             </div>

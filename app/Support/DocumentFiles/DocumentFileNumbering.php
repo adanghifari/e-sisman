@@ -61,6 +61,8 @@ class DocumentFileNumbering
             return null;
         }
 
+        $this->lockFamilyForUpdate($document);
+
         $usedSuffixes = $this->usedFileSuffixes($document);
         $suffix = self::FIRST_ATTACHMENT_SUFFIX;
 
@@ -113,11 +115,37 @@ class DocumentFileNumbering
         return in_array($type, ['filled_template', 'revision_content', 'imported_document'], true);
     }
 
+    public function lockFamilyForUpdate(Document $document): void
+    {
+        if (! filled($document->nomor_dokumen)) {
+            return;
+        }
+
+        $documentIds = Document::query()
+            ->where('nomor_dokumen', $document->nomor_dokumen)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->pluck('id');
+
+        if ($documentIds->isEmpty()) {
+            return;
+        }
+
+        DB::table('t_document_files')
+            ->whereIn('t_document_id', $documentIds)
+            ->orderBy('id')
+            ->lockForUpdate()
+            ->pluck('id');
+    }
+
     private function fileFamilyPrefix(Document $document): string
     {
-        $document->loadMissing('documentLevel');
+        $document->loadMissing('documentLevel', 'revisedFrom.documentLevel');
+        $level = $document->documentLevel?->kode === 'level-4' && $document->revisedFrom !== null
+            ? $document->revisedFrom->documentLevel
+            : $document->documentLevel;
 
-        $prefix = match ($document->documentLevel?->kode) {
+        $prefix = match ($level?->kode) {
             'level-1' => 'FMSM',
             'level-2' => 'FMPS',
             'level-3' => 'FMIK',

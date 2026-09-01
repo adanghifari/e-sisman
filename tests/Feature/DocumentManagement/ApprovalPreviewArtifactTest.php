@@ -237,11 +237,13 @@ class ApprovalPreviewArtifactTest extends TestCase
     {
         [, $revision] = $this->revisionFixture();
         $revisionForm = $this->storeDocumentFile($revision, 'revision_form', $this->pdfBinary(['Revision form']), [
+            'document_number' => 'FMPS-SMR-PREV-REV-01',
             'original_file_name' => 'lembar-revisi.pdf',
             'stored_file_name' => 'lembar-revisi.pdf',
         ]);
         $this->storeDocumentFile($revision, 'revision_content', $this->pdfBinary(['Revision body']));
         $userAttachment = $this->storeDocumentFile($revision, 'attachment', $this->pdfBinary(['User attachment']), [
+            'document_number' => 'FMPS-SMR-PREV-REV-02',
             'attachment_title' => 'Matriks Komunikasi',
             'attachment_order' => 1,
             'original_file_name' => 'matriks.pdf',
@@ -254,9 +256,11 @@ class ApprovalPreviewArtifactTest extends TestCase
 
         $this->assertSame($revisionForm->id, $payload['attachments'][0]['id']);
         $this->assertSame(1, $payload['attachments'][0]['number']);
+        $this->assertSame('FMPS-SMR-PREV-REV-01', $payload['attachments'][0]['document_number']);
         $this->assertSame('Lembar Revisi', $payload['attachments'][0]['title']);
         $this->assertSame($userAttachment->id, $payload['attachments'][1]['id']);
         $this->assertSame(2, $payload['attachments'][1]['number']);
+        $this->assertSame('FMPS-SMR-PREV-REV-02', $payload['attachments'][1]['document_number']);
         $this->assertSame('Matriks Komunikasi', $payload['attachments'][1]['title']);
     }
 

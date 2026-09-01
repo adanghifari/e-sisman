@@ -282,7 +282,8 @@ class DocumentController extends Controller
                 );
 
                 if ($lockedRevisionSource !== null) {
-                    $this->carryForwardIncludedAttachments(
+                    $this->syncIncludedRevisionAttachments(
+                        $request,
                         $document,
                         $lockedRevisionSource,
                         $documentAttributes['included_attachment_ids'] ?? [],
@@ -521,6 +522,8 @@ class DocumentController extends Controller
                 'attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
                 'included_attachment_ids' => ['nullable', 'array', 'max:20'],
                 'included_attachment_ids.*' => ['integer', Rule::exists('t_document_files', 'id')],
+                'revised_attachments' => ['nullable', 'array', 'max:20'],
+                'revised_attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
                 'submit_action' => ['required', Rule::in(['draft', 'submit'])],
                 'revised_from' => ['required', 'integer', Rule::exists('t_document', 'id')],
                 'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
@@ -593,6 +596,8 @@ class DocumentController extends Controller
             'attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
             'included_attachment_ids' => ['nullable', 'array', 'max:20'],
             'included_attachment_ids.*' => ['integer', Rule::exists('t_document_files', 'id')],
+            'revised_attachments' => ['nullable', 'array', 'max:20'],
+            'revised_attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
             'existing_attachment_titles' => ['nullable', 'array'],
             'existing_attachment_titles.*' => ['nullable', 'string', 'max:255'],
             'existing_attachment_orders' => ['nullable', 'array'],
@@ -707,6 +712,16 @@ class DocumentController extends Controller
             $request->input('existing_attachment_titles', []),
             $request->input('existing_attachment_orders', []),
         );
+
+        if ($document->revisedFrom !== null) {
+            $this->syncIncludedRevisionAttachments(
+                $request,
+                $document,
+                $document->revisedFrom,
+                $request->input('included_attachment_ids', []),
+            );
+        }
+
         $this->storeAttachmentFiles($request, $document);
     }
 
@@ -754,7 +769,7 @@ class DocumentController extends Controller
     /**
      * @param  array<int, int|string>  $sourceFileIds
      */
-    private function carryForwardIncludedAttachments(Document $document, Document $source, array $sourceFileIds): void
+    private function syncIncludedRevisionAttachments(Request $request, Document $document, Document $source, array $sourceFileIds): void
     {
         $ids = collect($sourceFileIds)
             ->map(fn (int|string $id): int => (int) $id)
@@ -762,20 +777,57 @@ class DocumentController extends Controller
             ->unique()
             ->values();
 
-        if ($ids->isEmpty()) {
-            return;
-        }
-
-        $sourceFiles = $source->files()
-            ->whereIn('id', $ids)
+        $allSourceAttachments = $source->files()
             ->where('type_file', 'attachment')
             ->orderByRaw('CASE WHEN attachment_order IS NULL THEN 1 ELSE 0 END')
             ->orderBy('attachment_order')
             ->orderBy('id')
             ->get();
 
+        $this->removeUnselectedRevisionAttachments($document, $allSourceAttachments, $ids);
+
+        if ($ids->isEmpty()) {
+            return;
+        }
+
+        $sourceFiles = $allSourceAttachments
+            ->whereIn('id', $ids->all())
+            ->values();
+
         foreach ($sourceFiles as $sourceFile) {
-            if ($document->files()->where('source_file_id', $sourceFile->id)->exists()) {
+            $replacement = $request->file("revised_attachments.{$sourceFile->id}");
+            $existing = $document->files()
+                ->where('type_file', 'attachment')
+                ->where('source_file_id', $sourceFile->id)
+                ->first();
+
+            if ($existing !== null && $replacement === null) {
+                $existing->forceFill([
+                    'document_number' => $sourceFile->document_number,
+                    'attachment_title' => $sourceFile->attachment_title,
+                    'attachment_order' => $sourceFile->attachment_order,
+                    'updated_at' => now(),
+                ])->save();
+
+                continue;
+            }
+
+            if ($existing !== null) {
+                $this->deleteDocumentFile($existing);
+            }
+
+            if ($replacement !== null) {
+                $this->storeDocumentFile(
+                    $document,
+                    $replacement,
+                    'attachment',
+                    $request->user()->id,
+                    $sourceFile->attachment_title,
+                    $sourceFile->attachment_order,
+                    $sourceFile->id,
+                    $sourceFile->document_number,
+                );
+
                 continue;
             }
 
@@ -799,6 +851,33 @@ class DocumentController extends Controller
                 'file_size' => $sourceFile->file_size,
             ]);
         }
+    }
+
+    /**
+     * @param  Collection<int, DocumentFile>  $sourceAttachments
+     * @param  Collection<int, int>  $includedIds
+     */
+    private function removeUnselectedRevisionAttachments(Document $document, Collection $sourceAttachments, Collection $includedIds): void
+    {
+        $sourceIds = $sourceAttachments
+            ->pluck('id')
+            ->map(fn (int|string $id): int => (int) $id);
+
+        if ($sourceIds->isEmpty()) {
+            return;
+        }
+
+        $document->files()
+            ->where('type_file', 'attachment')
+            ->whereIn('source_file_id', $sourceIds)
+            ->get()
+            ->each(function (DocumentFile $file) use ($includedIds): void {
+                if ($includedIds->contains((int) $file->source_file_id)) {
+                    return;
+                }
+
+                $this->deleteDocumentFile($file);
+            });
     }
 
     private function copyDocumentFileToDocument(DocumentFile $sourceFile, Document $targetDocument): string
@@ -1370,12 +1449,13 @@ class DocumentController extends Controller
         ?string $attachmentTitle = null,
         ?int $attachmentOrder = null,
         ?int $sourceFileId = null,
+        ?string $documentNumber = null,
     ): void {
         $path = $file->store("documents/{$document->id}", 'local');
 
         $document->files()->create([
             'type_file' => $type,
-            'document_number' => $this->documentFileNumber($document, $type, $attachmentOrder),
+            'document_number' => $documentNumber ?? $this->documentFileNumber($document, $type, $attachmentOrder),
             'attachment_title' => $attachmentTitle,
             'attachment_order' => $attachmentOrder,
             'path_file' => $path,
@@ -1420,10 +1500,7 @@ class DocumentController extends Controller
         $document->files()
             ->where('type_file', $type)
             ->get()
-            ->each(function ($file): void {
-                Storage::disk('local')->delete($file->path_file);
-                $file->delete();
-            });
+            ->each(fn (DocumentFile $file) => $this->deleteDocumentFile($file));
     }
 
     /**
@@ -1438,10 +1515,13 @@ class DocumentController extends Controller
         $document->files()
             ->whereIn('id', $fileIds)
             ->get()
-            ->each(function ($file): void {
-                Storage::disk('local')->delete($file->path_file);
-                $file->delete();
-            });
+            ->each(fn (DocumentFile $file) => $this->deleteDocumentFile($file));
+    }
+
+    private function deleteDocumentFile(DocumentFile $file): void
+    {
+        Storage::disk('local')->delete($file->path_file);
+        $file->delete();
     }
 
     private function recordOfficialPreparerApproval(Document $document, int $assignedBy, mixed $respondedAt): void

@@ -12,6 +12,7 @@ return new class extends Migration
         Schema::table('t_document_files', function (Blueprint $table): void {
             $table->string('document_number')->nullable()->after('type_file');
             $table->index('document_number', 't_document_files_document_number_index');
+            $table->index(['type_file', 'document_number'], 't_document_files_type_document_number_index');
         });
 
         $this->backfillMainDocumentFileNumbers();
@@ -22,6 +23,7 @@ return new class extends Migration
     {
         Schema::table('t_document_files', function (Blueprint $table): void {
             $table->dropIndex('t_document_files_document_number_index');
+            $table->dropIndex('t_document_files_type_document_number_index');
             $table->dropColumn('document_number');
         });
     }
