@@ -158,6 +158,7 @@ class FinalArtifactGenerator
         ]);
         $coverDocumentLevel = $this->coverDocumentLevel($document);
         $coverDocumentType = $this->coverDocumentType($document);
+        $approvalSheetDocument = $this->approvalSheetDocument($document);
 
         return [
             'document' => [
@@ -188,7 +189,10 @@ class FinalArtifactGenerator
                     ->all(),
             ],
             'preparers' => $this->collectPreparers($document),
-            'approvals' => $this->collectApprovals($document),
+            'approvals' => $this->collectApprovals($approvalSheetDocument),
+            'revision_approvals' => $document->request_type === 'revision'
+                ? $this->collectApprovals($document)
+                : [],
             'source' => [
                 'id' => $sourceFile->id,
                 'type' => $sourceFile->type_file,
@@ -217,6 +221,21 @@ class FinalArtifactGenerator
         }
 
         return $document->documentType;
+    }
+
+    private function approvalSheetDocument(Document $document): Document
+    {
+        if ($document->request_type !== 'revision' || $document->revised_from === null) {
+            return $document;
+        }
+
+        return Document::query()
+            ->whereKey($document->revisionRootId())
+            ->with([
+                'documentLevel.approvalFlows.stages',
+                'approvals.status',
+            ])
+            ->firstOrFail();
     }
 
     /**

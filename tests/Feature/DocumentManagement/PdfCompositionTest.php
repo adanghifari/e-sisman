@@ -235,20 +235,38 @@ class PdfCompositionTest extends TestCase
         ]));
 
         $result = app(FinalPdfComposer::class)->compose(
-            $this->payload([
+            $this->payload(
                 [
-                    'number' => 1,
-                    'title' => 'Lembar Revisi',
-                    'type' => 'revision_form',
-                    'path_file' => 'documents/10/revision-form.pdf',
+                    [
+                        'number' => 1,
+                        'title' => 'Lembar Revisi',
+                        'type' => 'revision_form',
+                        'path_file' => 'documents/10/revision-form.pdf',
+                    ],
+                    [
+                        'number' => 2,
+                        'title' => 'Lampiran Pendukung',
+                        'type' => 'attachment',
+                        'path_file' => 'documents/10/attachment.pdf',
+                    ],
                 ],
                 [
-                    'number' => 2,
-                    'title' => 'Lampiran Pendukung',
-                    'type' => 'attachment',
-                    'path_file' => 'documents/10/attachment.pdf',
+                    'revision_approvals' => [
+                        [
+                            'stage_name' => 'Pengesahan Revisi',
+                            'stage_order' => 1,
+                            'approvers' => [
+                                [
+                                    'approval_id' => 123,
+                                    'name' => 'Approver Revisi',
+                                    'position' => 'Manager Pemilik Proses',
+                                    'responded_at' => '2026-10-16 09:00:00',
+                                ],
+                            ],
+                        ],
+                    ],
                 ],
-            ]),
+            ),
             $this->tcpdfBinary([['text' => 'Cover']]),
             $this->tcpdfBinary([['text' => 'Approval']]),
             $body,
@@ -262,8 +280,10 @@ class PdfCompositionTest extends TestCase
         ], $result->bodyPages[1]['attachment_titles']);
         $this->assertSame('revision_form', $result->bodyPages[2]['header']);
         $this->assertSame('1 dari 2', $result->bodyPages[2]['header_page_label']);
+        $this->assertFalse($result->bodyPages[2]['revision_approval_stamp']);
         $this->assertSame('revision_form', $result->bodyPages[3]['header']);
         $this->assertSame('2 dari 2', $result->bodyPages[3]['header_page_label']);
+        $this->assertTrue($result->bodyPages[3]['revision_approval_stamp']);
         $this->assertSame('standard', $result->bodyPages[4]['header']);
         $this->assertSame('5 dari 5', $result->bodyPages[4]['header_page_label']);
     }
@@ -420,9 +440,9 @@ class PdfCompositionTest extends TestCase
     /**
      * @return array<string, mixed>
      */
-    private function payload(array $attachments = []): array
+    private function payload(array $attachments = [], array $overrides = []): array
     {
-        return [
+        return array_replace_recursive([
             'document' => [
                 'id' => 10,
                 'name' => 'Komunikasi, Konsultasi dan Partisipasi',
@@ -441,9 +461,10 @@ class PdfCompositionTest extends TestCase
             ],
             'preparers' => [],
             'approvals' => [],
+            'revision_approvals' => [],
             'source' => [],
             'attachments' => $attachments,
-        ];
+        ], $overrides);
     }
 
     private function approvedDocument(): Document

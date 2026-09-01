@@ -186,14 +186,11 @@
                         <div class="space-y-4 px-6 py-6">
                             @if ($canPreviewGeneratedPrintout)
                                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                    <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                    <div class="border-b border-slate-200 bg-white px-4 py-3">
                                         <div class="min-w-0">
                                             <p class="truncate text-sm font-bold text-slate-900">{{ $printoutTitle }}</p>
                                             <p class="text-xs font-medium text-slate-500">{{ $printoutDescription }}</p>
                                         </div>
-                                        <a href="{{ route('documents.approval.generated.show', $document).'#toolbar=0&view=FitH&navpanes=0' }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                            Buka
-                                        </a>
                                     </div>
 
                                     <x-documents.lazy-pdf-preview :src="route('documents.approval.generated.show', $document).'#toolbar=0&view=FitH&navpanes=0'" />
@@ -212,20 +209,12 @@
                         <div class="space-y-4 px-6 py-6">
                             @if ($isObsoleteRequest)
                                 @forelse ($obsoleteSourceContentFiles as $file)
-                                    @php
-                                        $obsoleteSourceFileRoutePrefix = $document->revisedFrom?->status?->nama_status === \App\Models\StatusDocument::OBSOLETE
-                                            ? 'documents.obsolete'
-                                            : 'documents.master';
-                                    @endphp
                                     <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                        <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                        <div class="border-b border-slate-200 bg-white px-4 py-3">
                                             <div class="min-w-0">
                                                 <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                                 <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                             </div>
-                                            <a href="{{ route('documents.approval.files.show', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0' }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                                Buka
-                                            </a>
                                         </div>
 
                                         <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
@@ -240,14 +229,11 @@
                                 <div class="grid gap-4 2xl:grid-cols-2">
                                     @foreach ($revisionMainFiles as $file)
                                         <section class="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                            <div class="flex min-h-20 items-start justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                            <div class="min-h-20 border-b border-slate-200 bg-white px-4 py-3">
                                                 <div class="min-w-0">
                                                     <p class="text-sm font-bold text-slate-900">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                                     <p class="mt-1 truncate text-xs font-semibold text-slate-500">{{ $file->original_file_name }}</p>
                                                 </div>
-                                                <a href="{{ route('documents.approval.files.show', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0' }}" target="_blank" class="inline-flex h-9 shrink-0 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                                    Buka
-                                                </a>
                                             </div>
 
                                             <x-documents.lazy-pdf-preview
@@ -261,14 +247,11 @@
 
                             @foreach ($otherContentFiles as $file)
                                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                    <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                    <div class="border-b border-slate-200 bg-white px-4 py-3">
                                         <div class="min-w-0">
                                             <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                             <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                         </div>
-                                        <a href="{{ route('documents.approval.files.show', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0' }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                            Buka
-                                        </a>
                                     </div>
 
                                     <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
@@ -283,14 +266,11 @@
                         @else
                         @forelse ($contentFiles as $file)
                             <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                <div class="flex items-center justify-between gap-3 border-b border-slate-200 bg-white px-4 py-3">
+                                <div class="border-b border-slate-200 bg-white px-4 py-3">
                                     <div class="min-w-0">
                                         <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                         <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                     </div>
-                                    <a href="{{ route('documents.approval.files.show', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0' }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                        Buka
-                                    </a>
                                 </div>
 
                                 <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
@@ -307,14 +287,11 @@
                     <x-documents.form-section title="Lampiran" icon="paper-clip">
                         <div class="space-y-3 px-6 py-6">
                             @forelse ($attachmentFiles as $file)
-                                <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
+                                <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
                                     <div class="min-w-0">
                                         <p class="truncate text-sm font-bold text-slate-900">{{ $file->attachment_title ?: $file->original_file_name }}</p>
                                         <p class="text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
                                     </div>
-                                    <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                        Buka
-                                    </a>
                                 </div>
                             @empty
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">

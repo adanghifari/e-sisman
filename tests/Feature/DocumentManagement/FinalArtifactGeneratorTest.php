@@ -350,6 +350,43 @@ class FinalArtifactGeneratorTest extends TestCase
         $this->assertNull($approvalPayload['approvers'][0]['department']);
     }
 
+    public function test_revision_final_payload_uses_root_approvals_for_main_approval_sheet(): void
+    {
+        $root = $this->createDocument([
+            'nama_dokumen' => 'Prosedur Root',
+            'nomor_dokumen' => 'PS-SMR-ROOT',
+        ]);
+        $revision = $this->createDocument([
+            'm_document_level_id' => $this->documentLevel('level-4', 'Level IV', 'Form')->id,
+            'document_type_name' => 'Form',
+            'revised_from' => $root->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Prosedur Root Revisi',
+            'nomor_dokumen' => 'PS-SMR-ROOT',
+            'nomor_revisi' => 1,
+        ]);
+        $rootApproval = $this->createApproval($root, User::factory()->create(), [
+            'stage_name_snapshot' => 'Pengesahan Utama',
+            'stage_order_snapshot' => 1,
+            'approver_name_snapshot' => 'Approval Root',
+        ]);
+        $revisionApproval = $this->createApproval($revision, User::factory()->create(), [
+            'stage_name_snapshot' => 'Pengesahan Revisi',
+            'stage_order_snapshot' => 1,
+            'approver_name_snapshot' => 'Approval Revisi',
+        ]);
+        $this->createDocumentFile($revision, 'revision_content');
+
+        $payload = app(FinalArtifactGenerator::class)
+            ->prepare($revision)
+            ->payload;
+
+        $this->assertSame($rootApproval->id, $payload['approvals'][0]['approvers'][0]['approval_id']);
+        $this->assertSame('Approval Root', $payload['approvals'][0]['approvers'][0]['name']);
+        $this->assertSame($revisionApproval->id, $payload['revision_approvals'][0]['approvers'][0]['approval_id']);
+        $this->assertSame('Approval Revisi', $payload['revision_approvals'][0]['approvers'][0]['name']);
+    }
+
     private function createDocument(array $attributes = [], string $statusName = StatusDocument::APPROVED): Document
     {
         $submitter = User::factory()->create();

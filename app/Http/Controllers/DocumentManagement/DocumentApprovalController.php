@@ -2,7 +2,6 @@
 
 namespace App\Http\Controllers\DocumentManagement;
 
-use App\Actions\Log\RecordDocumentDownload;
 use App\Http\Controllers\Controller;
 use App\Models\Approval;
 use App\Models\ApprovalFlowStage;
@@ -320,25 +319,13 @@ class DocumentApprovalController extends Controller
         ])->save();
     }
 
-    public function file(Request $request, Document $document, DocumentFile $file, RecordDocumentDownload $recordDocumentDownload): BinaryFileResponse
+    public function file(Request $request, Document $document, DocumentFile $file): BinaryFileResponse
     {
         $this->authorizeDocumentAccess($request, $document);
         abort_unless($document->status?->nama_status === StatusDocument::PROPOSED, 404);
-        $downloadDocument = $this->authorizedFileDocument($document, $file);
+        $this->authorizedFileDocument($document, $file);
 
-        $path = Storage::disk('local')->path($file->path_file);
-        abort_unless(is_file($path), 404);
-
-        $recordDocumentDownload->handle($request, $downloadDocument, $file, [
-            'name' => $downloadDocument->nama_dokumen,
-            'number' => $this->approvalDownloadNumber($document, $downloadDocument),
-            'revision' => $downloadDocument->nomor_revisi,
-            'context' => 'approval',
-        ]);
-
-        return response()->file($path, [
-            'Content-Disposition' => 'inline; filename="'.$file->original_file_name.'"',
-        ]);
+        abort(404);
     }
 
     public function preview(Request $request, Document $document, DocumentFile $file): BinaryFileResponse
@@ -363,8 +350,7 @@ class DocumentApprovalController extends Controller
         Request $request,
         Document $document,
         DynamicFinalDocumentRenderer $renderer,
-    ): Response
-    {
+    ): Response {
         $this->authorizeDocumentAccess($request, $document);
         abort_if($document->request_type === 'obsolete', 404);
 
@@ -418,15 +404,6 @@ class DocumentApprovalController extends Controller
             ])
             ->sortByDesc('generation_number')
             ->first();
-    }
-
-    private function approvalDownloadNumber(Document $document, Document $downloadDocument): ?string
-    {
-        if (filled($document->nomor_lembar_revisi)) {
-            return $document->nomor_lembar_revisi;
-        }
-
-        return $downloadDocument->nomor_dokumen;
     }
 
     private function authorizeDocumentAccess(Request $request, Document $document): void

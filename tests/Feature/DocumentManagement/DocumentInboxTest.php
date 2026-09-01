@@ -1917,7 +1917,7 @@ class DocumentInboxTest extends TestCase
             ->assertSee('master-obsolete.pdf')
             ->assertSee('data-lazy-pdf-preview', false)
             ->assertSee('data-lazy-pdf-load', false)
-            ->assertSee(route('documents.approval.files.show', [$request, $sourceFile]), false)
+            ->assertDontSee('href="'.route('documents.approval.files.show', [$request, $sourceFile]), false)
             ->assertSee(route('documents.approval.files.preview', [$request, $sourceFile]), false)
             ->assertDontSee('<iframe src="'.route('documents.approval.files.preview', [$request, $sourceFile]), false)
             ->assertDontSee(route('documents.master.files.show', [$source, $sourceFile]), false)
@@ -2227,7 +2227,7 @@ class DocumentInboxTest extends TestCase
             ->assertOk();
     }
 
-    public function test_approval_download_logs_revision_request_number_snapshot(): void
+    public function test_approval_file_download_is_not_available_and_does_not_log_activity(): void
     {
         Storage::fake('local');
 
@@ -2256,14 +2256,9 @@ class DocumentInboxTest extends TestCase
 
         $this->actingAs($user)
             ->get(route('documents.approval.files.show', [$document, $file]))
-            ->assertOk();
+            ->assertNotFound();
 
-        $log = DocumentDownloadLog::query()->firstOrFail();
-
-        $this->assertSame('approval', $log->download_context);
-        $this->assertSame('FMPS-SMR-SNAP', $log->document_number_snapshot);
-        $this->assertSame('Dokumen Revisi Approval', $log->document_name_snapshot);
-        $this->assertSame(1, $log->document_revision_snapshot);
+        $this->assertSame(0, DocumentDownloadLog::query()->count());
     }
 
     private function createDocument(User $user, array $attributes = []): Document
