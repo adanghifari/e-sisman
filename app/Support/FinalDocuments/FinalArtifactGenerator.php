@@ -6,6 +6,8 @@ use App\Models\Approval;
 use App\Models\Document;
 use App\Models\DocumentFile;
 use App\Models\DocumentFinalArtifact;
+use App\Models\DocumentLevel;
+use App\Models\DocumentType;
 use App\Models\StatusDocument;
 use App\Models\User;
 use DomainException;
@@ -151,7 +153,11 @@ class FinalArtifactGenerator
             'officialPreparer.department',
             'files',
             'approvals.status',
+            'revisedFrom.documentLevel',
+            'revisedFrom.documentType',
         ]);
+        $coverDocumentLevel = $this->coverDocumentLevel($document);
+        $coverDocumentType = $this->coverDocumentType($document);
 
         return [
             'document' => [
@@ -163,12 +169,12 @@ class FinalArtifactGenerator
                 'revision_form_number' => $document->nomor_lembar_revisi,
                 'published_at' => $document->tanggal_terbit,
                 'approved_at' => $document->approved_at,
-                'type' => $document->documentType?->nama_types,
+                'type' => $coverDocumentType?->nama_types,
                 'level' => [
-                    'id' => $document->documentLevel?->id,
-                    'code' => $document->documentLevel?->kode,
-                    'name' => $document->documentLevel?->nama_level,
-                    'document_name' => $document->documentLevel?->nama_dokumen,
+                    'id' => $coverDocumentLevel?->id,
+                    'code' => $coverDocumentLevel?->kode,
+                    'name' => $coverDocumentLevel?->nama_level,
+                    'document_name' => $coverDocumentLevel?->nama_dokumen,
                 ],
                 'business_process' => $document->businessProcess?->nama_proses_bisnis,
                 'business_function' => $document->businessFunction?->nama_proses_fungsi,
@@ -193,6 +199,24 @@ class FinalArtifactGenerator
             ],
             'attachments' => $this->collectAttachments($document),
         ];
+    }
+
+    private function coverDocumentLevel(Document $document): ?DocumentLevel
+    {
+        if ($document->request_type === 'revision' && $document->documentLevel?->kode === 'level-4') {
+            return $document->revisedFrom?->documentLevel ?: $document->documentLevel;
+        }
+
+        return $document->documentLevel;
+    }
+
+    private function coverDocumentType(Document $document): ?DocumentType
+    {
+        if ($document->request_type === 'revision' && $document->documentLevel?->kode === 'level-4') {
+            return $document->revisedFrom?->documentType ?: $document->documentType;
+        }
+
+        return $document->documentType;
     }
 
     /**

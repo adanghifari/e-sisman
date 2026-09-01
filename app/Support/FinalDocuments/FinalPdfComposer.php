@@ -166,8 +166,7 @@ class FinalPdfComposer
         PdfCompositionMode $mode,
         int $bodyPageOffset = 0,
         ?int $totalBodyPages = null,
-    ): array
-    {
+    ): array {
         $pageCount = $pdf->setSourceFile($path);
         $pages = [];
 
@@ -856,9 +855,10 @@ class FinalPdfComposer
         $pdf->MultiCell($leftWidth, 6, 'PT. KRAKATAU BANDAR SAMUDERA', 0, 'C', false, 1, $x, $y + 24);
 
         $centerX = $x + $leftWidth;
-        $pdf->SetFont('helvetica', 'B', 12);
-        $pdf->MultiCell($centerWidth, 8, 'FORM', 0, 'C', false, 1, $centerX, $y + 5.7);
-        $pdf->MultiCell($centerWidth, 8, 'LEMBAR REVISI', 0, 'C', false, 1, $centerX, $y + $halfHeight + 5.7);
+        $pdf->SetFont('helvetica', 'B', 10);
+        $pdf->MultiCell($centerWidth, 6, 'DOKUMEN LEVEL 4', 0, 'C', false, 1, $centerX, $y + 6.7);
+        $pdf->SetFont('helvetica', 'B', 9.5);
+        $pdf->MultiCell($centerWidth, 6, 'FORM LEMBAR REVISI', 0, 'C', false, 1, $centerX, $y + $halfHeight + 6.7);
 
         $rightX = $centerX + $centerWidth;
         $pdf->SetFont('helvetica', '', 10.5);
