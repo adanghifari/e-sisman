@@ -288,6 +288,55 @@ class PdfCompositionTest extends TestCase
         $this->assertSame('5 dari 5', $result->bodyPages[4]['header_page_label']);
     }
 
+    public function test_revision_approval_moves_to_next_page_when_revision_form_content_is_too_low(): void
+    {
+        $body = $this->storeBodyPdf($this->tcpdfBinary([
+            ['text' => 'Body 1'],
+        ]));
+        Storage::disk('local')->put('documents/10/revision-form-low.pdf', $this->tcpdfBinary([
+            ['text' => 'Revision form low content', 'y' => 292],
+        ]));
+
+        $result = app(FinalPdfComposer::class)->compose(
+            $this->payload(
+                [
+                    [
+                        'number' => 1,
+                        'title' => 'Lembar Revisi',
+                        'type' => 'revision_form',
+                        'path_file' => 'documents/10/revision-form-low.pdf',
+                    ],
+                ],
+                [
+                    'revision_approvals' => [
+                        [
+                            'stage_name' => 'Pengesahan Revisi',
+                            'stage_order' => 1,
+                            'approvers' => [
+                                [
+                                    'approval_id' => 123,
+                                    'name' => 'Approver Revisi',
+                                    'position' => 'Manager Pemilik Proses',
+                                    'responded_at' => '2026-10-16 09:00:00',
+                                ],
+                            ],
+                        ],
+                    ],
+                ],
+            ),
+            $this->tcpdfBinary([['text' => 'Cover']]),
+            $this->tcpdfBinary([['text' => 'Approval']]),
+            $body,
+            PdfCompositionMode::PRESERVE,
+        );
+
+        $this->assertSame(4, $result->bodyPagesCount);
+        $this->assertFalse($result->bodyPages[2]['revision_approval_stamp']);
+        $this->assertSame('revision_approval', $result->bodyPages[3]['mode']);
+        $this->assertSame('2 dari 2', $result->bodyPages[3]['header_page_label']);
+        $this->assertSame('4 dari 4', $result->bodyPages[3]['page_label']);
+    }
+
     public function test_final_document_artifact_generator_includes_attachment_pdfs(): void
     {
         $document = $this->approvedDocument();
@@ -394,7 +443,7 @@ class PdfCompositionTest extends TestCase
     }
 
     /**
-     * @param  array<int, array{orientation?: string, size?: array{0: float|int, 1: float|int}, text: string}>  $pages
+     * @param  array<int, array{orientation?: string, size?: array{0: float|int, 1: float|int}, text: string, y?: float|int}>  $pages
      */
     private function tcpdfBinary(array $pages, bool $drawEdgeBox = false): string
     {
@@ -408,7 +457,7 @@ class PdfCompositionTest extends TestCase
         foreach ($pages as $page) {
             $pdf->AddPage($page['orientation'] ?? 'P', $page['size'] ?? [210, 297]);
             $pdf->SetFont('helvetica', '', 12);
-            $pdf->Text(10, 10, $page['text']);
+            $pdf->Text(10, $page['y'] ?? 10, $page['text']);
 
             if ($drawEdgeBox) {
                 $pdf->Rect(1, 1, $pdf->getPageWidth() - 2, $pdf->getPageHeight() - 2);
