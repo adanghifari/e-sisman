@@ -6,6 +6,8 @@ use App\Models\Approval;
 use App\Models\Document;
 use App\Models\DocumentFile;
 use App\Models\DocumentFinalArtifact;
+use App\Models\DocumentLevel;
+use App\Models\DocumentType;
 use App\Models\StatusDocument;
 use App\Models\User;
 use DomainException;
@@ -151,7 +153,12 @@ class FinalArtifactGenerator
             'officialPreparer.department',
             'files',
             'approvals.status',
+            'revisedFrom.documentLevel',
+            'revisedFrom.documentType',
         ]);
+        $coverDocumentLevel = $this->coverDocumentLevel($document);
+        $coverDocumentType = $this->coverDocumentType($document);
+        $approvalSheetDocument = $this->approvalSheetDocument($document);
 
         return [
             'document' => [
@@ -163,12 +170,12 @@ class FinalArtifactGenerator
                 'revision_form_number' => $document->nomor_lembar_revisi,
                 'published_at' => $document->tanggal_terbit,
                 'approved_at' => $document->approved_at,
-                'type' => $document->documentType?->nama_types,
+                'type' => $coverDocumentType?->nama_types,
                 'level' => [
-                    'id' => $document->documentLevel?->id,
-                    'code' => $document->documentLevel?->kode,
-                    'name' => $document->documentLevel?->nama_level,
-                    'document_name' => $document->documentLevel?->nama_dokumen,
+                    'id' => $coverDocumentLevel?->id,
+                    'code' => $coverDocumentLevel?->kode,
+                    'name' => $coverDocumentLevel?->nama_level,
+                    'document_name' => $coverDocumentLevel?->nama_dokumen,
                 ],
                 'business_process' => $document->businessProcess?->nama_proses_bisnis,
                 'business_function' => $document->businessFunction?->nama_proses_fungsi,
@@ -182,7 +189,10 @@ class FinalArtifactGenerator
                     ->all(),
             ],
             'preparers' => $this->collectPreparers($document),
-            'approvals' => $this->collectApprovals($document),
+            'approvals' => $this->collectApprovals($approvalSheetDocument),
+            'revision_approvals' => $document->request_type === 'revision'
+                ? $this->collectApprovals($document)
+                : [],
             'source' => [
                 'id' => $sourceFile->id,
                 'type' => $sourceFile->type_file,
@@ -193,6 +203,39 @@ class FinalArtifactGenerator
             ],
             'attachments' => $this->collectAttachments($document),
         ];
+    }
+
+    private function coverDocumentLevel(Document $document): ?DocumentLevel
+    {
+        if ($document->request_type === 'revision' && $document->documentLevel?->kode === 'level-4') {
+            return $document->revisedFrom?->documentLevel ?: $document->documentLevel;
+        }
+
+        return $document->documentLevel;
+    }
+
+    private function coverDocumentType(Document $document): ?DocumentType
+    {
+        if ($document->request_type === 'revision' && $document->documentLevel?->kode === 'level-4') {
+            return $document->revisedFrom?->documentType ?: $document->documentType;
+        }
+
+        return $document->documentType;
+    }
+
+    private function approvalSheetDocument(Document $document): Document
+    {
+        if ($document->request_type !== 'revision' || $document->revised_from === null) {
+            return $document;
+        }
+
+        return Document::query()
+            ->whereKey($document->revisionRootId())
+            ->with([
+                'documentLevel.approvalFlows.stages',
+                'approvals.status',
+            ])
+            ->firstOrFail();
     }
 
     /**
@@ -267,10 +310,12 @@ class FinalArtifactGenerator
             ->filter(fn (Approval $approval): bool => $approval->responded_at !== null
                 && ! $approval->shouldHideAsOfficialPreparerDisplay($document))
             ->map(fn (Approval $approval): array => [
+                'id' => $approval->id,
                 'stage_name' => $approval->stage_name_snapshot ?? $approval->stages,
                 'stage_order' => $approval->stage_order_snapshot,
                 'sort_order' => $approval->stage_order_snapshot ?? $this->stageOrderFromCurrentFlow($document, $approval),
                 'approver' => [
+                    'approval_id' => $approval->id,
                     'name' => $approval->approver_name_snapshot,
                     'position' => $approval->approver_position_snapshot,
                     'department' => $approval->approver_department_snapshot,
@@ -285,7 +330,10 @@ class FinalArtifactGenerator
                     'stage_name' => $firstApproval['stage_name'],
                     'stage_order' => $firstApproval['stage_order'],
                     'approvers' => $stageApprovals
-                        ->map(fn (array $approval): array => $approval['approver'])
+                        ->map(fn (array $approval): array => [
+                            ...$approval['approver'],
+                            'approval_id' => $approval['id'],
+                        ])
                         ->values()
                         ->all(),
                     'sort_order' => $firstApproval['sort_order'],

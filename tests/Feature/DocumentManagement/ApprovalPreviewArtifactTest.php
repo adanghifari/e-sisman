@@ -260,6 +260,26 @@ class ApprovalPreviewArtifactTest extends TestCase
         $this->assertSame('Matriks Komunikasi', $payload['attachments'][1]['title']);
     }
 
+    public function test_revision_approval_preview_cover_uses_source_document_level_and_type(): void
+    {
+        [$source, $revision] = $this->revisionFixture();
+        $formType = DocumentType::query()->firstOrCreate(['nama_types' => 'Form'], ['is_active' => true]);
+        $revision->update(['m_document_types_id' => $formType->id]);
+        $this->storeDocumentFile($revision, 'revision_content', $this->pdfBinary(['Revision body']));
+
+        $payload = app(FinalArtifactGenerator::class)
+            ->prepareApprovalPreview($revision)
+            ->payload;
+        $html = app(CoverPdfRenderer::class)->renderHtml($payload);
+
+        $this->assertSame($source->documentLevel->id, $payload['document']['level']['id']);
+        $this->assertSame('level-2', $payload['document']['level']['code']);
+        $this->assertSame('Prosedur', $payload['document']['type']);
+        $this->assertStringContainsString('PROSEDUR', $html);
+        $this->assertStringContainsString('LEVEL 2', $html);
+        $this->assertStringNotContainsString('LEVEL 4', $html);
+    }
+
     public function test_imported_existing_revision_submit_generates_approval_preview(): void
     {
         [$user, $source] = $this->importedExistingFixture();

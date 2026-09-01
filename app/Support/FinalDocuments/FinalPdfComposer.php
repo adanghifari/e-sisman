@@ -2,10 +2,14 @@
 
 namespace App\Support\FinalDocuments;
 
+use App\Support\DigitalSignatures\SignatureVerificationUrl;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use setasign\Fpdi\PdfParser\PdfParser;
 use setasign\Fpdi\PdfParser\PdfParserException;
+use setasign\Fpdi\PdfParser\StreamReader;
+use setasign\Fpdi\PdfReader\PdfReader;
 use setasign\Fpdi\Tcpdf\Fpdi;
 use Symfony\Component\Process\Process;
 use Throwable;
@@ -25,6 +29,10 @@ class FinalPdfComposer
     private const BODY_CONTENT_TOP = 45.0;
 
     private const BODY_CONTENT_BOTTOM = 14.0;
+
+    private const REVISION_APPROVAL_FALLBACK_TOP = 92.0;
+
+    private const REVISION_APPROVAL_GAP = 8.0;
 
     public function __construct(
         private readonly PdfPageGeometry $geometry = new PdfPageGeometry,
@@ -64,7 +72,11 @@ class FinalPdfComposer
                 : ['count' => 0, 'pages' => []];
             $bodyPageCount = $this->countPdfPages($bodyPdfPath);
             $attachments = $this->attachmentPayloads($payload, $tempFiles);
-            $attachmentPageCount = collect($attachments)->sum(fn (array $attachment): int => (int) $attachment['page_count']);
+            $attachments = $this->resolveRevisionApprovalPageBreaks($attachments, $payload);
+            $attachmentPageCount = collect($attachments)->sum(
+                fn (array $attachment): int => (int) $attachment['page_count']
+                    + (($attachment['revision_approval_page_break'] ?? false) ? 1 : 0)
+            );
             $attachmentListPageCount = $attachments === [] ? 0 : $this->attachmentListPageCount($attachments);
             $totalBodyPages = $bodyPageCount + $attachmentListPageCount + $attachmentPageCount;
 
@@ -166,8 +178,7 @@ class FinalPdfComposer
         PdfCompositionMode $mode,
         int $bodyPageOffset = 0,
         ?int $totalBodyPages = null,
-    ): array
-    {
+    ): array {
         $pageCount = $pdf->setSourceFile($path);
         $pages = [];
 
@@ -307,11 +318,15 @@ class FinalPdfComposer
 
         foreach ($attachments as $attachment) {
             $pageCount = (int) $attachment['page_count'];
+            $effectivePageCount = $pageCount + (($attachment['revision_approval_page_break'] ?? false) ? 1 : 0);
 
             if (! ($attachment['mergeable'] ?? false)) {
                 for ($pageNumber = 1; $pageNumber <= $pageCount; $pageNumber++) {
                     $appendedPages++;
                     $header = $this->attachmentHeaderType($attachment);
+                    $stampsRevisionApprovals = $header === 'revision_form'
+                        && $pageNumber === $pageCount
+                        && $this->revisionApprovers($payload) !== [];
                     $this->appendAttachmentFallbackPage(
                         $pdf,
                         $payload,
@@ -334,8 +349,9 @@ class FinalPdfComposer
                             $bodyPageOffset + $appendedPages,
                             $totalBodyPages,
                             $pageNumber,
-                            $pageCount,
+                            $effectivePageCount,
                         ),
+                        'revision_approval_stamp' => $stampsRevisionApprovals,
                         'attachment_number' => $attachment['number'] ?? null,
                         'attachment_title' => $attachment['title'] ?? null,
                         'placement' => null,
@@ -367,11 +383,22 @@ class FinalPdfComposer
                     $pageWidth,
                     $pageHeight,
                     $pageNumber,
-                    $pageCount,
+                    $effectivePageCount,
                 );
                 $this->stampAttachmentTitle($pdf, $attachment, $pageWidth);
 
-                $availableHeight = $pageHeight - self::BODY_CONTENT_TOP - self::BODY_CONTENT_BOTTOM - 10;
+                $stampsRevisionApprovals = $this->attachmentHeaderType($attachment) === 'revision_form'
+                    && $pageNumber === $pageCount
+                    && ! ($attachment['revision_approval_page_break'] ?? false)
+                    && $this->revisionApprovers($payload) !== [];
+                $revisionApprovalHeight = $stampsRevisionApprovals
+                    ? $this->revisionApprovalSectionHeight($payload)
+                    : 0.0;
+                $availableHeight = $pageHeight
+                    - self::BODY_CONTENT_TOP
+                    - self::BODY_CONTENT_BOTTOM
+                    - 10
+                    - $revisionApprovalHeight;
                 $placement = $this->geometry->fitToSafeArea(
                     $pageWidth,
                     $pageHeight,
@@ -381,7 +408,10 @@ class FinalPdfComposer
                         left: self::HORIZONTAL_MARGIN,
                         top: self::BODY_CONTENT_TOP + 10,
                         right: self::HORIZONTAL_MARGIN,
-                        bottom: max(self::BODY_CONTENT_BOTTOM, $pageHeight - (self::BODY_CONTENT_TOP + 10 + $availableHeight)),
+                        bottom: max(
+                            self::BODY_CONTENT_BOTTOM,
+                            $pageHeight - (self::BODY_CONTENT_TOP + 10 + $availableHeight),
+                        ),
                     ),
                 );
 
@@ -392,6 +422,17 @@ class FinalPdfComposer
                     $placement->width,
                     $placement->height,
                 );
+
+                if ($stampsRevisionApprovals) {
+                    $this->stampRevisionApprovalSection(
+                        $pdf,
+                        $payload,
+                        $pageWidth,
+                        $pageHeight,
+                        $revisionApprovalHeight,
+                        $attachment['revision_approval_y'] ?? null,
+                    );
+                }
 
                 $pages[] = [
                     'source_page' => $pageNumber,
@@ -405,8 +446,9 @@ class FinalPdfComposer
                         $bodyPageNumber,
                         $totalBodyPages,
                         $pageNumber,
-                        $pageCount,
+                        $effectivePageCount,
                     ),
+                    'revision_approval_stamp' => $stampsRevisionApprovals,
                     'attachment_number' => $attachment['number'] ?? null,
                     'attachment_title' => $attachment['title'] ?? null,
                     'placement' => [
@@ -419,6 +461,58 @@ class FinalPdfComposer
                     'page_label' => "{$bodyPageNumber} dari {$totalBodyPages}",
                 ];
                 $appendedPages++;
+
+                if (
+                    $pageNumber === $pageCount
+                    && ($attachment['revision_approval_page_break'] ?? false)
+                    && $this->revisionApprovers($payload) !== []
+                ) {
+                    $approvalBodyPageNumber = $bodyPageOffset + $appendedPages + 1;
+
+                    $pdf->AddPage($orientation, [$pageWidth, $pageHeight]);
+                    $header = $this->stampAttachmentHeaderFooter(
+                        $pdf,
+                        $payload,
+                        $attachment,
+                        $approvalBodyPageNumber,
+                        $totalBodyPages,
+                        $pageWidth,
+                        $pageHeight,
+                        $pageCount + 1,
+                        $effectivePageCount,
+                    );
+                    $this->stampAttachmentTitle($pdf, $attachment, $pageWidth);
+                    $this->stampRevisionApprovalSection(
+                        $pdf,
+                        $payload,
+                        $pageWidth,
+                        $pageHeight,
+                        $this->revisionApprovalSectionHeight($payload),
+                        self::REVISION_APPROVAL_FALLBACK_TOP,
+                    );
+
+                    $pages[] = [
+                        'source_page' => null,
+                        'page_width' => $pageWidth,
+                        'page_height' => $pageHeight,
+                        'orientation' => $orientation,
+                        'mode' => 'revision_approval',
+                        'header' => $header,
+                        'header_page_label' => $this->attachmentHeaderPageLabel(
+                            $attachment,
+                            $approvalBodyPageNumber,
+                            $totalBodyPages,
+                            $pageCount + 1,
+                            $effectivePageCount,
+                        ),
+                        'revision_approval_stamp' => true,
+                        'attachment_number' => $attachment['number'] ?? null,
+                        'attachment_title' => $attachment['title'] ?? null,
+                        'placement' => null,
+                        'page_label' => "{$approvalBodyPageNumber} dari {$totalBodyPages}",
+                    ];
+                    $appendedPages++;
+                }
             }
         }
 
@@ -471,6 +565,213 @@ class FinalPdfComposer
             $x,
             $y,
         );
+
+        if (
+            $this->attachmentHeaderType($attachment) === 'revision_form'
+            && $attachmentPageNumber === $attachmentPageCount
+            && $this->revisionApprovers($payload) !== []
+        ) {
+            $this->stampRevisionApprovalSection(
+                $pdf,
+                $payload,
+                $pageWidth,
+                $pageHeight,
+                $this->revisionApprovalSectionHeight($payload),
+            );
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<int, array<string, mixed>>
+     */
+    private function resolveRevisionApprovalPageBreaks(array $attachments, array $payload): array
+    {
+        if ($this->revisionApprovers($payload) === []) {
+            return $attachments;
+        }
+
+        return collect($attachments)
+            ->map(function (array $attachment) use ($payload): array {
+                if (
+                    $this->attachmentHeaderType($attachment) !== 'revision_form'
+                    || ! ($attachment['mergeable'] ?? false)
+                    || empty($attachment['resolved_path'])
+                    || (int) ($attachment['page_count'] ?? 0) < 1
+                ) {
+                    return $attachment;
+                }
+
+                try {
+                    $path = (string) $attachment['resolved_path'];
+                    $pageNumber = (int) $attachment['page_count'];
+                    $scanner = $this->makePdf();
+                    $scanner->setSourceFile($path);
+                    $template = $scanner->importPage($pageNumber);
+                    $size = $scanner->getTemplateSize($template);
+                    $pageWidth = (float) $size['width'];
+                    $pageHeight = (float) $size['height'];
+                    $sectionHeight = $this->revisionApprovalSectionHeight($payload);
+                    $availableHeight = $pageHeight
+                        - self::BODY_CONTENT_TOP
+                        - self::BODY_CONTENT_BOTTOM
+                        - 10
+                        - $sectionHeight;
+                    $placement = $this->geometry->fitToSafeArea(
+                        $pageWidth,
+                        $pageHeight,
+                        $pageWidth,
+                        $pageHeight,
+                        new PdfSafeArea(
+                            left: self::HORIZONTAL_MARGIN,
+                            top: self::BODY_CONTENT_TOP + 10,
+                            right: self::HORIZONTAL_MARGIN,
+                            bottom: max(
+                                self::BODY_CONTENT_BOTTOM,
+                                $pageHeight - (self::BODY_CONTENT_TOP + 10 + $availableHeight),
+                            ),
+                        ),
+                    );
+                    $contentBottomY = $this->sourcePageContentBottomY($path, $pageNumber, $pageHeight);
+                    $approvalY = $contentBottomY === null
+                        ? self::REVISION_APPROVAL_FALLBACK_TOP
+                        : $this->revisionApprovalSectionY($pageHeight, $sectionHeight, $placement, $contentBottomY);
+
+                    $attachment['revision_approval_y'] = $approvalY;
+                    $attachment['revision_approval_page_break'] = $approvalY + $sectionHeight > $pageHeight - self::BODY_CONTENT_BOTTOM;
+                } catch (Throwable) {
+                    $attachment['revision_approval_y'] = self::REVISION_APPROVAL_FALLBACK_TOP;
+                    $attachment['revision_approval_page_break'] = false;
+                }
+
+                return $attachment;
+            })
+            ->values()
+            ->all();
+    }
+
+    private function sourcePageContentBottomY(string $path, int $pageNumber, float $pageHeight): ?float
+    {
+        $reader = new PdfReader(new PdfParser(StreamReader::createByFile($path)));
+        $page = $reader->getPage($pageNumber);
+        $size = $page->getWidthAndHeight();
+
+        if ($size === false) {
+            return null;
+        }
+
+        $rawHeight = (float) $size[1];
+        $minY = $this->contentStreamMinimumY($page->getContentStream(), (float) $size[0], $rawHeight);
+
+        if ($minY === null) {
+            return null;
+        }
+
+        return ($rawHeight - $minY) * ($pageHeight / $rawHeight);
+    }
+
+    private function contentStreamMinimumY(string $stream, float $pageWidth, float $pageHeight): ?float
+    {
+        preg_match_all(
+            '/\((?:\\\\.|[^\\\\()])*\)|\[[^\]]*\]|\/[^\s\[\]\(\)<>\/%]+|[-+]?(?:\d*\.\d+|\d+)(?:[eE][-+]?\d+)?|[A-Za-z\*\'"]+/',
+            $stream,
+            $matches,
+        );
+
+        $ctm = [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+        $stack = [];
+        $operands = [];
+        $fontSize = 10.0;
+        $textX = 0.0;
+        $textY = 0.0;
+        $minY = null;
+
+        $record = function (float $x, float $y) use (&$minY, &$ctm, $pageHeight): void {
+            [, $mappedY] = $this->transformPdfPoint($ctm, $x, $y);
+
+            if ($mappedY < -5.0 || $mappedY > $pageHeight + 5.0) {
+                return;
+            }
+
+            $mappedY = max(0.0, min($pageHeight, $mappedY));
+            $minY = $minY === null ? $mappedY : min($minY, $mappedY);
+        };
+
+        foreach ($matches[0] as $token) {
+            if (is_numeric($token)) {
+                $operands[] = (float) $token;
+
+                continue;
+            }
+
+            if (str_starts_with($token, '/') || str_starts_with($token, '(') || str_starts_with($token, '[')) {
+                continue;
+            }
+
+            if ($token === 'q') {
+                $stack[] = $ctm;
+            } elseif ($token === 'Q') {
+                $ctm = array_pop($stack) ?? [1.0, 0.0, 0.0, 1.0, 0.0, 0.0];
+            } elseif ($token === 'cm' && count($operands) >= 6) {
+                $matrix = array_slice($operands, -6);
+                $ctm = $this->multiplyPdfMatrix($ctm, $matrix);
+            } elseif ($token === 'Tf' && $operands !== []) {
+                $fontSize = max(1.0, (float) end($operands));
+            } elseif ($token === 'Tm' && count($operands) >= 6) {
+                $matrix = array_slice($operands, -6);
+                $textX = (float) $matrix[4];
+                $textY = (float) $matrix[5];
+            } elseif (($token === 'Td' || $token === 'TD') && count($operands) >= 2) {
+                $textX += (float) $operands[count($operands) - 2];
+                $textY += (float) $operands[count($operands) - 1];
+            } elseif (in_array($token, ['Tj', 'TJ', "'", '"'], true)) {
+                $record($textX, $textY - ($fontSize * 0.35));
+            } elseif (in_array($token, ['m', 'l'], true) && count($operands) >= 2) {
+                $record((float) $operands[count($operands) - 2], (float) $operands[count($operands) - 1]);
+            } elseif ($token === 're' && count($operands) >= 4) {
+                [$x, $y, $width, $height] = array_slice($operands, -4);
+
+                if (abs($width) < $pageWidth * 0.95 || abs($height) < $pageHeight * 0.95) {
+                    $record((float) $x, (float) $y);
+                    $record((float) $x, (float) $y + (float) $height);
+                }
+            } elseif (in_array($token, ['c', 'v', 'y'], true) && count($operands) >= 2) {
+                $record((float) $operands[count($operands) - 2], (float) $operands[count($operands) - 1]);
+            }
+
+            $operands = [];
+        }
+
+        return $minY;
+    }
+
+    /**
+     * @param  array<int, float>  $left
+     * @param  array<int, float>  $right
+     * @return array<int, float>
+     */
+    private function multiplyPdfMatrix(array $left, array $right): array
+    {
+        return [
+            ($left[0] * $right[0]) + ($left[2] * $right[1]),
+            ($left[1] * $right[0]) + ($left[3] * $right[1]),
+            ($left[0] * $right[2]) + ($left[2] * $right[3]),
+            ($left[1] * $right[2]) + ($left[3] * $right[3]),
+            ($left[0] * $right[4]) + ($left[2] * $right[5]) + $left[4],
+            ($left[1] * $right[4]) + ($left[3] * $right[5]) + $left[5],
+        ];
+    }
+
+    /**
+     * @param  array<int, float>  $matrix
+     * @return array{0: float, 1: float}
+     */
+    private function transformPdfPoint(array $matrix, float $x, float $y): array
+    {
+        return [
+            ($matrix[0] * $x) + ($matrix[2] * $y) + $matrix[4],
+            ($matrix[1] * $x) + ($matrix[3] * $y) + $matrix[5],
+        ];
     }
 
     /**
@@ -856,9 +1157,10 @@ class FinalPdfComposer
         $pdf->MultiCell($leftWidth, 6, 'PT. KRAKATAU BANDAR SAMUDERA', 0, 'C', false, 1, $x, $y + 24);
 
         $centerX = $x + $leftWidth;
-        $pdf->SetFont('helvetica', 'B', 12);
-        $pdf->MultiCell($centerWidth, 8, 'FORM', 0, 'C', false, 1, $centerX, $y + 5.7);
-        $pdf->MultiCell($centerWidth, 8, 'LEMBAR REVISI', 0, 'C', false, 1, $centerX, $y + $halfHeight + 5.7);
+        $pdf->SetFont('helvetica', 'B', 10);
+        $pdf->MultiCell($centerWidth, 6, 'DOKUMEN LEVEL 4', 0, 'C', false, 1, $centerX, $y + 6.7);
+        $pdf->SetFont('helvetica', 'B', 9.5);
+        $pdf->MultiCell($centerWidth, 6, 'FORM LEMBAR REVISI', 0, 'C', false, 1, $centerX, $y + $halfHeight + 6.7);
 
         $rightX = $centerX + $centerWidth;
         $pdf->SetFont('helvetica', '', 10.5);
@@ -866,6 +1168,130 @@ class FinalPdfComposer
         $pdf->MultiCell($rightWidth, 7, 'Halaman  :  '.$currentPage.' dari '.$totalPages, 0, 'L', false, 1, $rightX + 3, $y + $halfHeight + 5.8);
 
         $this->stampFooter($pdf, $pageWidth, $pageHeight);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function stampRevisionApprovalSection(
+        Fpdi $pdf,
+        array $payload,
+        float $pageWidth,
+        float $pageHeight,
+        float $sectionHeight,
+        ?float $topY = null,
+    ): void {
+        $approvers = $this->revisionApprovers($payload);
+
+        if ($approvers === []) {
+            return;
+        }
+
+        $x = self::HORIZONTAL_MARGIN;
+        $width = $pageWidth - (self::HORIZONTAL_MARGIN * 2);
+        $y = $topY ?? $this->revisionApprovalSectionY($pageHeight, $sectionHeight);
+        $headerHeight = 7.0;
+        $columns = 3;
+        $cellWidth = $width / $columns;
+        $cellHeight = 31.0;
+
+        $pdf->SetFillColor(238, 238, 238);
+        $pdf->SetTextColor(0, 0, 0);
+        $pdf->SetFont('helvetica', 'B', 9);
+        $pdf->MultiCell($width, $headerHeight, 'PENGESAHAN', 0, 'C', true, 1, $x, $y);
+
+        $signatureUrl = app(SignatureVerificationUrl::class);
+        $contentY = $y + $headerHeight + 5;
+
+        foreach ($approvers as $index => $approver) {
+            $column = $index % $columns;
+            $row = intdiv($index, $columns);
+            $cellX = $x + ($column * $cellWidth);
+            $cellY = $contentY + ($row * $cellHeight);
+            $centerX = $cellX + ($cellWidth / 2);
+            $qrSize = 18.0;
+            $approvalId = $approver['approval_id'] ?? null;
+
+            if ($approvalId !== null) {
+                $pdf->write2DBarcode(
+                    $signatureUrl->forApproval((int) $approvalId),
+                    'QRCODE,H',
+                    $centerX - ($qrSize / 2),
+                    $cellY,
+                    $qrSize,
+                    $qrSize,
+                    [],
+                    'N',
+                );
+            }
+
+            $name = $this->value($approver['name'] ?? null);
+            $position = $this->value($approver['position'] ?? null);
+            $date = $this->formatRevisionApprovalDate($approver['responded_at'] ?? null);
+            $textY = $cellY + $qrSize + 1.5;
+
+            $pdf->SetTextColor(0, 0, 0);
+            $pdf->SetFont('helvetica', 'B', 8);
+            $pdf->MultiCell($cellWidth, 4, $name, 0, 'C', false, 1, $cellX, $textY);
+            $pdf->SetFont('helvetica', '', 8);
+            $pdf->MultiCell($cellWidth, 4, $position, 0, 'C', false, 1, $cellX, $textY + 4.5);
+            $pdf->MultiCell($cellWidth, 4, 'Tanggal: '.$date, 0, 'C', false, 1, $cellX, $textY + 9);
+        }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function revisionApprovalSectionHeight(array $payload): float
+    {
+        $rows = max(1, (int) ceil(count($this->revisionApprovers($payload)) / 3));
+
+        return 12.0 + ($rows * 31.0);
+    }
+
+    private function revisionApprovalSectionY(
+        float $pageHeight,
+        float $sectionHeight,
+        ?PdfPagePlacement $placement = null,
+        ?float $sourceContentBottomY = null,
+    ): float {
+        $bottomY = $pageHeight - self::BODY_CONTENT_BOTTOM - $sectionHeight;
+        $minimumY = self::HEADER_MARGIN_TOP + self::HEADER_HEIGHT + 12.0;
+        $preferredY = $sourceContentBottomY !== null && $placement !== null
+            ? $placement->y + ($sourceContentBottomY * $placement->scale) + self::REVISION_APPROVAL_GAP
+            : self::REVISION_APPROVAL_FALLBACK_TOP;
+
+        if ($bottomY <= $minimumY) {
+            return $bottomY;
+        }
+
+        return max($minimumY, $preferredY);
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     * @return array<int, array<string, mixed>>
+     */
+    private function revisionApprovers(array $payload): array
+    {
+        return collect($payload['revision_approvals'] ?? [])
+            ->flatMap(fn (array $stage): array => $stage['approvers'] ?? [])
+            ->filter(fn (array $approver): bool => ($approver['approval_id'] ?? null) !== null)
+            ->values()
+            ->all();
+    }
+
+    private function formatRevisionApprovalDate(mixed $value): string
+    {
+        if ($value === null || $value === '') {
+            return '-';
+        }
+
+        try {
+            return Carbon::parse($value)->format('d-m-Y');
+        } catch (Throwable) {
+            return (string) $value;
+        }
     }
 
     private function stampHeaderLogo(

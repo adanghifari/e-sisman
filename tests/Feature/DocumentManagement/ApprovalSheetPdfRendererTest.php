@@ -72,6 +72,29 @@ class ApprovalSheetPdfRendererTest extends TestCase
         }
     }
 
+    public function test_approval_sheet_renders_verification_qr_for_approver_with_approval_id(): void
+    {
+        $html = app(ApprovalSheetPdfRenderer::class)->renderHtml($this->payload([
+            [
+                'stage_name' => 'Disahkan Oleh',
+                'stage_order' => 1,
+                'approvers' => [
+                    [
+                        'approval_id' => 123,
+                        'name' => 'QR Approver',
+                        'position' => 'Senior Manager',
+                        'department' => 'SMR',
+                        'responded_at' => now(),
+                    ],
+                ],
+            ],
+        ]));
+
+        $this->assertStringContainsString('data:image/svg+xml;base64,', $html);
+        $this->assertStringContainsString('QR verifikasi tanda tangan digital', $html);
+        $this->assertStringContainsString('QR Approver', $html);
+    }
+
     public function test_renderer_uses_payload_snapshot_values_not_current_profile_values(): void
     {
         $html = app(ApprovalSheetPdfRenderer::class)->renderHtml($this->payload([
@@ -124,6 +147,7 @@ class ApprovalSheetPdfRendererTest extends TestCase
                 'stage_order' => 1,
                 'approvers' => [
                     [
+                        'approval_id' => 456,
                         'name' => 'Single Approver',
                         'position' => 'Management System Specialist',
                         'department' => null,

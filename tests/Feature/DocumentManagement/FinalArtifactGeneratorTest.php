@@ -131,19 +131,19 @@ class FinalArtifactGeneratorTest extends TestCase
         $firstApprover = User::factory()->create();
         $secondApprover = User::factory()->create();
         $thirdApprover = User::factory()->create();
-        $this->createApproval($document, $thirdApprover, [
+        $thirdApproval = $this->createApproval($document, $thirdApprover, [
             'stages' => $lateStage->display_label,
             'stage_name_snapshot' => 'Disahkan Khusus',
             'stage_order_snapshot' => 2,
             'approver_name_snapshot' => 'Approver Stage Dua',
         ]);
-        $this->createApproval($document, $firstApprover, [
+        $firstApproval = $this->createApproval($document, $firstApprover, [
             'stages' => $earlyStage->display_label,
             'stage_name_snapshot' => 'Direview Teknis',
             'stage_order_snapshot' => 1,
             'approver_name_snapshot' => 'Approver Stage Satu A',
         ]);
-        $this->createApproval($document, $secondApprover, [
+        $secondApproval = $this->createApproval($document, $secondApprover, [
             'stages' => $earlyStage->display_label,
             'stage_name_snapshot' => 'Direview Teknis',
             'stage_order_snapshot' => 1,
@@ -159,9 +159,12 @@ class FinalArtifactGeneratorTest extends TestCase
         $this->assertSame('Direview Teknis', $approvals[0]['stage_name']);
         $this->assertSame(1, $approvals[0]['stage_order']);
         $this->assertCount(2, $approvals[0]['approvers']);
+        $this->assertSame($firstApproval->id, $approvals[0]['approvers'][0]['approval_id']);
         $this->assertSame('Approver Stage Satu A', $approvals[0]['approvers'][0]['name']);
+        $this->assertSame($secondApproval->id, $approvals[0]['approvers'][1]['approval_id']);
         $this->assertSame('Approver Stage Satu B', $approvals[0]['approvers'][1]['name']);
         $this->assertSame('Disahkan Khusus', $approvals[1]['stage_name']);
+        $this->assertSame($thirdApproval->id, $approvals[1]['approvers'][0]['approval_id']);
     }
 
     public function test_approval_payload_hides_official_preparer_signature_stages(): void
@@ -345,6 +348,43 @@ class FinalArtifactGeneratorTest extends TestCase
         $this->assertNull($approvalPayload['approvers'][0]['name']);
         $this->assertNull($approvalPayload['approvers'][0]['position']);
         $this->assertNull($approvalPayload['approvers'][0]['department']);
+    }
+
+    public function test_revision_final_payload_uses_root_approvals_for_main_approval_sheet(): void
+    {
+        $root = $this->createDocument([
+            'nama_dokumen' => 'Prosedur Root',
+            'nomor_dokumen' => 'PS-SMR-ROOT',
+        ]);
+        $revision = $this->createDocument([
+            'm_document_level_id' => $this->documentLevel('level-4', 'Level IV', 'Form')->id,
+            'document_type_name' => 'Form',
+            'revised_from' => $root->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Prosedur Root Revisi',
+            'nomor_dokumen' => 'PS-SMR-ROOT',
+            'nomor_revisi' => 1,
+        ]);
+        $rootApproval = $this->createApproval($root, User::factory()->create(), [
+            'stage_name_snapshot' => 'Pengesahan Utama',
+            'stage_order_snapshot' => 1,
+            'approver_name_snapshot' => 'Approval Root',
+        ]);
+        $revisionApproval = $this->createApproval($revision, User::factory()->create(), [
+            'stage_name_snapshot' => 'Pengesahan Revisi',
+            'stage_order_snapshot' => 1,
+            'approver_name_snapshot' => 'Approval Revisi',
+        ]);
+        $this->createDocumentFile($revision, 'revision_content');
+
+        $payload = app(FinalArtifactGenerator::class)
+            ->prepare($revision)
+            ->payload;
+
+        $this->assertSame($rootApproval->id, $payload['approvals'][0]['approvers'][0]['approval_id']);
+        $this->assertSame('Approval Root', $payload['approvals'][0]['approvers'][0]['name']);
+        $this->assertSame($revisionApproval->id, $payload['revision_approvals'][0]['approvers'][0]['approval_id']);
+        $this->assertSame('Approval Revisi', $payload['revision_approvals'][0]['approvers'][0]['name']);
     }
 
     private function createDocument(array $attributes = [], string $statusName = StatusDocument::APPROVED): Document

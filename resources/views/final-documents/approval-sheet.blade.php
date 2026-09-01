@@ -4,6 +4,20 @@
     $documentNumber = trim((string) ($document['number'] ?? ''));
     $revisionLabel = trim((string) ($document['revision_label'] ?? $document['revision'] ?? ''));
     $publishedAt = $document['published_at'] ?? null;
+    $qrWriter = new \BaconQrCode\Writer(new \BaconQrCode\Renderer\ImageRenderer(
+        new \BaconQrCode\Renderer\RendererStyle\RendererStyle(96, 0),
+        new \BaconQrCode\Renderer\Image\SvgImageBackEnd
+    ));
+    $signatureUrl = app(\App\Support\DigitalSignatures\SignatureVerificationUrl::class);
+    $qrDataUri = static function (?int $approvalId) use ($qrWriter, $signatureUrl): ?string {
+        if ($approvalId === null) {
+            return null;
+        }
+
+        $svg = $qrWriter->writeString($signatureUrl->forApproval($approvalId));
+
+        return 'data:image/svg+xml;base64,'.base64_encode($svg);
+    };
     $formatDate = static function ($value): string {
         if (blank($value)) {
             return '-';
@@ -107,8 +121,8 @@
         }
 
         .stage {
-            margin: 0 auto 18pt;
-            max-width: 145mm;
+            margin: 0 auto 10pt;
+            max-width: 130mm;
         }
 
         .stage.keep-together {
@@ -116,20 +130,15 @@
             break-inside: avoid;
         }
 
-        .signature-line {
-            border-top: 0.7pt solid #111111;
-            height: 0;
-            margin: 0 0 0;
-        }
-
         .stage-label {
-            padding: 3pt 0 0 4mm;
-            font-size: 10.5pt;
+            background: #eeeeee;
+            padding: 2pt 0 2pt 4mm;
+            font-size: 9.5pt;
             text-align: left;
         }
 
         .approvers {
-            padding: 0 0 5pt 34mm;
+            padding: 10pt 0 0;
         }
 
         .approver-grid {
@@ -140,7 +149,7 @@
 
         .approver-cell {
             width: 50%;
-            padding: 48pt 4mm 0;
+            padding: 0 5mm 10pt;
             text-align: center;
             vertical-align: top;
             page-break-inside: avoid;
@@ -157,16 +166,29 @@
         }
 
         .approver-name {
-            display: inline-block;
-            min-width: 52mm;
-            border-bottom: 0.7pt solid #111111;
+            margin: 1pt auto 0;
+            font-size: 9.5pt;
             font-weight: 700;
             line-height: 1.25;
         }
 
+        .approver-signature-line {
+            width: 42mm;
+            max-width: 100%;
+            border-top: 0.7pt solid #777777;
+            height: 0;
+            margin: 2pt auto 3pt;
+        }
+
+        .signature-qr {
+            width: 16mm;
+            height: 16mm;
+            margin: 0 auto 2pt;
+        }
+
         .approver-position {
-            margin-top: 1pt;
-            font-size: 10pt;
+            margin-top: 0;
+            font-size: 9pt;
             line-height: 1.25;
         }
 
@@ -239,7 +261,6 @@
                 @endphp
 
                 <div @class(['stage', 'keep-together' => $approvers->count() <= 4])>
-                    <div class="signature-line"></div>
                     <div class="stage-label">
                         {{ $stage['stage_name'] ?? '-' }}
                     </div>
@@ -252,7 +273,15 @@
                                     <tr>
                                         @foreach ($row as $approver)
                                             <td @class(['approver-cell', 'single' => $approvers->count() === 1])>
+                                                @php
+                                                    $qr = $qrDataUri($approver['approval_id'] ?? null);
+                                                @endphp
+
+                                                @if ($qr !== null)
+                                                    <img class="signature-qr" src="{{ $qr }}" alt="QR verifikasi tanda tangan digital">
+                                                @endif
                                                 <div class="approver-name">{{ $approver['name'] ?? '-' }}</div>
+                                                <div class="approver-signature-line"></div>
                                                 <div class="approver-position">{{ $approver['position'] ?? '-' }}</div>
                                             </td>
                                         @endforeach
@@ -268,7 +297,6 @@
                 </div>
             @empty
                 <div class="stage keep-together">
-                    <div class="signature-line"></div>
                     <div class="stage-label">-</div>
                     <div class="approvers">
                         <div class="empty-approver">-</div>

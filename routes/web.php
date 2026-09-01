@@ -1,6 +1,7 @@
 <?php
 
 use App\Http\Controllers\Dashboard\DashboardController;
+use App\Http\Controllers\DigitalSignatureVerificationController;
 use App\Http\Controllers\DocumentManagement\DocumentApprovalController;
 use App\Http\Controllers\DocumentManagement\DocumentController;
 use App\Http\Controllers\DocumentManagement\DocumentInboxController;
@@ -22,6 +23,8 @@ use App\Livewire\MasterData\DocumentType\Index as DocumentTypeIndex;
 use Illuminate\Support\Facades\Route;
 
 Route::view('/', 'welcome')->name('home');
+Route::get('ttd-digital/{approval}', DigitalSignatureVerificationController::class)
+    ->name('digital-signatures.verify');
 
 Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(function () {
     Route::get('dashboard', DashboardController::class)->name('dashboard');
