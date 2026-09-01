@@ -285,6 +285,36 @@ class DocumentAttachmentLifecycleTest extends TestCase
         $this->assertSame(2, $attachments[1]['number']);
     }
 
+    public function test_revision_form_lists_source_attachments_by_official_document_number(): void
+    {
+        [$source, $submitter] = $this->revisionFixture();
+        $this->storeDocumentFile($source, 'attachment', [
+            'attachment_title' => 'sketsa',
+            'attachment_order' => 1,
+            'document_number' => 'FMPS-SMR-010-03',
+            'original_file_name' => 'sketsa.pdf',
+            'stored_file_name' => 'sketsa.pdf',
+        ]);
+        $this->storeDocumentFile($source, 'attachment', [
+            'attachment_title' => 'Invoice',
+            'attachment_order' => 2,
+            'document_number' => 'FMPS-SMR-010-02',
+            'original_file_name' => 'invoice.pdf',
+            'stored_file_name' => 'invoice.pdf',
+        ]);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Lampiran Master Sebelumnya',
+                'Invoice',
+                'FMPS-SMR-010-02',
+                'sketsa',
+                'FMPS-SMR-010-03',
+            ]);
+    }
+
     private function baseFixture(): array
     {
         $businessProcess = BusinessProcess::query()->firstOrCreate(['kode' => 'SMR'], ['nama_proses_bisnis' => 'Sistem Manajemen Risiko']);

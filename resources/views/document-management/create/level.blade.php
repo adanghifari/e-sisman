@@ -4,14 +4,24 @@
         $revisionSource = $revisionSource ?? null;
         $isEditingDraft = $draft !== null;
         $draftFilesByType = $draft?->files?->groupBy('type_file') ?? collect();
+        $attachmentNumberSuffix = function (?string $documentNumber): ?int {
+            if (! filled($documentNumber)) {
+                return null;
+            }
+
+            $suffix = \Illuminate\Support\Str::afterLast($documentNumber, '-');
+
+            return ctype_digit($suffix) ? (int) $suffix : null;
+        };
+        $attachmentSortKey = fn ($file) => sprintf(
+            '%010d-%010d-%010d',
+            $attachmentNumberSuffix($file->document_number) ?? PHP_INT_MAX,
+            $file->attachment_order ?? PHP_INT_MAX,
+            $file->id,
+        );
         $existingFilePayload = fn (string $type) => $draftFilesByType
             ->get($type, collect())
-            ->sortBy(fn ($file) => sprintf(
-                '%d-%010d-%010d',
-                $file->attachment_order === null ? 1 : 0,
-                $file->attachment_order ?? 0,
-                $file->id,
-            ))
+            ->sortBy($attachmentSortKey)
             ->map(fn ($file) => [
                 'id' => $file->id,
                 'name' => $file->original_file_name,
@@ -24,10 +34,10 @@
         $revisionSourceAttachments = $revisionSource
             ? $revisionSource->files()
                 ->where('type_file', 'attachment')
-                ->orderByRaw('CASE WHEN attachment_order IS NULL THEN 1 ELSE 0 END')
-                ->orderBy('attachment_order')
                 ->orderBy('id')
                 ->get()
+                ->sortBy($attachmentSortKey)
+                ->values()
             : collect();
         $carriedForwardSourceFileIds = $draft
             ? $draft->files
@@ -641,15 +651,35 @@
                                                         </span>
                                                     </label>
 
-                                                    <label class="block min-w-0">
+                                                    <div class="block min-w-0">
                                                         <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Revisi File</span>
-                                                        <input
-                                                            type="file"
-                                                            name="revised_attachments[{{ $sourceAttachment->id }}]"
-                                                            accept=".pdf,application/pdf"
-                                                            class="block w-full text-xs font-semibold text-slate-600 file:mr-3 file:rounded-md file:border-0 file:bg-white file:px-3 file:py-2 file:text-xs file:font-bold file:text-slate-700 hover:file:bg-sky-50"
-                                                        >
-                                                    </label>
+                                                        <div class="grid grid-cols-[minmax(0,1fr)_auto] gap-3" data-revised-attachment-file>
+                                                            <label class="flex min-h-16 cursor-pointer items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 transition hover:border-sky-300 hover:bg-sky-50">
+                                                                <span class="grid size-12 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500" data-revised-attachment-icon>
+                                                                    <flux:icon name="arrow-up-tray" class="size-6" />
+                                                                </span>
+                                                                <span class="min-w-0">
+                                                                    <span class="block truncate text-sm font-bold text-slate-800" data-revised-attachment-name>Pilih file PDF</span>
+                                                                    <span class="block text-xs font-medium text-slate-500" data-revised-attachment-meta>Maksimal 10 MB</span>
+                                                                </span>
+                                                                <input
+                                                                    type="file"
+                                                                    name="revised_attachments[{{ $sourceAttachment->id }}]"
+                                                                    accept=".pdf,application/pdf"
+                                                                    class="sr-only"
+                                                                    data-revised-attachment-input
+                                                                >
+                                                            </label>
+                                                            <button
+                                                                type="button"
+                                                                class="inline-flex size-16 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                                                                data-revised-attachment-clear
+                                                                aria-label="Hapus file revisi"
+                                                            >
+                                                                <flux:icon name="trash" class="size-6" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
                                                 </div>
                                             @endforeach
                                         </div>
@@ -1205,6 +1235,77 @@
                         title: user.title,
                         initials: user.initials,
                     }, 'Diwakilkan');
+                });
+            })();
+        </script>
+    @endonce
+
+    @once
+        <script>
+            (() => {
+                const formatFileSize = (file) => {
+                    const sizeKb = Math.ceil(file.size / 1024);
+
+                    return sizeKb >= 1024
+                        ? `${(sizeKb / 1024).toFixed(1)} MB`
+                        : `${sizeKb} KB`;
+                };
+
+                const resetPicker = (root) => {
+                    const input = root?.querySelector('[data-revised-attachment-input]');
+                    const name = root?.querySelector('[data-revised-attachment-name]');
+                    const meta = root?.querySelector('[data-revised-attachment-meta]');
+                    const icon = root?.querySelector('[data-revised-attachment-icon]');
+
+                    if (!input || !name || !meta || !icon) {
+                        return;
+                    }
+
+                    input.value = '';
+                    name.textContent = 'Pilih file PDF';
+                    meta.textContent = 'Maksimal 10 MB';
+                    icon.className = 'grid size-12 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500';
+                    icon.innerHTML = '<svg class="size-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M7.5 7.5 12 3m0 0 4.5 4.5M12 3v13.5" /></svg>';
+                };
+
+                document.addEventListener('change', (event) => {
+                    const input = event.target.closest('[data-revised-attachment-input]');
+
+                    if (!input) {
+                        return;
+                    }
+
+                    const root = input.closest('[data-revised-attachment-file]');
+                    const file = input.files?.[0];
+
+                    if (!file) {
+                        resetPicker(root);
+
+                        return;
+                    }
+
+                    const name = root?.querySelector('[data-revised-attachment-name]');
+                    const meta = root?.querySelector('[data-revised-attachment-meta]');
+                    const icon = root?.querySelector('[data-revised-attachment-icon]');
+
+                    if (!name || !meta || !icon) {
+                        return;
+                    }
+
+                    name.textContent = file.name;
+                    meta.textContent = formatFileSize(file);
+                    icon.className = 'grid size-12 shrink-0 place-items-center rounded-lg border border-red-100 bg-red-50 text-xs font-bold text-red-600';
+                    icon.textContent = 'PDF';
+                });
+
+                document.addEventListener('click', (event) => {
+                    const button = event.target.closest('[data-revised-attachment-clear]');
+
+                    if (!button) {
+                        return;
+                    }
+
+                    resetPicker(button.closest('[data-revised-attachment-file]'));
                 });
             })();
         </script>
