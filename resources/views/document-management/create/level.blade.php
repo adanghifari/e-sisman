@@ -649,10 +649,36 @@
                                                         @disabled(! in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true))
                                                     >
 
-                                                    <div class="min-w-0">
-                                                        <span class="block truncate text-sm font-bold text-slate-900">{{ $sourceAttachment->attachment_title ?: $sourceAttachment->original_file_name }}</span>
-                                                        <span class="mt-1 block truncate text-xs font-medium text-slate-500">{{ $sourceAttachment->document_number ?: 'Nomor lampiran akan disinkronkan saat submit' }}</span>
-                                                        <div class="mt-3 hidden max-w-xl" data-revised-attachment-file>
+                                                    <div class="grid min-w-0 gap-3 md:grid-cols-[auto_minmax(0,1fr)]">
+                                                        <label class="flex w-36 shrink-0 cursor-pointer flex-col items-center gap-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                class="size-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                                                                data-master-attachment-checkbox
+                                                                @checked(in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true))
+                                                            >
+                                                            <span
+                                                                @class([
+                                                                    'inline-flex min-w-32 justify-center whitespace-nowrap rounded-full px-3 py-1 text-center text-[11px] font-bold',
+                                                                    'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100' => in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true),
+                                                                    'bg-red-50 text-red-700 ring-1 ring-red-100' => ! in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true),
+                                                                ])
+                                                                data-master-attachment-badge
+                                                            >
+                                                                {{ in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true) ? 'Dicantumkan' : 'Tidak Dicantumkan' }}
+                                                            </span>
+                                                        </label>
+
+                                                        <span class="min-w-0">
+                                                            <span class="block truncate text-sm font-bold text-slate-900">{{ $sourceAttachment->attachment_title ?: $sourceAttachment->original_file_name }}</span>
+                                                            <span class="mt-1 block truncate text-xs font-medium text-slate-500">{{ $sourceAttachment->document_number ?: 'Nomor lampiran akan disinkronkan saat submit' }}</span>
+                                                        </span>
+
+                                                        <div
+                                                            class="mt-3 hidden max-w-2xl grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3"
+                                                            data-revised-attachment-file
+                                                            data-source-file-name="{{ $sourceAttachment->original_file_name }}"
+                                                        >
                                                             <label class="grid min-h-16 cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 transition hover:border-sky-300 hover:bg-sky-50">
                                                                 <span class="grid size-12 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500" data-revised-attachment-icon>
                                                                     <flux:icon name="arrow-up-tray" class="size-6" />
@@ -669,18 +695,18 @@
                                                                     data-revised-attachment-input
                                                                 >
                                                             </label>
+                                                            <button
+                                                                type="button"
+                                                                class="grid min-h-16 w-16 shrink-0 place-items-center rounded-lg border border-sky-100 bg-sky-50 text-sky-600 transition hover:border-sky-200 hover:bg-sky-100"
+                                                                data-revised-attachment-upload-button
+                                                                aria-label="Pilih ulang file revisi"
+                                                            >
+                                                                <flux:icon name="arrow-up-tray" class="size-6" />
+                                                            </button>
                                                         </div>
                                                     </div>
 
                                                     <div class="flex flex-wrap items-start gap-2 md:justify-end">
-                                                        <button
-                                                            type="button"
-                                                            class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700 data-[active=true]:border-sky-200 data-[active=true]:bg-sky-50 data-[active=true]:text-sky-700"
-                                                            data-master-attachment-include-button
-                                                            data-active="{{ in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true) ? 'true' : 'false' }}"
-                                                        >
-                                                            Cantumkan
-                                                        </button>
                                                         <button
                                                             type="button"
                                                             class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
@@ -691,8 +717,8 @@
                                                         <button
                                                             type="button"
                                                             class="hidden size-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                                                            data-revised-attachment-clear
-                                                            aria-label="Hapus file revisi"
+                                                            data-revised-attachment-close
+                                                            aria-label="Tutup field perbarui"
                                                         >
                                                             <flux:icon name="x-mark" class="size-5" />
                                                         </button>
@@ -1274,15 +1300,20 @@
 
                 const setIncluded = (row, included) => {
                     const input = row?.querySelector('[data-master-attachment-include]');
-                    const includeButton = row?.querySelector('[data-master-attachment-include-button]');
+                    const checkbox = row?.querySelector('[data-master-attachment-checkbox]');
+                    const badge = row?.querySelector('[data-master-attachment-badge]');
 
-                    if (!row || !input || !includeButton) {
+                    if (!row || !input || !checkbox || !badge) {
                         return;
                     }
 
                     row.dataset.included = included ? 'true' : 'false';
                     input.disabled = !included;
-                    includeButton.dataset.active = included ? 'true' : 'false';
+                    checkbox.checked = included;
+                    badge.textContent = included ? 'Dicantumkan' : 'Tidak Dicantumkan';
+                    badge.className = included
+                        ? 'inline-flex min-w-32 justify-center whitespace-nowrap rounded-full bg-emerald-50 px-3 py-1 text-center text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-100'
+                        : 'inline-flex min-w-32 justify-center whitespace-nowrap rounded-full bg-red-50 px-3 py-1 text-center text-[11px] font-bold text-red-700 ring-1 ring-red-100';
                 };
 
                 const pickerForRow = (row) => row?.querySelector('[data-revised-attachment-file]');
@@ -1292,23 +1323,56 @@
                     const name = picker?.querySelector('[data-revised-attachment-name]');
                     const meta = picker?.querySelector('[data-revised-attachment-meta]');
                     const icon = picker?.querySelector('[data-revised-attachment-icon]');
-                    const clearButton = picker?.closest('[data-master-attachment-row]')?.querySelector('[data-revised-attachment-clear]');
+                    const row = picker?.closest('[data-master-attachment-row]');
+                    const closeButton = row?.querySelector('[data-revised-attachment-close]');
 
-                    if (!picker || !input || !name || !meta || !icon || !clearButton) {
+                    if (!picker || !input || !name || !meta || !icon || !row || !closeButton) {
                         return;
                     }
 
                     input.value = '';
                     picker.classList.add('hidden');
-                    clearButton.classList.add('hidden');
-                    clearButton.classList.remove('inline-flex');
+                    picker.classList.remove('grid');
+                    closeButton.classList.add('hidden');
+                    closeButton.classList.remove('inline-flex');
                     name.textContent = 'Pilih file PDF';
                     meta.textContent = 'Maksimal 10 MB';
                     icon.className = 'grid size-12 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500';
                     icon.innerHTML = '<svg class="size-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M7.5 7.5 12 3m0 0 4.5 4.5M12 3v13.5" /></svg>';
                 };
 
+                const showSourceFile = (picker) => {
+                    const name = picker?.querySelector('[data-revised-attachment-name]');
+                    const meta = picker?.querySelector('[data-revised-attachment-meta]');
+                    const icon = picker?.querySelector('[data-revised-attachment-icon]');
+                    const sourceFileName = picker?.dataset.sourceFileName || 'File master sebelumnya';
+
+                    if (!picker || !name || !meta || !icon) {
+                        return;
+                    }
+
+                    picker.classList.remove('hidden');
+                    picker.classList.add('grid');
+                    name.textContent = sourceFileName;
+                    meta.textContent = 'File master sebelumnya';
+                    icon.className = 'grid size-12 shrink-0 place-items-center rounded-lg border border-red-100 bg-red-50 text-xs font-bold text-red-600';
+                    icon.textContent = 'PDF';
+                };
+
                 document.addEventListener('change', (event) => {
+                    const checkbox = event.target.closest('[data-master-attachment-checkbox]');
+
+                    if (checkbox) {
+                        const row = checkbox.closest('[data-master-attachment-row]');
+                        setIncluded(row, checkbox.checked);
+
+                        if (!checkbox.checked) {
+                            resetPicker(pickerForRow(row));
+                        }
+
+                        return;
+                    }
+
                     const input = event.target.closest('[data-revised-attachment-input]');
 
                     if (!input) {
@@ -1342,37 +1406,39 @@
                 });
 
                 document.addEventListener('click', (event) => {
-                    const includeButton = event.target.closest('[data-master-attachment-include-button]');
-
-                    if (includeButton) {
-                        const row = includeButton.closest('[data-master-attachment-row]');
-                        setIncluded(row, true);
-                        resetPicker(pickerForRow(row));
-
-                        return;
-                    }
-
                     const updateButton = event.target.closest('[data-master-attachment-update-button]');
 
                     if (updateButton) {
                         const row = updateButton.closest('[data-master-attachment-row]');
                         const picker = pickerForRow(row);
-                        const clearButton = row?.querySelector('[data-revised-attachment-clear]');
+                        const closeButton = row?.querySelector('[data-revised-attachment-close]');
 
                         setIncluded(row, true);
-                        picker?.classList.remove('hidden');
-                        clearButton?.classList.remove('hidden');
-                        clearButton?.classList.add('inline-flex');
+                        showSourceFile(picker);
+                        closeButton?.classList.remove('hidden');
+                        closeButton?.classList.add('inline-flex');
                         picker?.querySelector('[data-revised-attachment-input]')?.click();
 
                         return;
                     }
 
-                    const clearButton = event.target.closest('[data-revised-attachment-clear]');
+                    const uploadButton = event.target.closest('[data-revised-attachment-upload-button]');
 
-                    if (clearButton) {
-                        resetPicker(pickerForRow(clearButton.closest('[data-master-attachment-row]')));
+                    if (uploadButton) {
+                        uploadButton.closest('[data-revised-attachment-file]')?.querySelector('[data-revised-attachment-input]')?.click();
+
+                        return;
                     }
+
+                    const closeButton = event.target.closest('[data-revised-attachment-close]');
+
+                    if (closeButton) {
+                        resetPicker(pickerForRow(closeButton.closest('[data-master-attachment-row]')));
+                    }
+                });
+
+                document.querySelectorAll('[data-master-attachment-row]').forEach((row) => {
+                    setIncluded(row, row.dataset.included === 'true');
                 });
             })();
         </script>
