@@ -187,6 +187,16 @@ class DocumentAttachmentLifecycleTest extends TestCase
             ->firstOrFail();
 
         $this->assertSame('FMPS-SMR-010-04', $newAttachment->document_number);
+
+        $response = $this->actingAs($submitter)
+            ->get(route('documents.approval.show', $revision))
+            ->assertOk();
+
+        $response->assertSeeInOrder([
+            'Lampiran Pertama',
+            'Lampiran Kedua',
+            'Lampiran Baru',
+        ]);
     }
 
     public function test_revision_form_lineage_points_to_previous_revision_form(): void

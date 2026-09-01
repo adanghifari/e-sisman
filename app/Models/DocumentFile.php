@@ -5,6 +5,7 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
+use Illuminate\Support\Str;
 
 #[Fillable([
     't_document_id',
@@ -49,5 +50,22 @@ class DocumentFile extends Model
     public function sourceFile(): BelongsTo
     {
         return $this->belongsTo(self::class, 'source_file_id');
+    }
+
+    public function attachmentSortKey(): string
+    {
+        $suffix = null;
+
+        if (filled($this->document_number)) {
+            $lastSegment = Str::afterLast($this->document_number, '-');
+            $suffix = ctype_digit($lastSegment) ? (int) $lastSegment : null;
+        }
+
+        return sprintf(
+            '%010d-%010d-%010d',
+            $suffix ?? PHP_INT_MAX,
+            $this->attachment_order ?? PHP_INT_MAX,
+            $this->id,
+        );
     }
 }

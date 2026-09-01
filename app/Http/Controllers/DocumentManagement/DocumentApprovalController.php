@@ -85,7 +85,10 @@ class DocumentApprovalController extends Controller
                 'revision_after',
             ])->values(),
             'obsoleteSourceContentFiles' => $obsoleteSourceContentFiles,
-            'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
+            'attachmentFiles' => $document->files
+                ->where('type_file', 'attachment')
+                ->sortBy(fn (DocumentFile $file): string => $file->attachmentSortKey())
+                ->values(),
             'generatedPrintout' => $this->latestGeneratedPrintout($document),
             'canPreviewGeneratedPrintout' => app(DynamicFinalDocumentRenderer::class)
                 ->canRender($document, $document->status?->nama_status === StatusDocument::APPROVED

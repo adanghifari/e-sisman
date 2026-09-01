@@ -233,7 +233,7 @@ class FinalArtifactGenerator
             ->where('type_file', 'attachment')
             ->orderBy('id')
             ->get()
-            ->sortBy(fn (DocumentFile $file): string => $this->attachmentSortKey($file));
+            ->sortBy(fn (DocumentFile $file): string => $file->attachmentSortKey());
 
         if ($document->request_type === 'revision') {
             $revisionForm = $document->files()
@@ -263,29 +263,6 @@ class FinalArtifactGenerator
                 'file_size' => $file->file_size,
             ])
             ->all();
-    }
-
-    private function attachmentSortKey(DocumentFile $file): string
-    {
-        $suffix = $this->documentNumberSuffix($file->document_number);
-
-        return sprintf(
-            '%010d-%010d-%010d',
-            $suffix ?? PHP_INT_MAX,
-            $file->attachment_order ?? PHP_INT_MAX,
-            $file->id,
-        );
-    }
-
-    private function documentNumberSuffix(?string $documentNumber): ?int
-    {
-        if (! filled($documentNumber)) {
-            return null;
-        }
-
-        $suffix = Str::afterLast($documentNumber, '-');
-
-        return ctype_digit($suffix) ? (int) $suffix : null;
     }
 
     /**

@@ -191,7 +191,12 @@ class DocumentMasterController extends Controller
                 ->values()
                 ?? collect(),
             'contentFiles' => $document->files->whereIn('type_file', ['filled_template', 'imported_document', 'revision_content'])->values(),
-            'attachmentFiles' => $document->files->whereIn('type_file', ['attachment', 'revision_form'])->values(),
+            'attachmentFiles' => $document->files
+                ->whereIn('type_file', ['attachment', 'revision_form'])
+                ->sortBy(fn (DocumentFile $file): string => $file->type_file === 'revision_form'
+                    ? sprintf('%010d-%010d-%010d', 0, 0, $file->id)
+                    : $file->attachmentSortKey())
+                ->values(),
             'generatedPrintout' => $this->latestGeneratedPrintout($document),
             'canPreviewGeneratedPrintout' => app(DynamicFinalDocumentRenderer::class)
                 ->canRender($document, PdfDocumentContext::FINAL_DOCUMENT),
