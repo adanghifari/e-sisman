@@ -19,6 +19,8 @@ use RuntimeException;
 
 class FinalArtifactGenerator
 {
+    private const OFFICIAL_PREPARER_SIGNATURE_STAGE = 'TTD Penyusun Resmi';
+
     /**
      * Prepare a final artifact record and normalized renderer payload.
      *
@@ -158,8 +160,6 @@ class FinalArtifactGenerator
         ]);
         $coverDocumentLevel = $this->coverDocumentLevel($document);
         $coverDocumentType = $this->coverDocumentType($document);
-        $approvalSheetDocument = $this->approvalSheetDocument($document);
-
         return [
             'document' => [
                 'id' => $document->id,
@@ -189,7 +189,7 @@ class FinalArtifactGenerator
                     ->all(),
             ],
             'preparers' => $this->collectPreparers($document),
-            'approvals' => $this->collectApprovals($approvalSheetDocument),
+            'approvals' => $this->collectApprovals($document),
             'revision_approvals' => $document->request_type === 'revision'
                 ? $this->collectApprovals($document)
                 : [],
@@ -222,21 +222,6 @@ class FinalArtifactGenerator
         }
 
         return $document->documentType;
-    }
-
-    private function approvalSheetDocument(Document $document): Document
-    {
-        if ($document->request_type !== 'revision' || $document->revised_from === null) {
-            return $document;
-        }
-
-        return Document::query()
-            ->whereKey($document->revisionRootId())
-            ->with([
-                'documentLevel.approvalFlows.stages',
-                'approvals.status',
-            ])
-            ->firstOrFail();
     }
 
     /**
@@ -310,7 +295,7 @@ class FinalArtifactGenerator
 
         return $document->approvals
             ->filter(fn (Approval $approval): bool => $approval->responded_at !== null
-                && ! $approval->shouldHideAsOfficialPreparerDisplay($document))
+                && ! $this->isOfficialPreparerSignatureStage($approval))
             ->map(fn (Approval $approval): array => [
                 'id' => $approval->id,
                 'stage_name' => $approval->stage_name_snapshot ?? $approval->stages,
@@ -353,6 +338,16 @@ class FinalArtifactGenerator
             ])
             ->values()
             ->all();
+    }
+
+    private function isOfficialPreparerSignatureStage(Approval $approval): bool
+    {
+        return collect([
+            $approval->stages,
+            $approval->stage_name_snapshot,
+        ])
+            ->filter()
+            ->contains(fn (string $stage): bool => trim($stage) === self::OFFICIAL_PREPARER_SIGNATURE_STAGE);
     }
 
     private function createPendingArtifact(
