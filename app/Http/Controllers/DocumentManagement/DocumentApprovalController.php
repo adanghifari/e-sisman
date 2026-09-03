@@ -831,6 +831,7 @@ class DocumentApprovalController extends Controller
             })
             ->update([
                 'm_status_document_id' => $obsoleteStatus->id,
+                'obsolete_at' => $approvedAt,
             ]);
 
         return $lockedDocument->refresh();
@@ -929,6 +930,7 @@ class DocumentApprovalController extends Controller
             ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::APPROVED))
             ->update([
                 'm_status_document_id' => $obsoleteStatus->id,
+                'obsolete_at' => $document->approved_at ?? now(),
             ]);
     }
 
@@ -947,6 +949,7 @@ class DocumentApprovalController extends Controller
             ->each(function (Document $revision) use ($obsoleteStatus): void {
                 $revision->update([
                     'm_status_document_id' => $obsoleteStatus->id,
+                    'obsolete_at' => now(),
                 ]);
             });
     }

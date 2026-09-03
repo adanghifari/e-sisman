@@ -464,6 +464,57 @@ class DocumentMasterTest extends TestCase
         );
     }
 
+    public function test_master_page_obsolete_date_ignores_unpublished_revision_attempts(): void
+    {
+        $user = $this->userWithPermission('documents.master.view');
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+        $rejectedStatus = StatusDocument::create(['nama_status' => StatusDocument::REJECTED]);
+
+        $rootDocument = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Lama',
+            'nomor_dokumen' => 'PS-SMR-001',
+            'nomor_revisi' => 0,
+            'tanggal_terbit' => '2026-09-01',
+            'approved_at' => '2026-09-01 08:00:00',
+        ]);
+        $obsoleteRevision = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Revisi Pertama',
+            'nomor_dokumen' => 'FMPS-SMR-001',
+            'nomor_revisi' => 1,
+            'revised_from' => $rootDocument->id,
+            'request_type' => 'revision',
+            'tanggal_terbit' => '2026-09-02',
+            'approved_at' => '2026-09-02 08:00:00',
+        ]);
+        $this->createDocument($user, $rejectedStatus, [
+            'nama_dokumen' => 'Prosedur Revisi Kedua Gagal',
+            'nomor_dokumen' => 'FMPS-SMR-001',
+            'nomor_revisi' => 2,
+            'revised_from' => $rootDocument->id,
+            'request_type' => 'revision',
+            'tanggal_terbit' => null,
+            'approved_at' => null,
+        ]);
+        $this->createDocument($user, $approvedStatus, [
+            'nama_dokumen' => 'Prosedur Revisi Kedua Aktif',
+            'nomor_dokumen' => 'FMPS-SMR-001',
+            'nomor_revisi' => 2,
+            'revised_from' => $rootDocument->id,
+            'request_type' => 'revision',
+            'tanggal_terbit' => '2026-09-03',
+            'approved_at' => '2026-09-03 08:00:00',
+        ]);
+
+        $content = $this->actingAs($user)
+            ->get(route('documents.master'))
+            ->assertOk()
+            ->assertSee(route('documents.obsolete.show', $obsoleteRevision), false)
+            ->getContent();
+
+        $this->assertMatchesRegularExpression('/00\.01.*02\/09\/2026.*03\/09\/2026/s', $content);
+    }
+
     public function test_obsolete_page_shows_only_obsolete_documents(): void
     {
         $user = $this->userWithPermission('documents.obsolete.view');
@@ -760,6 +811,8 @@ class DocumentMasterTest extends TestCase
         $this->assertSame(StatusDocument::APPROVED, $revision->status->nama_status);
         $this->assertSame('revision', $revision->request_type);
         $this->assertSame(StatusDocument::OBSOLETE, $source->status->nama_status);
+        $this->assertNotNull($source->obsolete_at);
+        $this->assertSame($revision->approved_at->toDateString(), $source->obsolete_at->toDateString());
         $this->assertSame($source->m_document_level_id, $revision->m_document_level_id);
         $this->assertSame($source->m_document_types_id, $revision->m_document_types_id);
         $this->assertSame('PS-KSA-02', $revision->nomor_dokumen);

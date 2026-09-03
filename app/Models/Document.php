@@ -34,6 +34,7 @@ use Illuminate\Support\Collection;
     'tanggal_terbit',
     'submitted_at',
     'approved_at',
+    'obsolete_at',
     'rejected_at',
     'cancelled_at',
 ])]
@@ -51,6 +52,7 @@ class Document extends Model
             'tanggal_terbit' => 'date',
             'submitted_at' => 'datetime',
             'approved_at' => 'datetime',
+            'obsolete_at' => 'datetime',
             'rejected_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];

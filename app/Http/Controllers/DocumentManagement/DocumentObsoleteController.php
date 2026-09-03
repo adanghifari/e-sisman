@@ -214,6 +214,8 @@ class DocumentObsoleteController extends Controller
         }
 
         DB::transaction(function () use ($document, $familyIds, $approvedStatus, $obsoleteStatus): void {
+            $restoredAt = now();
+
             Document::query()
                 ->whereIn('id', $familyIds)
                 ->where('id', '!=', $document->id)
@@ -221,11 +223,13 @@ class DocumentObsoleteController extends Controller
                 ->where(fn ($query) => $this->whereVisibleMasterRecord($query))
                 ->update([
                     'm_status_document_id' => $obsoleteStatus->id,
+                    'obsolete_at' => $restoredAt,
                 ]);
 
             $document->update([
                 'm_status_document_id' => $approvedStatus->id,
-                'approved_at' => now(),
+                'approved_at' => $restoredAt,
+                'obsolete_at' => null,
             ]);
         });
 

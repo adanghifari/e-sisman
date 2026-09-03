@@ -41,11 +41,13 @@
                         'revision_form' => 'Lembar Revisi',
                         'attachment' => 'Lampiran',
     ];
+    $documentFiles = $document->files ?? collect();
+    $finalArtifacts = $document->finalArtifacts ?? collect();
     $printoutVersion = collect([
         $document->updated_at?->timestamp,
-        $document->files->max(fn ($file) => $file->updated_at?->timestamp),
-        $document->files->max('id'),
-        $document->finalArtifacts->max('id'),
+        $documentFiles->max(fn ($file) => $file->updated_at?->timestamp),
+        $documentFiles->max('id'),
+        $finalArtifacts->max('id'),
     ])->filter()->implode('-');
     $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
 @endphp

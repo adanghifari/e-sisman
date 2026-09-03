@@ -306,6 +306,8 @@ class DocumentMasterController extends Controller
         }
 
         DB::transaction(function () use ($document, $familyIds, $approvedStatus, $obsoleteStatus): void {
+            $restoredAt = now();
+
             Document::query()
                 ->whereIn('id', $familyIds)
                 ->where('id', '!=', $document->id)
@@ -313,11 +315,13 @@ class DocumentMasterController extends Controller
                 ->where(fn ($query) => $this->whereVisibleMasterRecord($query))
                 ->update([
                     'm_status_document_id' => $obsoleteStatus->id,
+                    'obsolete_at' => $restoredAt,
                 ]);
 
             $document->update([
                 'm_status_document_id' => $approvedStatus->id,
-                'approved_at' => now(),
+                'approved_at' => $restoredAt,
+                'obsolete_at' => null,
             ]);
         });
 
@@ -587,12 +591,17 @@ class DocumentMasterController extends Controller
             ])
             ->sortBy('nomor_revisi')
             ->values();
+        $publishedWorkflowRevisions = $family
+            ->filter(fn (Document $revision): bool => $revision->request_type !== 'obsolete'
+                && ($revision->tanggal_terbit !== null || $revision->approved_at !== null)
+                && in_array($revision->status?->nama_status, [StatusDocument::APPROVED, StatusDocument::OBSOLETE], true))
+            ->values();
         $obsoleteDocuments = $family
             ->where('id', '!=', $document->id)
             ->filter(fn (Document $revision): bool => $revision->status?->nama_status === StatusDocument::OBSOLETE
                 && $revision->nomor_revisi < $document->nomor_revisi)
-            ->map(function (Document $revision) use ($family, $rootDocument): object {
-                $nextRevision = $family
+            ->map(function (Document $revision) use ($publishedWorkflowRevisions, $rootDocument): object {
+                $nextRevision = $publishedWorkflowRevisions
                     ->where('nomor_revisi', '>', $revision->nomor_revisi)
                     ->sortBy('nomor_revisi')
                     ->first();
@@ -604,7 +613,7 @@ class DocumentMasterController extends Controller
                     'nomor_dokumen' => $rootDocument?->nomor_dokumen ?: $revision->nomor_dokumen,
                     'nomor_revisi' => $revision->formatted_revision,
                     'tanggal_terbit' => $revision->tanggal_terbit ?? $revision->approved_at,
-                    'tanggal_obsolete' => $nextRevision?->tanggal_terbit ?? $nextRevision?->approved_at,
+                    'tanggal_obsolete' => $revision->obsolete_at ?? $nextRevision?->tanggal_terbit ?? $nextRevision?->approved_at,
                     'detail_url' => route('documents.obsolete.show', $revision),
                 ];
             });
