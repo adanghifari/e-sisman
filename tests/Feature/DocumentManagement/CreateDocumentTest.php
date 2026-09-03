@@ -1809,6 +1809,71 @@ class CreateDocumentTest extends TestCase
         $this->assertSame(StatusDocument::REJECTED, $previous->refresh()->status->nama_status);
     }
 
+    public function test_rejected_initial_submission_clears_file_numbers_before_resubmission(): void
+    {
+        Storage::fake('local');
+
+        [$user, $businessProcess, $businessFunction, $department] = $this->initialResubmissionFixture();
+        $approver = User::factory()->create();
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '008', [
+                'attachment_titles' => ['Lampiran Ditolak A', 'Lampiran Ditolak B'],
+                'attachment_orders' => [1, 2],
+                'attachments' => [
+                    UploadedFile::fake()->create('lampiran-ditolak-a.pdf', 24, 'application/pdf'),
+                    UploadedFile::fake()->create('lampiran-ditolak-b.pdf', 24, 'application/pdf'),
+                ],
+            ]))
+            ->assertRedirect(route('documents.create'));
+
+        $rejectedAttempt = Document::query()
+            ->where('nomor_dokumen', 'PS-QA-008')
+            ->firstOrFail();
+
+        Approval::create([
+            't_document_id' => $rejectedAttempt->id,
+            'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::PENDING)->id,
+            'user_id' => $approver->id,
+            'role_id' => null,
+            'assigned_by' => $user->id,
+            'assigned_at' => now(),
+            'stages' => 'Approval Dokumen',
+        ]);
+
+        $this->actingAs($approver)
+            ->post(route('documents.approval.reject', $rejectedAttempt), [
+                'catatan' => 'Lampiran perlu diperbaiki.',
+            ])
+            ->assertRedirect(route('documents.approval.show', $rejectedAttempt));
+
+        $rejectedAttempt->refresh();
+
+        $this->assertSame(StatusDocument::REJECTED, $rejectedAttempt->status->nama_status);
+        $this->assertSame(0, $rejectedAttempt->files()->whereNotNull('document_number')->count());
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '008', [
+                'attachment_titles' => ['Lampiran Baru'],
+                'attachment_orders' => [1],
+                'attachments' => [
+                    UploadedFile::fake()->create('lampiran-baru.pdf', 24, 'application/pdf'),
+                ],
+            ]))
+            ->assertRedirect(route('documents.create'));
+
+        $resubmission = Document::query()
+            ->where('nomor_dokumen', 'PS-QA-008')
+            ->whereKeyNot($rejectedAttempt->id)
+            ->firstOrFail();
+        $attachment = $resubmission->files()
+            ->where('type_file', 'attachment')
+            ->firstOrFail();
+
+        $this->assertSame($rejectedAttempt->id, $resubmission->resubmitted_from);
+        $this->assertSame('FMPS-QA-008-02', $attachment->document_number);
+    }
+
     public function test_multiple_rejected_initial_submissions_keep_immediate_chain_and_history_notes(): void
     {
         Storage::fake('local');
