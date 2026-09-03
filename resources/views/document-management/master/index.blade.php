@@ -1,19 +1,9 @@
 <x-layouts::app :title="__('Dokumen Master')">
     <div class="space-y-6">
-        <div class="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-            <x-ui.page-header title="Dokumen Master" />
-
-            @if ($canImportMaster)
-                <a
-                    href="{{ route('documents.master.imports.create') }}"
-                    class="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
-                    wire:navigate
-                >
-                    <flux:icon name="arrow-up-tray" class="size-4" />
-                    Import Dokumen Master
-                </a>
-            @endif
-        </div>
+        <x-ui.page-header
+            title="Dokumen Master"
+            description="Daftar dokumen yang sudah berstatus Master."
+        />
 
         <x-ui.filter-bar :action="route('documents.master')">
             <x-ui.input
@@ -37,6 +27,19 @@
                 </a>
             </div>
         </x-ui.filter-bar>
+
+        @if ($canImportMaster)
+            <div class="flex flex-wrap justify-end gap-2">
+                <a
+                    href="{{ route('documents.master.imports.create') }}"
+                    class="inline-flex h-11 items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
+                    wire:navigate
+                >
+                    <flux:icon name="arrow-up-tray" class="size-4" />
+                    Import Dokumen Master
+                </a>
+            </div>
+        @endif
 
         <x-ui.panel
             title="Daftar Induk Dokumen Master"
