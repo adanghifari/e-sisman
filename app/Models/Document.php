@@ -34,6 +34,7 @@ use Illuminate\Support\Collection;
     'tanggal_terbit',
     'submitted_at',
     'approved_at',
+    'obsolete_at',
     'rejected_at',
     'cancelled_at',
 ])]
@@ -51,6 +52,7 @@ class Document extends Model
             'tanggal_terbit' => 'date',
             'submitted_at' => 'datetime',
             'approved_at' => 'datetime',
+            'obsolete_at' => 'datetime',
             'rejected_at' => 'datetime',
             'cancelled_at' => 'datetime',
         ];
@@ -99,8 +101,8 @@ class Document extends Model
 
         if (
             $this->official_preparer_name_snapshot !== null
-            || $this->official_preparer_position_snapshot !== null
-            || $this->official_preparer_department_snapshot !== null
+            && $this->official_preparer_position_snapshot !== null
+            && $this->official_preparer_department_snapshot !== null
         ) {
             return;
         }
@@ -108,9 +110,9 @@ class Document extends Model
         $this->loadMissing('officialPreparer.department');
 
         $this->forceFill([
-            'official_preparer_name_snapshot' => $this->officialPreparer?->name,
-            'official_preparer_position_snapshot' => $this->officialPreparer?->jabatan,
-            'official_preparer_department_snapshot' => $this->officialPreparer?->department?->nama_department,
+            'official_preparer_name_snapshot' => $this->official_preparer_name_snapshot ?: $this->officialPreparer?->name,
+            'official_preparer_position_snapshot' => $this->official_preparer_position_snapshot ?: $this->officialPreparer?->jabatan,
+            'official_preparer_department_snapshot' => $this->official_preparer_department_snapshot ?: $this->officialPreparer?->department?->nama_department,
         ])->save();
     }
 
@@ -218,6 +220,61 @@ class Document extends Model
     {
         // Newer file records win when legacy/concurrent data contains duplicates.
         return $this->hasMany(DocumentFile::class, 't_document_id')->orderByDesc('id');
+    }
+
+    public function availableRevisionSourceAttachments(): Collection
+    {
+        $eligibleStatusIds = StatusDocument::query()
+            ->whereIn('nama_status', [StatusDocument::APPROVED, StatusDocument::OBSOLETE])
+            ->pluck('id');
+
+        $family = $this->revisionFamily()
+            ->filter(fn (self $document): bool => (int) $document->nomor_revisi <= (int) $this->nomor_revisi)
+            ->filter(fn (self $document): bool => $document->is($this) || $eligibleStatusIds->contains($document->m_status_document_id))
+            ->sortBy([
+                ['nomor_revisi', 'asc'],
+                ['id', 'asc'],
+            ])
+            ->values();
+
+        if ($family->isEmpty()) {
+            return collect();
+        }
+
+        $revisionByDocumentId = $family
+            ->mapWithKeys(fn (self $document): array => [$document->id => (int) $document->nomor_revisi]);
+
+        $attachments = DocumentFile::query()
+            ->whereIn('t_document_id', $family->pluck('id'))
+            ->where('type_file', 'attachment')
+            ->orderBy('id')
+            ->get();
+
+        $attachmentsById = $attachments->keyBy('id');
+        $rootFor = function (DocumentFile $file) use ($attachmentsById): int {
+            $current = $file;
+
+            while ($current->source_file_id !== null && $attachmentsById->has($current->source_file_id)) {
+                $current = $attachmentsById->get($current->source_file_id);
+            }
+
+            return (int) ($current->source_file_id ?? $current->id);
+        };
+
+        return $attachments
+            ->sortBy(fn (DocumentFile $file): string => sprintf(
+                '%010d-%010d',
+                $revisionByDocumentId->get($file->t_document_id, 0),
+                $file->id,
+            ))
+            ->reduce(function (Collection $carry, DocumentFile $file) use ($rootFor): Collection {
+                $carry->put($rootFor($file), $file);
+
+                return $carry;
+            }, collect())
+            ->values()
+            ->sortBy(fn (DocumentFile $file): string => $file->attachmentSortKey())
+            ->values();
     }
 
     public function finalArtifacts(): HasMany

@@ -16,6 +16,12 @@
         $printoutDescription = $showSourceFiles
             ? 'Preview dinamis. Lembar pengesahan akan tersedia setelah semua approval selesai.'
             : 'Versi final lengkap dengan cover, kop, footer, lembar pengesahan, dan lampiran.';
+        $printoutVersion = collect([
+            $document->updated_at?->timestamp,
+            $document->files->max(fn ($file) => $file->updated_at?->timestamp),
+            $document->files->max('id'),
+            $document->finalArtifacts->max('id'),
+        ])->filter()->implode('-');
         $ownerLabel = $isObsoleteRequest ? 'Pengaju Awal Dokumen' : ($isLevelOne ? 'Penyusun Dokumen' : 'Penyusun Pemilik Proses');
         $contentSectionTitle = match (true) {
             $isObsoleteRequest => 'Dokumen yang Akan Diobsoletekan',
@@ -193,7 +199,7 @@
                                         </div>
                                     </div>
 
-                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.generated.show', $document).'#toolbar=0&view=FitH&navpanes=0'" />
+                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.generated.show', [$document, 'v' => $printoutVersion]).'#toolbar=0&view=FitH&navpanes=0'" />
                                 </section>
                             @else
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
@@ -385,13 +391,20 @@
                         <h3 class="text-sm font-bold text-slate-900">Riwayat Approver</h3>
                     </div>
                     @php
-                        $approvalStageOrders = $approvalFlowStages
-                            ->mapWithKeys(fn ($stage) => [($stage->display_label ?: 'Approval') => $stage->stage_order]);
+                        $approvalStageOrdersById = $approvalFlowStages
+                            ->mapWithKeys(fn ($stage) => [$stage->id => $stage->stage_order]);
+                        $approvalStageOrdersByLabel = $approvalFlowStages
+                            ->groupBy(fn ($stage) => $stage->display_label ?: 'Approval')
+                            ->map(fn ($stages) => $stages->first()->stage_order);
                         $approvalHistory = $document->approvals
                             ->reject(fn ($approval) => $approval->stages === 'TTD Penyusun Resmi')
                             ->sortBy(fn ($approval) => sprintf(
                                 '%04d-%010d-%04d',
-                                $approvalStageOrders->get($approval->stages, 9999),
+                                $approval->stage_order_snapshot
+                                    ?? $approvalStageOrdersById->get(
+                                        $approval->m_approval_flow_stage_id,
+                                        $approvalStageOrdersByLabel->get($approval->stages, 9999),
+                                    ),
                                 $approval->assigned_at?->timestamp ?? 0,
                                 $approval->id,
                             ))
@@ -415,7 +428,11 @@
                         @forelse ($approvalHistory as $approval)
                             @php
                                 $approvalStatusCode = $approval->status?->kode_status;
-                                $stageOrder = $approvalStageOrders->get($approval->stages);
+                                $stageOrder = $approval->stage_order_snapshot
+                                    ?? $approvalStageOrdersById->get(
+                                        $approval->m_approval_flow_stage_id,
+                                        $approvalStageOrdersByLabel->get($approval->stages),
+                                    );
                                 $approvalTimestamp = $approval->responded_at;
                             @endphp
                             <div class="rounded-lg bg-slate-50 px-3 py-3">
@@ -524,7 +541,8 @@
                                 @php
                                     $stageLabel = $stage->display_label ?: 'Approval';
                                     $stageApprovals = $document->approvals
-                                        ->filter(fn ($approval) => $approval->stages === $stageLabel)
+                                        ->filter(fn ($approval) => $approval->m_approval_flow_stage_id === $stage->id
+                                            || ($approval->m_approval_flow_stage_id === null && $approval->stages === $stageLabel))
                                         ->values();
                                     $respondedApprovals = $stageApprovals
                                         ->filter(fn ($approval) => $approval->responded_at !== null)

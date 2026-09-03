@@ -16,6 +16,7 @@ use App\Models\Role;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentRejectionHistory;
+use App\Support\FinalDocuments\FinalArtifactGenerator;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Http\UploadedFile;
 use Illuminate\Support\Facades\Storage;
@@ -1187,7 +1188,7 @@ class CreateDocumentTest extends TestCase
             ->exists());
     }
 
-    public function test_rejected_revision_resubmission_reuses_revision_number_and_form_number(): void
+    public function test_rejected_revision_resubmission_rewrites_rejected_attempt_and_reuses_revision_number_and_form_number(): void
     {
         Storage::fake('local');
 
@@ -1223,7 +1224,10 @@ class CreateDocumentTest extends TestCase
             ->where('nama_dokumen', 'Prosedur Revisi Setelah Ditolak')
             ->firstOrFail();
 
-        $this->assertSame($rejectedRevision->id, $revision->resubmitted_from);
+        $this->assertSame($rejectedRevision->id, $revision->id);
+        $this->assertNull($revision->resubmitted_from);
+        $this->assertSame(StatusDocument::PROPOSED, $revision->status->nama_status);
+        $this->assertNull($revision->rejected_at);
         $this->assertSame(1, $revision->nomor_revisi);
         $this->assertSame('00.01', $revision->formatted_revision);
         $this->assertSame('PS-SMR-010', $revision->nomor_dokumen);
@@ -1289,12 +1293,143 @@ class CreateDocumentTest extends TestCase
             ->where('nama_dokumen', 'Revisi Setelah Ditolak Dua Kali')
             ->firstOrFail();
 
-        $this->assertSame($secondAttempt->id, $revision->resubmitted_from);
+        $this->assertSame($secondAttempt->id, $revision->id);
+        $this->assertNull($revision->resubmitted_from);
+        $this->assertSame(StatusDocument::PROPOSED, $revision->status->nama_status);
+        $this->assertNull($revision->rejected_at);
         $this->assertSame($source->id, $revision->revised_from);
         $this->assertSame(1, $revision->nomor_revisi);
         $this->assertSame('00.01', $revision->formatted_revision);
         $this->assertSame('PS-SMR-010', $revision->nomor_dokumen);
         $this->assertSame('FMPS-SMR-010-01', $revision->nomor_lembar_revisi);
+    }
+
+    public function test_rewritten_rejected_revision_reuses_new_attachment_numbers(): void
+    {
+        Storage::fake('local');
+
+        [$source, $submitter, $officialPreparer] = $this->revisionCreationFixture();
+        $rejectedStatus = StatusDocument::query()->where('nama_status', StatusDocument::REJECTED)->firstOrFail();
+        $formLevel = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $formType = DocumentType::query()->where('nama_types', 'Form')->firstOrFail();
+
+        foreach ([
+            ['Lampiran BAPP', 'FMPS-SMR-010-02', 1],
+            ['Lampiran Sketsa', 'FMPS-SMR-010-03', 2],
+        ] as [$title, $number, $order]) {
+            $source->files()->create([
+                'type_file' => 'attachment',
+                'document_number' => $number,
+                'attachment_title' => $title,
+                'attachment_order' => $order,
+                'path_file' => "documents/{$source->id}/{$number}.pdf",
+                'uploaded_by' => $source->user_id,
+                'updated_at' => now(),
+                'original_file_name' => "{$title}.pdf",
+                'stored_file_name' => "{$title}.pdf",
+                'file_size' => 24,
+            ]);
+            Storage::disk('local')->put("documents/{$source->id}/{$number}.pdf", 'PDF test content');
+        }
+
+        $oldRejectedRevision = Document::create([
+            'm_document_level_id' => $formLevel->id,
+            'm_status_document_id' => $rejectedStatus->id,
+            'm_document_types_id' => $formType->id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $officialPreparer->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Revisi Lama Ditolak Dengan Lampiran',
+            'nomor_dokumen' => 'PS-SMR-010',
+            'nomor_lembar_revisi' => 'FMPS-SMR-010-01',
+            'nomor_revisi' => 1,
+            'rejected_at' => now()->subDay(),
+        ]);
+        $oldRejectedRevision->files()->create([
+            'type_file' => 'attachment',
+            'document_number' => 'FMPS-SMR-010-04',
+            'attachment_title' => 'Invoice Lama Ditolak',
+            'attachment_order' => 3,
+            'path_file' => "documents/{$oldRejectedRevision->id}/invoice-lama-ditolak.pdf",
+            'uploaded_by' => $submitter->id,
+            'updated_at' => now()->subDay(),
+            'original_file_name' => 'invoice-lama-ditolak.pdf',
+            'stored_file_name' => 'invoice-lama-ditolak.pdf',
+            'file_size' => 24,
+        ]);
+
+        $rejectedRevision = Document::create([
+            'm_document_level_id' => $formLevel->id,
+            'm_status_document_id' => $rejectedStatus->id,
+            'm_document_types_id' => $formType->id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $officialPreparer->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Revisi Ditolak Dengan Lampiran',
+            'nomor_dokumen' => 'PS-SMR-010',
+            'nomor_lembar_revisi' => 'FMPS-SMR-010-01',
+            'nomor_revisi' => 1,
+            'rejected_at' => now(),
+        ]);
+        $rejectedRevision->files()->create([
+            'type_file' => 'attachment',
+            'document_number' => 'FMPS-SMR-010-04',
+            'attachment_title' => 'Invoice Ditolak',
+            'attachment_order' => 3,
+            'path_file' => "documents/{$rejectedRevision->id}/invoice-ditolak.pdf",
+            'uploaded_by' => $submitter->id,
+            'updated_at' => now(),
+            'original_file_name' => 'invoice-ditolak.pdf',
+            'stored_file_name' => 'invoice-ditolak.pdf',
+            'file_size' => 24,
+        ]);
+        Storage::disk('local')->put("documents/{$rejectedRevision->id}/invoice-ditolak.pdf", 'PDF test content');
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-4'), $this->revisionSubmitPayload($source, $officialPreparer, [
+                'nama_dokumen' => 'Revisi Rewrite Dengan Lampiran',
+                'included_attachment_ids' => $source->files()->where('type_file', 'attachment')->pluck('id')->all(),
+                'attachment_titles' => ['Invoice', 'Ringkasan ETA'],
+                'attachment_orders' => [3, 4],
+                'attachments' => [
+                    UploadedFile::fake()->create('invoice.pdf', 24, 'application/pdf'),
+                    UploadedFile::fake()->create('ringkasan-eta.pdf', 24, 'application/pdf'),
+                ],
+            ]))
+            ->assertRedirect(route('documents.create'));
+
+        $revision = $rejectedRevision->refresh();
+        $newAttachments = $revision->files()
+            ->where('type_file', 'attachment')
+            ->whereNull('source_file_id')
+            ->reorder()
+            ->orderBy('attachment_order')
+            ->get();
+
+        $this->assertSame(StatusDocument::PROPOSED, $revision->status->nama_status);
+        $this->assertSame(['FMPS-SMR-010-04', 'FMPS-SMR-010-05'], $newAttachments->pluck('document_number')->all());
+        $this->assertSame(['Invoice', 'Ringkasan ETA'], $newAttachments->pluck('attachment_title')->all());
+        $this->assertSame([
+            ['number' => 1, 'title' => 'Lembar Revisi', 'document_number' => 'FMPS-SMR-010-01'],
+            ['number' => 2, 'title' => 'Lampiran BAPP', 'document_number' => 'FMPS-SMR-010-02'],
+            ['number' => 3, 'title' => 'Lampiran Sketsa', 'document_number' => 'FMPS-SMR-010-03'],
+            ['number' => 4, 'title' => 'Invoice', 'document_number' => 'FMPS-SMR-010-04'],
+            ['number' => 5, 'title' => 'Ringkasan ETA', 'document_number' => 'FMPS-SMR-010-05'],
+        ], collect(app(FinalArtifactGenerator::class)->collectAttachments($revision))->map(
+            fn (array $attachment): array => [
+                'number' => $attachment['number'],
+                'title' => $attachment['title'],
+                'document_number' => $attachment['document_number'],
+            ],
+        )->all());
+        $this->assertFalse(Storage::disk('local')->exists("documents/{$rejectedRevision->id}/invoice-ditolak.pdf"));
+        $this->assertSame(2, Document::query()->where('revised_from', $source->id)->where('request_type', 'revision')->count());
     }
 
     public function test_level_four_revision_from_work_instruction_uses_fmik_document_number(): void

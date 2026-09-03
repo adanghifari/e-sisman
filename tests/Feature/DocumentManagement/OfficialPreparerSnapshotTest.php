@@ -29,6 +29,7 @@ class OfficialPreparerSnapshotTest extends TestCase
 
         $this->ensureStatuses();
         Storage::fake('local');
+        Storage::disk('local')->makeDirectory('documents');
     }
 
     public function test_submit_document_snapshots_official_preparer_profile(): void
@@ -207,11 +208,16 @@ class OfficialPreparerSnapshotTest extends TestCase
         $this->assertStringNotContainsString('New Name', json_encode($payload['preparers']));
     }
 
-    public function test_legacy_document_without_snapshot_does_not_crash_or_use_current_profile_as_truth(): void
+    public function test_legacy_document_without_snapshot_uses_official_preparer_as_cover_fallback(): void
     {
+        $department = Department::query()->create([
+            'kode_department' => 'CUR',
+            'nama_department' => 'Current Department',
+        ]);
         $officialPreparer = User::factory()->create([
             'name' => 'Current Name',
             'jabatan' => 'Current Position',
+            'm_department_id' => $department->id,
         ]);
         $document = $this->approvedDocument(['official_preparer_id' => $officialPreparer->id]);
         $this->createDocumentFile($document);
@@ -221,9 +227,89 @@ class OfficialPreparerSnapshotTest extends TestCase
             ->payload;
 
         $this->assertSame($officialPreparer->id, $payload['preparers'][0]['id']);
-        $this->assertNull($payload['preparers'][0]['name']);
-        $this->assertNull($payload['preparers'][0]['position']);
-        $this->assertNull($payload['preparers'][0]['department']);
+        $this->assertSame('Current Name', $payload['preparers'][0]['name']);
+        $this->assertSame('Current Position', $payload['preparers'][0]['position']);
+        $this->assertSame('Current Department', $payload['preparers'][0]['department']);
+    }
+
+    public function test_approved_revision_cover_uses_revision_official_preparer_when_source_preparer_is_different(): void
+    {
+        $sourcePreparerDepartment = Department::query()->create([
+            'kode_department' => 'SRC',
+            'nama_department' => 'Source Department',
+        ]);
+        $revisionPreparerDepartment = Department::query()->create([
+            'kode_department' => 'REV',
+            'nama_department' => 'Revision Department',
+        ]);
+        $sourcePreparer = User::factory()->create([
+            'name' => 'Source Preparer',
+            'jabatan' => 'Source Position',
+            'm_department_id' => $sourcePreparerDepartment->id,
+        ]);
+        $revisionPreparer = User::factory()->create([
+            'name' => 'Revision Preparer',
+            'jabatan' => 'Revision Position',
+            'm_department_id' => $revisionPreparerDepartment->id,
+        ]);
+        $level = DocumentLevel::query()->firstOrCreate(
+            ['kode' => 'level-3'],
+            [
+                'nama_level' => 'Level III',
+                'nama_dokumen' => 'Instruksi Kerja',
+                'prefix' => 'IK',
+                'is_active' => true,
+                'sort_order' => 3,
+            ],
+        );
+        $formLevel = DocumentLevel::query()->firstOrCreate(
+            ['kode' => 'level-4'],
+            [
+                'nama_level' => 'Level IV',
+                'nama_dokumen' => 'Form',
+                'prefix' => 'FM',
+                'is_active' => true,
+                'sort_order' => 4,
+            ],
+        );
+        $documentType = DocumentType::query()->firstOrCreate(['nama_types' => 'IK'], ['is_active' => true]);
+        $formType = DocumentType::query()->firstOrCreate(['nama_types' => 'Form'], ['is_active' => true]);
+
+        $source = $this->approvedDocument([
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'official_preparer_id' => $sourcePreparer->id,
+            'official_preparer_name_snapshot' => 'Source Preparer',
+            'official_preparer_position_snapshot' => 'Source Position',
+            'official_preparer_department_snapshot' => 'Source Department',
+            'nama_dokumen' => 'Dokumen Tes Intruksi Kerja',
+            'nomor_dokumen' => 'IK-SMR-01-01',
+        ]);
+
+        $revision = $this->approvedDocument([
+            'm_document_level_id' => $formLevel->id,
+            'm_document_types_id' => $formType->id,
+            'official_preparer_id' => $revisionPreparer->id,
+            'official_preparer_name_snapshot' => null,
+            'official_preparer_position_snapshot' => null,
+            'official_preparer_department_snapshot' => null,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Dokumen Tes Intruksi Kerja Part 1 Fokus Lampiran',
+            'nomor_dokumen' => 'IK-SMR-01-01',
+            'nomor_revisi' => 1,
+            'nomor_lembar_revisi' => 'FMIK-SMR-01-01-01',
+        ]);
+        $this->createDocumentFile($revision, 'revision_content');
+
+        $payload = app(FinalArtifactGenerator::class)
+            ->prepare($revision)
+            ->payload;
+
+        $this->assertSame('Revision Preparer', $payload['preparers'][0]['name']);
+        $this->assertSame('Revision Position', $payload['preparers'][0]['position']);
+        $this->assertSame('Revision Department', $payload['preparers'][0]['department']);
+        $this->assertStringNotContainsString('Source Preparer', json_encode($payload['preparers']));
     }
 
     private function approvedDocument(array $attributes = []): Document
@@ -263,19 +349,19 @@ class OfficialPreparerSnapshotTest extends TestCase
         return $document;
     }
 
-    private function createDocumentFile(Document $document): DocumentFile
+    private function createDocumentFile(Document $document, string $type = 'filled_template'): DocumentFile
     {
-        $path = "documents/{$document->id}/filled_template.pdf";
+        $path = "documents/{$document->id}/{$type}.pdf";
         Storage::disk('local')->put($path, 'pdf body');
 
         return DocumentFile::query()->create([
             't_document_id' => $document->id,
-            'type_file' => 'filled_template',
+            'type_file' => $type,
             'path_file' => $path,
             'uploaded_by' => $document->user_id,
             'updated_at' => now(),
-            'original_file_name' => 'filled_template.pdf',
-            'stored_file_name' => 'filled_template.pdf',
+            'original_file_name' => "{$type}.pdf",
+            'stored_file_name' => "{$type}.pdf",
             'file_size' => 8,
         ]);
     }

@@ -15,6 +15,7 @@ use App\Models\ImportedExistingDocument;
 use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
 use App\Models\User;
+use App\Support\DocumentFiles\DocumentFileNumbering;
 use App\Support\DocumentHistory;
 use App\Support\DocumentRejectionHistory;
 use App\Support\FinalDocuments\AutoGenerateFinalDocument;
@@ -53,6 +54,7 @@ class DocumentApprovalController extends Controller
             'approvals.status',
             'approvals.approver',
             'approvals.role',
+            'approvals.approvalFlowStage',
             'documentLevel.approvalFlows.stages',
             'revisedFrom.documentLevel.approvalFlows.stages',
             'revisedFrom.creator',
@@ -83,7 +85,10 @@ class DocumentApprovalController extends Controller
                 'revision_after',
             ])->values(),
             'obsoleteSourceContentFiles' => $obsoleteSourceContentFiles,
-            'attachmentFiles' => $document->files->where('type_file', 'attachment')->values(),
+            'attachmentFiles' => $document->files
+                ->where('type_file', 'attachment')
+                ->sortBy(fn (DocumentFile $file): string => $file->attachmentSortKey())
+                ->values(),
             'generatedPrintout' => $this->latestGeneratedPrintout($document),
             'canPreviewGeneratedPrintout' => app(DynamicFinalDocumentRenderer::class)
                 ->canRender($document, $document->status?->nama_status === StatusDocument::APPROVED
@@ -234,7 +239,7 @@ class DocumentApprovalController extends Controller
 
             Approval::query()
                 ->where('t_document_id', $document->id)
-                ->where('stages', $stageLabel)
+                ->forApprovalFlowStage($stage)
                 ->whereNull('responded_at')
                 ->whereNotIn('user_id', $userIds)
                 ->delete();
@@ -243,7 +248,7 @@ class DocumentApprovalController extends Controller
                 $approval = Approval::query()->firstOrNew([
                     't_document_id' => $document->id,
                     'user_id' => $userId,
-                    'stages' => $stageLabel,
+                    'm_approval_flow_stage_id' => $stage->id,
                 ]);
 
                 if ($approval->exists && $approval->responded_at !== null) {
@@ -258,6 +263,7 @@ class DocumentApprovalController extends Controller
                     'role_id' => null,
                     'assigned_by' => $request->user()->id,
                     'assigned_at' => now(),
+                    'stages' => $stageLabel,
                     'responded_at' => $alreadySignedAsOfficialPreparer
                         ? ($officialPreparerSignature->responded_at ?? $officialPreparerSignature->assigned_at ?? now())
                         : null,
@@ -468,6 +474,13 @@ class DocumentApprovalController extends Controller
 
     private function stageOrderSnapshotForApproval(Document $document, Approval $approval): ?int
     {
+        if ($approval->m_approval_flow_stage_id !== null) {
+            $stage = $this->approvalFlowStages($document)
+                ->firstWhere('id', $approval->m_approval_flow_stage_id);
+
+            return $stage !== null ? (int) $stage->stage_order : null;
+        }
+
         $stage = $this->approvalFlowStages($document)
             ->first(fn (ApprovalFlowStage $stage): bool => ($stage->display_label ?: 'Approval') === $approval->stages);
 
@@ -588,7 +601,7 @@ class DocumentApprovalController extends Controller
             $requestedUserIds = $this->stageApproverIds($request, $document, $stage);
             $stageApprovals = Approval::query()
                 ->where('t_document_id', $document->id)
-                ->where('stages', $stageLabel)
+                ->forApprovalFlowStage($stage)
                 ->get();
 
             if ($stageApprovals->isEmpty()) {
@@ -637,7 +650,7 @@ class DocumentApprovalController extends Controller
             $stageLabel = $stage->display_label ?: 'Approval';
             $currentUserIds = Approval::query()
                 ->where('t_document_id', $document->id)
-                ->where('stages', $stageLabel)
+                ->forApprovalFlowStage($stage)
                 ->pluck('user_id')
                 ->sort()
                 ->values();
@@ -670,10 +683,9 @@ class DocumentApprovalController extends Controller
         $stages = $this->approvalFlowStages($document);
 
         foreach ($stages as $stage) {
-            $stageLabel = $stage->display_label ?: 'Approval';
             $stageApprovals = Approval::query()
                 ->where('t_document_id', $document->id)
-                ->where('stages', $stageLabel);
+                ->forApprovalFlowStage($stage);
 
             if ((clone $stageApprovals)->where('m_approval_status_id', $pendingStatus->id)->exists()) {
                 return false;
@@ -819,6 +831,7 @@ class DocumentApprovalController extends Controller
             })
             ->update([
                 'm_status_document_id' => $obsoleteStatus->id,
+                'obsolete_at' => $approvedAt,
             ]);
 
         return $lockedDocument->refresh();
@@ -896,25 +909,7 @@ class DocumentApprovalController extends Controller
 
     private function revisionFormNumber(Document $source, int $revision): string
     {
-        $prefix = match ($source->documentLevel?->kode) {
-            'level-1' => 'FMSM',
-            'level-2' => 'FMPS',
-            'level-3' => 'FMIK',
-            default => 'FM',
-        };
-        $segments = collect(explode('-', (string) $source->nomor_dokumen))
-            ->filter()
-            ->values();
-
-        if ($segments->isNotEmpty()) {
-            $segments->shift();
-        }
-
-        return collect([$prefix])
-            ->merge($segments)
-            ->push(str_pad((string) $revision, 2, '0', STR_PAD_LEFT))
-            ->filter()
-            ->implode('-');
+        return (string) app(DocumentFileNumbering::class)->revisionFormNumber($source);
     }
 
     private function obsoleteSourceMasterDocument(Document $document): void
@@ -935,6 +930,7 @@ class DocumentApprovalController extends Controller
             ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::APPROVED))
             ->update([
                 'm_status_document_id' => $obsoleteStatus->id,
+                'obsolete_at' => $document->approved_at ?? now(),
             ]);
     }
 
@@ -953,6 +949,7 @@ class DocumentApprovalController extends Controller
             ->each(function (Document $revision) use ($obsoleteStatus): void {
                 $revision->update([
                     'm_status_document_id' => $obsoleteStatus->id,
+                    'obsolete_at' => now(),
                 ]);
             });
     }
@@ -977,10 +974,9 @@ class DocumentApprovalController extends Controller
         }
 
         foreach ($stages as $stage) {
-            $stageLabel = $stage->display_label ?: 'Approval';
             $stageApprovals = Approval::query()
                 ->where('t_document_id', $document->id)
-                ->where('stages', $stageLabel);
+                ->forApprovalFlowStage($stage);
 
             if (! (clone $stageApprovals)->exists()) {
                 return false;
@@ -999,10 +995,9 @@ class DocumentApprovalController extends Controller
         $approvedStatusId = ApprovalStatus::findByCode(ApprovalStatus::APPROVED)->id;
 
         foreach ($stages as $stage) {
-            $stageLabel = $stage->display_label ?: 'Approval';
             $stageApprovals = Approval::query()
                 ->where('t_document_id', $document->id)
-                ->where('stages', $stageLabel);
+                ->forApprovalFlowStage($stage);
 
             if (
                 ! (clone $stageApprovals)->exists()

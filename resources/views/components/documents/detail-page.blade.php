@@ -41,6 +41,14 @@
                         'revision_form' => 'Lembar Revisi',
                         'attachment' => 'Lampiran',
     ];
+    $documentFiles = $document->files ?? collect();
+    $finalArtifacts = $document->finalArtifacts ?? collect();
+    $printoutVersion = collect([
+        $document->updated_at?->timestamp,
+        $documentFiles->max(fn ($file) => $file->updated_at?->timestamp),
+        $documentFiles->max('id'),
+        $finalArtifacts->max('id'),
+    ])->filter()->implode('-');
     $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
 @endphp
 
@@ -154,7 +162,7 @@
                                         </div>
                                     </div>
 
-                                    <x-documents.lazy-pdf-preview :src="route($fileRoutePrefix.'.generated.show', $document).'#toolbar=0&view=FitH&navpanes=0'" />
+                                    <x-documents.lazy-pdf-preview :src="route($fileRoutePrefix.'.generated.show', [$document, 'v' => $printoutVersion]).'#toolbar=0&view=FitH&navpanes=0'" />
                                 </section>
                             @else
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
@@ -311,13 +319,20 @@
                             <h3 class="text-sm font-bold text-slate-900">Riwayat Approver</h3>
                         </div>
                         @php
-                            $approvalStageOrders = $approvalFlowStages
-                                ->mapWithKeys(fn ($stage) => [($stage->display_label ?: 'Approval') => $stage->stage_order]);
+                            $approvalStageOrdersById = $approvalFlowStages
+                                ->mapWithKeys(fn ($stage) => [$stage->id => $stage->stage_order]);
+                            $approvalStageOrdersByLabel = $approvalFlowStages
+                                ->groupBy(fn ($stage) => $stage->display_label ?: 'Approval')
+                                ->map(fn ($stages) => $stages->first()->stage_order);
                             $approvalHistory = $document->approvals
                                 ->reject(fn ($approval) => $approval->stages === 'TTD Penyusun Resmi')
                                 ->sortBy(fn ($approval) => sprintf(
                                     '%04d-%010d-%04d',
-                                    $approvalStageOrders->get($approval->stages, 9999),
+                                    $approval->stage_order_snapshot
+                                        ?? $approvalStageOrdersById->get(
+                                            $approval->m_approval_flow_stage_id,
+                                            $approvalStageOrdersByLabel->get($approval->stages, 9999),
+                                        ),
                                     $approval->assigned_at?->timestamp ?? 0,
                                     $approval->id,
                                 ))

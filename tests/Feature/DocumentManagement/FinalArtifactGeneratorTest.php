@@ -167,7 +167,7 @@ class FinalArtifactGeneratorTest extends TestCase
         $this->assertSame($thirdApproval->id, $approvals[1]['approvers'][0]['approval_id']);
     }
 
-    public function test_approval_payload_hides_official_preparer_signature_stages(): void
+    public function test_approval_payload_includes_assigned_preparer_stage_but_hides_auto_signature_stage(): void
     {
         $document = $this->createDocument();
         $officialPreparer = User::query()->findOrFail($document->official_preparer_id);
@@ -199,7 +199,8 @@ class FinalArtifactGeneratorTest extends TestCase
 
         $this->assertCount(1, $approvals);
         $this->assertSame('Disusun Oleh', $approvals[0]['stage_name']);
-        $this->assertSame('Reviewer Penyusun', $approvals[0]['approvers'][0]['name']);
+        $this->assertSame('Penyusun Resmi', $approvals[0]['approvers'][0]['name']);
+        $this->assertSame('Reviewer Penyusun', $approvals[0]['approvers'][1]['name']);
     }
 
     public function test_approval_payload_uses_snapshot_instead_of_current_user_profile(): void
@@ -350,7 +351,7 @@ class FinalArtifactGeneratorTest extends TestCase
         $this->assertNull($approvalPayload['approvers'][0]['department']);
     }
 
-    public function test_revision_final_payload_uses_root_approvals_for_main_approval_sheet(): void
+    public function test_revision_final_payload_uses_revision_approvals_for_main_and_revision_approval_sheets(): void
     {
         $root = $this->createDocument([
             'nama_dokumen' => 'Prosedur Root',
@@ -365,7 +366,7 @@ class FinalArtifactGeneratorTest extends TestCase
             'nomor_dokumen' => 'PS-SMR-ROOT',
             'nomor_revisi' => 1,
         ]);
-        $rootApproval = $this->createApproval($root, User::factory()->create(), [
+        $this->createApproval($root, User::factory()->create(), [
             'stage_name_snapshot' => 'Pengesahan Utama',
             'stage_order_snapshot' => 1,
             'approver_name_snapshot' => 'Approval Root',
@@ -381,8 +382,8 @@ class FinalArtifactGeneratorTest extends TestCase
             ->prepare($revision)
             ->payload;
 
-        $this->assertSame($rootApproval->id, $payload['approvals'][0]['approvers'][0]['approval_id']);
-        $this->assertSame('Approval Root', $payload['approvals'][0]['approvers'][0]['name']);
+        $this->assertSame($revisionApproval->id, $payload['approvals'][0]['approvers'][0]['approval_id']);
+        $this->assertSame('Approval Revisi', $payload['approvals'][0]['approvers'][0]['name']);
         $this->assertSame($revisionApproval->id, $payload['revision_approvals'][0]['approvers'][0]['approval_id']);
         $this->assertSame('Approval Revisi', $payload['revision_approvals'][0]['approvers'][0]['name']);
     }

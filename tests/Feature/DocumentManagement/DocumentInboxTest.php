@@ -1003,6 +1003,87 @@ class DocumentInboxTest extends TestCase
             ->exists());
     }
 
+    public function test_duplicate_stage_names_keep_separate_approver_assignments(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create();
+        $maker = User::factory()->create(['name' => 'Stage One Approver']);
+        $stageTwoApprover = User::factory()->create(['name' => 'Stage Two Approver']);
+        $stageThreeApprover = User::factory()->create(['name' => 'Stage Three Approver']);
+        $replacementStageThreeApprover = User::factory()->create(['name' => 'Replacement Third Approver']);
+        $document = $this->createDocument($submitter);
+        $documentControlAdmin = $this->documentControlAdmin($document->departments()->firstOrFail());
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $document->m_document_level_id,
+            'nama_flow' => 'Flow Level II',
+        ]);
+        $firstStage = $flow->stages()->create([
+            'stage_order' => 1,
+            'keterangan' => 'Dibuat oleh',
+            'nama_tahap' => 'Dibuat Oleh',
+        ]);
+        $secondStage = $flow->stages()->create([
+            'stage_order' => 2,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Diperiksa Oleh',
+        ]);
+        $thirdStage = $flow->stages()->create([
+            'stage_order' => 3,
+            'keterangan' => 'Diperiksa oleh',
+            'nama_tahap' => 'Diperiksa Oleh',
+        ]);
+
+        $this->actingAs($documentControlAdmin)
+            ->post(route('documents.approval.assign', $document), [
+                'stage_approvers' => [
+                    $firstStage->id => [$maker->id],
+                    $secondStage->id => [$stageTwoApprover->id],
+                    $thirdStage->id => [$stageThreeApprover->id],
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document));
+
+        $this->actingAs($documentControlAdmin)
+            ->post(route('documents.approval.assign', $document), [
+                'stage_approvers' => [
+                    $firstStage->id => [$maker->id],
+                    $secondStage->id => [$stageTwoApprover->id],
+                    $thirdStage->id => [$replacementStageThreeApprover->id],
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document));
+
+        $this->assertDatabaseHas('t_approval', [
+            't_document_id' => $document->id,
+            'm_approval_flow_stage_id' => $secondStage->id,
+            'user_id' => $stageTwoApprover->id,
+            'stages' => 'Diperiksa Oleh',
+        ]);
+        $this->assertDatabaseMissing('t_approval', [
+            't_document_id' => $document->id,
+            'm_approval_flow_stage_id' => $secondStage->id,
+            'user_id' => $replacementStageThreeApprover->id,
+        ]);
+        $this->assertDatabaseMissing('t_approval', [
+            't_document_id' => $document->id,
+            'm_approval_flow_stage_id' => $thirdStage->id,
+            'user_id' => $stageThreeApprover->id,
+        ]);
+        $this->assertDatabaseHas('t_approval', [
+            't_document_id' => $document->id,
+            'm_approval_flow_stage_id' => $thirdStage->id,
+            'user_id' => $replacementStageThreeApprover->id,
+            'stages' => 'Diperiksa Oleh',
+        ]);
+
+        $this->actingAs($documentControlAdmin)
+            ->get(route('documents.approval.show', $document))
+            ->assertOk()
+            ->assertSee('Stage Two Approver')
+            ->assertSee('Replacement Third Approver');
+    }
+
     public function test_regular_approver_cannot_assign_document_approvers(): void
     {
         $this->ensureApprovalStatuses();
