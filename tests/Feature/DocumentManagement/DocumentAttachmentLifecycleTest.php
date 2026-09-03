@@ -123,6 +123,42 @@ class DocumentAttachmentLifecycleTest extends TestCase
         Storage::disk('local')->assertExists($attachment->path_file);
     }
 
+    public function test_revision_can_submit_with_all_source_attachments_unchecked(): void
+    {
+        [$source, $submitter, $officialPreparer] = $this->revisionFixture();
+        $firstAttachment = $this->storeDocumentFile($source, 'attachment', [
+            'attachment_title' => 'Lampiran Risiko',
+            'attachment_order' => 1,
+            'document_number' => 'FMPS-SMR-010-02',
+            'path_file' => "documents/{$source->id}/lampiran-risiko.pdf",
+            'original_file_name' => 'lampiran-risiko.pdf',
+            'stored_file_name' => 'lampiran-risiko.pdf',
+        ]);
+        $secondAttachment = $this->storeDocumentFile($source, 'attachment', [
+            'attachment_title' => 'Lampiran BAPP',
+            'attachment_order' => 2,
+            'document_number' => 'FMPS-SMR-010-03',
+            'path_file' => "documents/{$source->id}/lampiran-bapp.pdf",
+            'original_file_name' => 'lampiran-bapp.pdf',
+            'stored_file_name' => 'lampiran-bapp.pdf',
+        ]);
+
+        $payload = $this->revisionPayload($source, $officialPreparer, [
+            'nama_dokumen' => 'Revisi Semua Lampiran Tidak Dicentang',
+        ]);
+        unset($payload['included_attachment_ids']);
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-4'), $payload)
+            ->assertRedirect(route('documents.create'));
+
+        $revision = Document::query()->where('nama_dokumen', 'Revisi Semua Lampiran Tidak Dicentang')->firstOrFail();
+
+        $this->assertFalse($revision->files()->where('type_file', 'attachment')->where('source_file_id', $firstAttachment->id)->exists());
+        $this->assertFalse($revision->files()->where('type_file', 'attachment')->where('source_file_id', $secondAttachment->id)->exists());
+        $this->assertFalse($revision->files()->where('type_file', 'attachment')->exists());
+    }
+
     public function test_unchecked_source_attachment_remains_available_for_next_revision(): void
     {
         [$source, $submitter, $officialPreparer] = $this->revisionFixture();
