@@ -123,7 +123,7 @@ class DocumentAttachmentLifecycleTest extends TestCase
         Storage::disk('local')->assertExists($attachment->path_file);
     }
 
-    public function test_unchecked_source_attachment_still_carries_forward_to_next_revision_master(): void
+    public function test_unchecked_source_attachment_remains_available_for_next_revision(): void
     {
         [$source, $submitter, $officialPreparer] = $this->revisionFixture();
         $firstAttachment = $this->storeDocumentFile($source, 'attachment', [
@@ -153,23 +153,47 @@ class DocumentAttachmentLifecycleTest extends TestCase
         $revision = Document::query()->where('nama_dokumen', 'Revisi Dengan Lampiran Tidak Dicentang')->firstOrFail();
 
         $this->assertTrue($revision->files()->where('type_file', 'attachment')->where('source_file_id', $firstAttachment->id)->exists());
-        $this->assertTrue($revision->files()->where('type_file', 'attachment')->where('source_file_id', $secondAttachment->id)->exists());
+        $this->assertFalse($revision->files()->where('type_file', 'attachment')->where('source_file_id', $secondAttachment->id)->exists());
 
         $revision->forceFill([
             'm_status_document_id' => StatusDocument::findByName(StatusDocument::APPROVED)->id,
             'approved_at' => now(),
         ])->save();
 
-        $this->actingAs($submitter)
+        $response = $this->actingAs($submitter)
             ->get(route('documents.create.level', ['level-4', 'revised_from' => $revision->id]))
             ->assertOk()
             ->assertSeeInOrder([
                 'Lampiran Master Sebelumnya',
+                'Dicantumkan',
                 'Lampiran Risiko',
                 'FMPS-SMR-010-02',
+                'Tidak Dicantumkan',
                 'Lampiran BAPP',
                 'FMPS-SMR-010-03',
             ]);
+
+        $content = $response->getContent();
+        $this->assertMatchesRegularExpression(
+            '/name="included_attachment_ids\[\]"\s+value="'.$revision->files()->where('type_file', 'attachment')->firstOrFail()->id.'"\s+data-master-attachment-include(?!\s+disabled)/',
+            $content,
+        );
+        $this->assertMatchesRegularExpression(
+            '/name="included_attachment_ids\[\]"\s+value="'.$secondAttachment->id.'"\s+data-master-attachment-include\s+disabled/',
+            $content,
+        );
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-4'), $this->revisionPayload($revision, $officialPreparer, [
+                'nama_dokumen' => 'Revisi Berikutnya Mengikuti Checkbox Lampiran',
+                'included_attachment_ids' => $revision->files()->where('type_file', 'attachment')->pluck('id')->all(),
+            ]))
+            ->assertRedirect(route('documents.create'));
+
+        $nextRevision = Document::query()->where('nama_dokumen', 'Revisi Berikutnya Mengikuti Checkbox Lampiran')->firstOrFail();
+
+        $this->assertTrue($nextRevision->files()->where('type_file', 'attachment')->where('document_number', 'FMPS-SMR-010-02')->exists());
+        $this->assertFalse($nextRevision->files()->where('type_file', 'attachment')->where('document_number', 'FMPS-SMR-010-03')->exists());
     }
 
     public function test_revision_attachment_replacement_keeps_source_number_and_lineage(): void

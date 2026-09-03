@@ -220,6 +220,61 @@ class Document extends Model
         return $this->hasMany(DocumentFile::class, 't_document_id')->orderByDesc('id');
     }
 
+    public function availableRevisionSourceAttachments(): Collection
+    {
+        $eligibleStatusIds = StatusDocument::query()
+            ->whereIn('nama_status', [StatusDocument::APPROVED, StatusDocument::OBSOLETE])
+            ->pluck('id');
+
+        $family = $this->revisionFamily()
+            ->filter(fn (self $document): bool => (int) $document->nomor_revisi <= (int) $this->nomor_revisi)
+            ->filter(fn (self $document): bool => $document->is($this) || $eligibleStatusIds->contains($document->m_status_document_id))
+            ->sortBy([
+                ['nomor_revisi', 'asc'],
+                ['id', 'asc'],
+            ])
+            ->values();
+
+        if ($family->isEmpty()) {
+            return collect();
+        }
+
+        $revisionByDocumentId = $family
+            ->mapWithKeys(fn (self $document): array => [$document->id => (int) $document->nomor_revisi]);
+
+        $attachments = DocumentFile::query()
+            ->whereIn('t_document_id', $family->pluck('id'))
+            ->where('type_file', 'attachment')
+            ->orderBy('id')
+            ->get();
+
+        $attachmentsById = $attachments->keyBy('id');
+        $rootFor = function (DocumentFile $file) use ($attachmentsById): int {
+            $current = $file;
+
+            while ($current->source_file_id !== null && $attachmentsById->has($current->source_file_id)) {
+                $current = $attachmentsById->get($current->source_file_id);
+            }
+
+            return (int) ($current->source_file_id ?? $current->id);
+        };
+
+        return $attachments
+            ->sortBy(fn (DocumentFile $file): string => sprintf(
+                '%010d-%010d',
+                $revisionByDocumentId->get($file->t_document_id, 0),
+                $file->id,
+            ))
+            ->reduce(function (Collection $carry, DocumentFile $file) use ($rootFor): Collection {
+                $carry->put($rootFor($file), $file);
+
+                return $carry;
+            }, collect())
+            ->values()
+            ->sortBy(fn (DocumentFile $file): string => $file->attachmentSortKey())
+            ->values();
+    }
+
     public function finalArtifacts(): HasMany
     {
         return $this->hasMany(DocumentFinalArtifact::class, 't_document_id');

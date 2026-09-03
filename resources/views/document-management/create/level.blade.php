@@ -32,13 +32,15 @@
             ])
             ->values();
         $revisionSourceAttachments = $revisionSource
+            ? $revisionSource->availableRevisionSourceAttachments()
+            : collect();
+        $revisionSourceCurrentAttachmentIds = $revisionSource
             ? $revisionSource->files()
                 ->where('type_file', 'attachment')
-                ->orderBy('id')
-                ->get()
-                ->sortBy($attachmentSortKey)
-                ->values()
-            : collect();
+                ->pluck('id')
+                ->map(fn ($id) => (string) $id)
+                ->all()
+            : [];
         $carriedForwardSourceFileIds = $draft
             ? $draft->files
                 ->where('type_file', 'attachment')
@@ -629,33 +631,41 @@
 
                                         <div class="space-y-2">
                                             @foreach ($revisionSourceAttachments as $sourceAttachment)
+                                                @php
+                                                    $isSourceAttachmentIncluded = $draft
+                                                        ? in_array((string) $sourceAttachment->id, $carriedForwardSourceFileIds, true)
+                                                        : in_array((string) $sourceAttachment->id, $revisionSourceCurrentAttachmentIds, true);
+                                                @endphp
                                                 <div
                                                     class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto]"
                                                     data-master-attachment-row
-                                                    data-included="true"
-                                                    data-always-carry="true"
+                                                    data-included="{{ $isSourceAttachmentIncluded ? 'true' : 'false' }}"
                                                 >
                                                     <input
                                                         type="hidden"
                                                         name="included_attachment_ids[]"
                                                         value="{{ $sourceAttachment->id }}"
                                                         data-master-attachment-include
+                                                        @disabled(! $isSourceAttachmentIncluded)
                                                     >
 
                                                     <div class="grid min-w-0 gap-3 md:grid-cols-[auto_minmax(0,1fr)]">
-                                                        <label class="flex w-36 shrink-0 cursor-default flex-col items-center gap-2">
+                                                        <label class="flex w-36 shrink-0 cursor-pointer flex-col items-center gap-2">
                                                             <input
                                                                 type="checkbox"
                                                                 class="size-5 rounded border-slate-300 text-sky-600"
                                                                 data-master-attachment-checkbox
-                                                                checked
-                                                                disabled
+                                                                @checked($isSourceAttachmentIncluded)
                                                             >
                                                             <span
-                                                                class="inline-flex min-w-32 justify-center whitespace-nowrap rounded-full bg-emerald-50 px-3 py-1 text-center text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-100"
+                                                                @class([
+                                                                    'inline-flex min-w-32 justify-center whitespace-nowrap rounded-full px-3 py-1 text-center text-[11px] font-bold',
+                                                                    'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100' => $isSourceAttachmentIncluded,
+                                                                    'bg-red-50 text-red-700 ring-1 ring-red-100' => ! $isSourceAttachmentIncluded,
+                                                                ])
                                                                 data-master-attachment-badge
                                                             >
-                                                                Tetap Dibawa
+                                                                {{ $isSourceAttachmentIncluded ? 'Dicantumkan' : 'Tidak Dicantumkan' }}
                                                             </span>
                                                         </label>
 
@@ -1294,17 +1304,6 @@
                     const badge = row?.querySelector('[data-master-attachment-badge]');
 
                     if (!row || !input || !checkbox || !badge) {
-                        return;
-                    }
-
-                    if (row.dataset.alwaysCarry === 'true') {
-                        row.dataset.included = 'true';
-                        input.disabled = false;
-                        checkbox.checked = true;
-                        checkbox.disabled = true;
-                        badge.textContent = 'Tetap Dibawa';
-                        badge.className = 'inline-flex min-w-32 justify-center whitespace-nowrap rounded-full bg-emerald-50 px-3 py-1 text-center text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-100';
-
                         return;
                     }
 

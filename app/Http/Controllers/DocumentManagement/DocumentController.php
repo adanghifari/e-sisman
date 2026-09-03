@@ -775,16 +775,15 @@ class DocumentController extends Controller
 
     private function syncRevisionSourceAttachments(Request $request, Document $document, Document $source): void
     {
-        $allSourceAttachments = $source->files()
-            ->where('type_file', 'attachment')
-            ->orderByRaw('CASE WHEN attachment_order IS NULL THEN 1 ELSE 0 END')
-            ->orderBy('attachment_order')
-            ->orderBy('id')
-            ->get();
+        $allSourceAttachments = $source->availableRevisionSourceAttachments();
 
         if ($allSourceAttachments->isEmpty()) {
             return;
         }
+
+        $includedSourceAttachmentIds = collect($request->input('included_attachment_ids', []))
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
 
         foreach ($allSourceAttachments as $sourceFile) {
             $replacement = $request->file("revised_attachments.{$sourceFile->id}");
@@ -792,6 +791,14 @@ class DocumentController extends Controller
                 ->where('type_file', 'attachment')
                 ->where('source_file_id', $sourceFile->id)
                 ->first();
+
+            if (! in_array((int) $sourceFile->id, $includedSourceAttachmentIds, true) && $replacement === null) {
+                if ($existing !== null) {
+                    $this->deleteDocumentFile($existing);
+                }
+
+                continue;
+            }
 
             if ($existing !== null && $replacement === null) {
                 $existing->forceFill([
