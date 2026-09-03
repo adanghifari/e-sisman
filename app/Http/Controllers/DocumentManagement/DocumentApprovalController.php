@@ -349,35 +349,39 @@ class DocumentApprovalController extends Controller
             $oldDocumentNumber = $document->nomor_dokumen;
             $oldOfficialPreparerId = $document->official_preparer_id;
             $levelKey = $document->documentLevel?->kode;
-            $metadata = $this->submittedDocumentMetadata($document, $validated);
-            $documentNumber = $this->updatedDocumentNumber($document, $metadata);
+            $isMetadataUpdate = ($validated['_update_scope'] ?? null) === 'metadata';
 
-            $documentAttributes = [
-                'nama_dokumen' => $metadata['nama_dokumen'],
-                'm_proses_bisnis_id' => $metadata['m_proses_bisnis_id'],
-                'm_proses_fungsi_id' => $metadata['m_proses_fungsi_id'],
-                'reference' => $levelKey === 'level-3' ? ($metadata['reference'] ?? null) : $document->reference,
-                'official_preparer_id' => $metadata['official_preparer_id'],
-                'nomor_dokumen' => $documentNumber,
-                'tanggal_terbit' => $metadata['tanggal_terbit'],
-                'catatan_revisi' => $metadata['catatan_revisi'],
-            ];
+            if ($isMetadataUpdate) {
+                $metadata = $this->submittedDocumentMetadata($document, $validated);
+                $documentNumber = $this->updatedDocumentNumber($document, $metadata);
 
-            if ($oldOfficialPreparerId !== $metadata['official_preparer_id']) {
-                $documentAttributes['official_preparer_name_snapshot'] = null;
-                $documentAttributes['official_preparer_position_snapshot'] = null;
-                $documentAttributes['official_preparer_department_snapshot'] = null;
-            }
+                $documentAttributes = [
+                    'nama_dokumen' => $metadata['nama_dokumen'],
+                    'm_proses_bisnis_id' => $metadata['m_proses_bisnis_id'],
+                    'm_proses_fungsi_id' => $metadata['m_proses_fungsi_id'],
+                    'reference' => $levelKey === 'level-3' ? ($metadata['reference'] ?? null) : $document->reference,
+                    'official_preparer_id' => $metadata['official_preparer_id'],
+                    'nomor_dokumen' => $documentNumber,
+                    'tanggal_terbit' => $metadata['tanggal_terbit'],
+                    'catatan_revisi' => $metadata['catatan_revisi'],
+                ];
 
-            $document->forceFill($documentAttributes)->save();
+                if ($oldOfficialPreparerId !== $metadata['official_preparer_id']) {
+                    $documentAttributes['official_preparer_name_snapshot'] = null;
+                    $documentAttributes['official_preparer_position_snapshot'] = null;
+                    $documentAttributes['official_preparer_department_snapshot'] = null;
+                }
 
-            if ($oldOfficialPreparerId !== $document->official_preparer_id) {
-                $document->snapshotOfficialPreparer();
-                $this->syncOfficialPreparerApproval($document, $request->user()->id);
-            }
+                $document->forceFill($documentAttributes)->save();
 
-            if ($levelKey !== 'level-1') {
-                $document->departments()->sync($metadata['department_ids'] ?? []);
+                if ($oldOfficialPreparerId !== $document->official_preparer_id) {
+                    $document->snapshotOfficialPreparer();
+                    $this->syncOfficialPreparerApproval($document, $request->user()->id);
+                }
+
+                if ($levelKey !== 'level-1') {
+                    $document->departments()->sync($metadata['department_ids'] ?? []);
+                }
             }
 
             $this->removeSubmittedFiles($document, $validated['remove_existing_files'] ?? []);
@@ -388,8 +392,9 @@ class DocumentApprovalController extends Controller
 
             if ($oldDocumentNumber !== $document->nomor_dokumen) {
                 $this->syncDocumentNumberRegistry($document, $oldDocumentNumber, $request->user()->id);
-                $this->renumberSubmittedFiles($document);
             }
+
+            $this->renumberSubmittedFiles($document);
 
             $this->clearApprovalPreviewArtifacts($document);
 
@@ -940,8 +945,7 @@ class DocumentApprovalController extends Controller
             }
 
             $type = $file->type_file;
-            $this->deleteDocumentFile($file);
-            $this->storeSubmittedFile($document, $uploadedFile, $type, $request->user()->id);
+            $this->replaceSubmittedFileRecord($file, $uploadedFile, $type, $request->user()->id);
         }
     }
 
@@ -992,8 +996,7 @@ class DocumentApprovalController extends Controller
             $sourceFileId = $file->source_file_id;
             $documentNumber = $file->document_number;
 
-            $this->deleteDocumentFile($file);
-            $this->storeSubmittedFile($document, $uploadedFile, 'attachment', $request->user()->id, $title, $order, $sourceFileId, $documentNumber);
+            $this->replaceSubmittedFileRecord($file, $uploadedFile, 'attachment', $request->user()->id, $title, $order, $sourceFileId, $documentNumber);
         }
     }
 
@@ -1035,6 +1038,35 @@ class DocumentApprovalController extends Controller
             'source_file_id' => $sourceFileId,
             'file_size' => $file->getSize(),
         ]);
+    }
+
+    private function replaceSubmittedFileRecord(
+        DocumentFile $file,
+        mixed $uploadedFile,
+        string $type,
+        int $uploadedBy,
+        ?string $attachmentTitle = null,
+        ?int $attachmentOrder = null,
+        ?int $sourceFileId = null,
+        ?string $documentNumber = null,
+    ): void {
+        Storage::disk('local')->delete($file->path_file);
+
+        $path = $uploadedFile->store("documents/{$file->t_document_id}", 'local');
+
+        $file->forceFill([
+            'type_file' => $type,
+            'document_number' => $documentNumber ?? $file->document_number,
+            'attachment_title' => $attachmentTitle,
+            'attachment_order' => $attachmentOrder,
+            'path_file' => $path,
+            'uploaded_by' => $uploadedBy,
+            'updated_at' => now(),
+            'original_file_name' => $uploadedFile->getClientOriginalName(),
+            'stored_file_name' => basename($path),
+            'source_file_id' => $sourceFileId,
+            'file_size' => $uploadedFile->getSize(),
+        ])->save();
     }
 
     private function updateSubmittedAttachments(Document $document, array $titles, array $orders): void

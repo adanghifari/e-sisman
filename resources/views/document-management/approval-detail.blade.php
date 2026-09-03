@@ -75,6 +75,10 @@
         $documentNumberSuffix = filled($document->nomor_dokumen)
             ? \Illuminate\Support\Str::afterLast($document->nomor_dokumen, '-')
             : null;
+        $filePreviewVersion = fn ($file) => collect([
+            $file->updated_at?->timestamp,
+            $file->id,
+        ])->filter()->implode('-');
         $metadataEditorStartsOpen = old('_update_scope') === 'metadata';
     @endphp
 
@@ -368,7 +372,7 @@
                                             </div>
                                         </div>
 
-                                        <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
+                                        <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file, 'v' => $filePreviewVersion($file)]).'#toolbar=0&view=FitH&navpanes=0'" />
                                     </section>
                                 @empty
                                     <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
@@ -389,7 +393,13 @@
                                                         <p class="mt-1 truncate text-xs font-semibold text-slate-500" data-selected-file-name>{{ $file->original_file_name }}</p>
                                                     </div>
                                                     @if ($canUpdateSubmittedDocument)
-                                                        <div class="flex shrink-0 flex-wrap gap-2">
+                                                        <div class="flex shrink-0 flex-wrap gap-2" data-file-readonly-action>
+                                                            <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-edit-open>Edit</button>
+                                                        </div>
+                                                        <div class="hidden shrink-0 flex-wrap gap-2" data-file-edit-control>
+                                                            <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 transition hover:border-red-200 hover:bg-red-100" data-file-edit-cancel aria-label="Batal edit">
+                                                                <flux:icon name="x-mark" class="size-4" />
+                                                            </button>
                                                             <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700">Download</a>
                                                             <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>Perbarui</button>
                                                             <button type="submit" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700">Save</button>
@@ -400,7 +410,7 @@
                                             </div>
 
                                             <x-documents.lazy-pdf-preview
-                                                :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'"
+                                                :src="route('documents.approval.files.preview', [$document, $file, 'v' => $filePreviewVersion($file)]).'#toolbar=0&view=FitH&navpanes=0'"
                                                 height-class="h-[620px] 2xl:h-[72vh]"
                                             />
                                         </section>
@@ -419,7 +429,13 @@
                                                 <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                             </div>
                                             @if ($canUpdateSubmittedDocument)
-                                                <div class="flex shrink-0 flex-wrap gap-2">
+                                                <div class="flex shrink-0 flex-wrap gap-2" data-file-readonly-action>
+                                                    <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-edit-open>Edit</button>
+                                                </div>
+                                                <div class="hidden shrink-0 flex-wrap gap-2" data-file-edit-control>
+                                                    <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 transition hover:border-red-200 hover:bg-red-100" data-file-edit-cancel aria-label="Batal edit">
+                                                        <flux:icon name="x-mark" class="size-4" />
+                                                    </button>
                                                     <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700">Download</a>
                                                     <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>Perbarui</button>
                                                     <button type="submit" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700">Save</button>
@@ -429,7 +445,7 @@
                                         </form>
                                     </div>
 
-                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
+                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file, 'v' => $filePreviewVersion($file)]).'#toolbar=0&view=FitH&navpanes=0'" />
                                 </section>
                             @endforeach
 
@@ -450,7 +466,13 @@
                                             <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                         </div>
                                         @if ($canUpdateSubmittedDocument)
-                                            <div class="flex shrink-0 flex-wrap gap-2">
+                                            <div class="flex shrink-0 flex-wrap gap-2" data-file-readonly-action>
+                                                <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-edit-open>Edit</button>
+                                            </div>
+                                            <div class="hidden shrink-0 flex-wrap gap-2" data-file-edit-control>
+                                                <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 transition hover:border-red-200 hover:bg-red-100" data-file-edit-cancel aria-label="Batal edit">
+                                                    <flux:icon name="x-mark" class="size-4" />
+                                                </button>
                                                 <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700">Download</a>
                                                 <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>Perbarui</button>
                                                 <button type="submit" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700">Save</button>
@@ -460,7 +482,7 @@
                                     </form>
                                 </div>
 
-                                <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
+                                <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file, 'v' => $filePreviewVersion($file)]).'#toolbar=0&view=FitH&navpanes=0'" />
                             </section>
                         @empty
                             <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
@@ -471,10 +493,28 @@
                         </div>
                     </x-documents.form-section>
 
-                    <x-documents.form-section title="Lampiran" icon="paper-clip">
+                    <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm" data-attachment-editor>
+                        <div class="border-b border-slate-200 px-6 py-5">
+                            <div class="flex flex-wrap items-center justify-between gap-3">
+                                <div class="flex items-center gap-3">
+                                    <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-sky-50 text-sky-700 ring-1 ring-sky-100">
+                                        <flux:icon name="paper-clip" class="size-5" />
+                                    </span>
+                                    <h2 class="text-lg font-bold text-slate-900">Lampiran</h2>
+                                </div>
+
+                                @if ($canUpdateSubmittedDocument)
+                                    <button type="button" class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" data-attachment-edit-open>
+                                        <flux:icon name="pencil-square" class="size-4" />
+                                        <span data-attachment-edit-label>Edit</span>
+                                    </button>
+                                @endif
+                            </div>
+                        </div>
+
                         <div class="space-y-3 px-6 py-6">
                             @if ($canUpdateSubmittedDocument)
-                                <form method="POST" action="{{ route('documents.approval.update-submitted', $document) }}" enctype="multipart/form-data" class="space-y-4" data-attachment-list>
+                                <form method="POST" action="{{ route('documents.approval.update-submitted', $document) }}" enctype="multipart/form-data" class="space-y-4" data-submitted-attachment-form>
                                     @csrf
                                     <input type="hidden" name="_update_scope" value="files">
 
@@ -484,7 +524,7 @@
                                                 <input type="hidden" name="existing_attachment_orders[{{ $file->id }}]" value="{{ $file->attachment_order ?? $loop->iteration }}" data-attachment-order-input>
                                                 <label class="block min-w-0">
                                                     <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nama Dokumen/Lampiran</span>
-                                                    <input type="text" name="existing_attachment_titles[{{ $file->id }}]" value="{{ $file->attachment_title ?: $file->original_file_name }}" class="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                                    <input type="text" name="existing_attachment_titles[{{ $file->id }}]" value="{{ $file->attachment_title ?: $file->original_file_name }}" readonly class="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" data-attachment-title-input>
                                                 </label>
 
                                                 <div class="min-w-0">
@@ -492,30 +532,32 @@
                                                     <div class="flex min-h-11 items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
                                                         <span class="grid size-9 shrink-0 place-items-center rounded-md border border-red-100 bg-red-50 text-[10px] font-bold text-red-600">PDF</span>
                                                         <span class="min-w-0">
-                                                            <span class="block truncate text-sm font-semibold text-slate-800" data-selected-file-name>{{ $file->original_file_name }}</span>
+                                                            <span class="block truncate text-sm font-semibold text-slate-800" data-selected-file-name data-original-file-name="{{ $file->original_file_name }}">{{ $file->original_file_name }}</span>
                                                             <span class="block text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</span>
                                                         </span>
                                                     </div>
                                                     <input type="file" name="replacement_attachments[{{ $file->id }}]" accept=".pdf,application/pdf" class="sr-only" data-file-picker-input>
                                                 </div>
 
-                                                <div class="mt-5 flex flex-wrap gap-2">
-                                                    <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex size-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700" aria-label="Download lampiran">
-                                                        <flux:icon name="arrow-down-tray" class="size-5" />
+                                                <div class="mt-5 hidden flex-wrap gap-2" data-file-edit-control>
+                                                    <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700">
+                                                        Download
                                                     </a>
-                                                    <button type="button" class="inline-flex size-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button aria-label="Perbarui lampiran">
-                                                        <flux:icon name="arrow-up-tray" class="size-5" />
+                                                    <button type="button" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>
+                                                        Perbarui
                                                     </button>
-                                                    <button type="button" class="inline-flex size-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-existing-attachment-remove aria-label="Hapus lampiran">
+                                                    <button type="button" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-submitted-attachment-remove>
                                                         <input type="hidden" value="{{ $file->id }}" data-existing-attachment-id>
-                                                        <flux:icon name="trash" class="size-5" />
+                                                        Hapus
                                                     </button>
                                                 </div>
                                             </div>
                                         @endforeach
                                     </div>
 
-                                    <x-documents.attachment-list :existing-files="collect()" />
+                                    <div class="hidden" data-attachment-edit-control>
+                                        <x-documents.attachment-list :existing-files="collect()" />
+                                    </div>
 
                                     @error('attachments.*')
                                         <span class="block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -527,7 +569,7 @@
                                         <span class="block text-sm font-semibold text-red-500">{{ $message }}</span>
                                     @enderror
 
-                                    <button type="submit" class="inline-flex h-11 w-full items-center justify-center rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white transition hover:bg-sky-700">Save Lampiran</button>
+                                    <button type="submit" class="hidden h-11 w-full items-center justify-center rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white transition hover:bg-sky-700" data-attachment-edit-control>Save Lampiran</button>
                                 </form>
                             @else
                                 @forelse ($attachmentFiles as $file)
@@ -544,7 +586,7 @@
                                 @endforelse
                             @endif
                         </div>
-                    </x-documents.form-section>
+                    </section>
                 @endif
             </div>
 
@@ -1086,6 +1128,162 @@
             }
 
             document.addEventListener('click', (event) => {
+                const attachmentEditButton = event.target.closest('[data-attachment-edit-open]');
+
+                if (attachmentEditButton) {
+                    const attachmentEditor = attachmentEditButton.closest('[data-attachment-editor]');
+                    const isEditing = attachmentEditButton.dataset.editing === 'true';
+                    const label = attachmentEditButton.querySelector('[data-attachment-edit-label]');
+
+                    if (isEditing) {
+                        attachmentEditButton.dataset.editing = 'false';
+                        label.textContent = 'Edit';
+                        attachmentEditButton.classList.remove('border-red-200', 'bg-red-50', 'text-red-600', 'hover:border-red-300', 'hover:bg-red-100');
+                        attachmentEditButton.classList.add('border-slate-200', 'bg-white', 'text-slate-700', 'hover:bg-slate-50');
+
+                        attachmentEditor?.querySelectorAll('[data-file-edit-control]').forEach((element) => {
+                            element.classList.add('hidden');
+                            element.classList.remove('flex');
+                        });
+                        attachmentEditor?.querySelectorAll('[data-attachment-title-input]').forEach((input) => {
+                            input.readOnly = true;
+                            input.classList.add('border-slate-200', 'bg-slate-50');
+                            input.classList.remove('border-slate-300', 'bg-white');
+                        });
+                        attachmentEditor?.querySelectorAll('[data-file-picker-input]').forEach((input) => {
+                            input.value = '';
+                        });
+                        attachmentEditor?.querySelectorAll('[data-selected-file-name]').forEach((name) => {
+                            if (name.dataset.originalFileName) {
+                                name.textContent = name.dataset.originalFileName;
+                            }
+                        });
+                        attachmentEditor?.querySelectorAll('[data-attachment-edit-control]').forEach((element) => {
+                            element.classList.add('hidden');
+                            element.classList.remove('inline-flex');
+                        });
+                    } else {
+                        attachmentEditButton.dataset.editing = 'true';
+                        label.textContent = 'Cancel';
+                        attachmentEditButton.classList.remove('border-slate-200', 'bg-white', 'text-slate-700', 'hover:bg-slate-50');
+                        attachmentEditButton.classList.add('border-red-200', 'bg-red-50', 'text-red-600', 'hover:border-red-300', 'hover:bg-red-100');
+
+                        attachmentEditor?.querySelectorAll('[data-file-edit-control]').forEach((element) => {
+                            element.classList.remove('hidden');
+                            element.classList.add('flex');
+                        });
+                        attachmentEditor?.querySelectorAll('[data-attachment-title-input]').forEach((input) => {
+                            input.readOnly = false;
+                            input.classList.remove('border-slate-200', 'bg-slate-50');
+                            input.classList.add('border-slate-300', 'bg-white');
+                        });
+                        attachmentEditor?.querySelectorAll('[data-attachment-edit-control]').forEach((element) => {
+                            element.classList.remove('hidden');
+
+                            if (element.matches('button')) {
+                                element.classList.add('inline-flex');
+                            }
+                        });
+                    }
+
+                    return;
+                }
+
+                const editButton = event.target.closest('[data-file-edit-open]');
+
+                if (editButton) {
+                    const container = editButton.closest('form, [data-existing-attachment-row]');
+                    const attachmentForm = editButton.closest('[data-submitted-attachment-form]');
+
+                    container?.querySelector('[data-file-readonly-action]')?.classList.add('hidden');
+                    container?.querySelector('[data-file-edit-control]')?.classList.remove('hidden');
+                    container?.querySelector('[data-file-edit-control]')?.classList.add('flex');
+
+                    const titleInput = container?.querySelector('[data-attachment-title-input]');
+
+                    if (titleInput) {
+                        titleInput.readOnly = false;
+                        titleInput.classList.remove('border-slate-200', 'bg-slate-50');
+                        titleInput.classList.add('border-slate-300', 'bg-white');
+                    }
+
+                    attachmentForm?.querySelectorAll('[data-attachment-edit-control]').forEach((element) => {
+                        element.classList.remove('hidden');
+
+                        if (element.matches('button')) {
+                            element.classList.add('inline-flex');
+                        }
+                    });
+
+                    return;
+                }
+
+                const cancelButton = event.target.closest('[data-file-edit-cancel]');
+
+                if (cancelButton) {
+                    const container = cancelButton.closest('form, [data-existing-attachment-row]');
+                    const attachmentForm = cancelButton.closest('[data-submitted-attachment-form]');
+                    const attachmentEditor = cancelButton.closest('[data-attachment-editor]');
+                    const readonlyAction = container?.querySelector('[data-file-readonly-action]');
+                    const editControl = container?.querySelector('[data-file-edit-control]');
+                    const fileInput = container?.querySelector('[data-file-picker-input]');
+                    const titleInput = container?.querySelector('[data-attachment-title-input]');
+                    const name = container?.querySelector('[data-selected-file-name]');
+
+                    editControl?.classList.add('hidden');
+                    editControl?.classList.remove('flex');
+                    readonlyAction?.classList.remove('hidden');
+
+                    if (fileInput) {
+                        fileInput.value = '';
+                    }
+
+                    if (name?.dataset.originalFileName) {
+                        name.textContent = name.dataset.originalFileName;
+                    }
+
+                    if (titleInput) {
+                        titleInput.readOnly = true;
+                        titleInput.classList.add('border-slate-200', 'bg-slate-50');
+                        titleInput.classList.remove('border-slate-300', 'bg-white');
+                    }
+
+                    const hasOpenAttachmentRows = Array.from(attachmentForm?.querySelectorAll('[data-existing-attachment-row]') ?? [])
+                        .some((row) => !row.querySelector('[data-file-edit-control]')?.classList.contains('hidden'));
+
+                    if (attachmentForm && !hasOpenAttachmentRows) {
+                        attachmentForm.querySelectorAll('[data-attachment-edit-control]').forEach((element) => {
+                            element.classList.add('hidden');
+                            element.classList.remove('inline-flex');
+                        });
+                    }
+
+                    return;
+                }
+
+                const removeSubmittedAttachmentButton = event.target.closest('[data-submitted-attachment-remove]');
+
+                if (removeSubmittedAttachmentButton) {
+                    const row = removeSubmittedAttachmentButton.closest('[data-existing-attachment-row]');
+                    const form = removeSubmittedAttachmentButton.closest('[data-submitted-attachment-form]');
+                    const fileId = row?.querySelector('[data-existing-attachment-id]')?.value;
+
+                    if (fileId && form) {
+                        const input = document.createElement('input');
+                        input.type = 'hidden';
+                        input.name = 'remove_existing_files[]';
+                        input.value = fileId;
+                        form.append(input);
+                    }
+
+                    row?.remove();
+                    form?.querySelectorAll('[data-existing-attachment-row] [data-attachment-order-input]').forEach((input, index) => {
+                        input.value = index + 1;
+                    });
+
+                    return;
+                }
+
                 const button = event.target.closest('[data-file-picker-button]');
 
                 if (!button) {
