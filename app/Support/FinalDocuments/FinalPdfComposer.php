@@ -70,7 +70,7 @@ class FinalPdfComposer
             $approvalSheetPages = $context->includesApprovalSheet()
                 ? $this->importPdf($pdf, (string) $approvalSheetPath, stampBody: false, payload: $payload, mode: $mode)
                 : ['count' => 0, 'pages' => []];
-            $bodyPageCount = $this->countPdfPages($bodyPdfPath);
+            [$bodyPdfPath, $bodyPageCount] = $this->importablePdfPath($bodyPdfPath, $tempFiles);
             $attachments = $this->attachmentPayloads($payload, $tempFiles);
             $attachments = $this->resolveRevisionApprovalPageBreaks($attachments, $payload);
             $attachmentPageCount = collect($attachments)->sum(
@@ -931,6 +931,25 @@ class FinalPdfComposer
         }
 
         return (new Fpdi)->setSourceFile($path);
+    }
+
+    /**
+     * @param  array<int, string>  $tempFiles
+     * @return array{0: string, 1: int}
+     */
+    private function importablePdfPath(string $path, array &$tempFiles): array
+    {
+        try {
+            return [$path, $this->countPdfPages($path)];
+        } catch (Throwable $exception) {
+            $normalizedPath = $this->normalizePdfForImport($path, $tempFiles);
+
+            if ($normalizedPath === null) {
+                throw $exception;
+            }
+
+            return [$normalizedPath, $this->countPdfPages($normalizedPath)];
+        }
     }
 
     /**

@@ -493,7 +493,7 @@ class DocumentController extends Controller
         if ($level === 'level-1') {
             return [
                 'nama_dokumen' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:255'],
-                'nomor_dokumen_suffix' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:50'],
+                'nomor_dokumen_suffix' => $this->documentNumberSuffixRules($isDraftAction),
                 'nomor_revisi' => ['nullable', 'string', 'max:20'],
                 'tanggal_terbit' => ['nullable', 'date'],
                 'catatan_revisi' => ['nullable', 'string', 'max:1000'],
@@ -518,7 +518,7 @@ class DocumentController extends Controller
                 'department_ids' => [$isDraftAction ? 'nullable' : 'required', 'array', 'min:1'],
                 'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
                 'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
-                'nomor_dokumen_suffix' => ['required', 'string', 'max:50'],
+                'nomor_dokumen_suffix' => $this->documentNumberSuffixRules(false),
                 'tanggal_terbit' => ['nullable', 'date'],
                 'revision_content' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'revision_content')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
                 'revision_form' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'revision_form')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
@@ -552,7 +552,7 @@ class DocumentController extends Controller
             'department_ids' => [$isDraftAction ? 'nullable' : 'required', 'array', 'min:1'],
             'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
             'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
-            'nomor_dokumen_suffix' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:50'],
+            'nomor_dokumen_suffix' => $this->documentNumberSuffixRules($isDraftAction),
             'tanggal_terbit' => ['nullable', 'date'],
             'filled_template' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'filled_template')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
             'attachments' => ['nullable', 'array', 'max:10'],
@@ -586,7 +586,7 @@ class DocumentController extends Controller
             'department_ids' => ['nullable', 'array'],
             'department_ids.*' => ['integer', Rule::exists('departments', 'id')],
             'official_preparer_id' => ['nullable', 'integer', Rule::exists('users', 'id')],
-            'nomor_dokumen_suffix' => ['nullable', 'string', 'max:50'],
+            'nomor_dokumen_suffix' => $this->documentNumberSuffixRules(true),
             'nomor_revisi' => ['nullable', 'string', 'max:20'],
             'tanggal_terbit' => ['nullable', 'date'],
             'catatan_revisi' => ['nullable', 'string', 'max:1000'],
@@ -617,6 +617,16 @@ class DocumentController extends Controller
         }
 
         return $rules;
+    }
+
+    private function documentNumberSuffixRules(bool $nullable): array
+    {
+        return [
+            $nullable ? 'nullable' : 'required',
+            'string',
+            'max:50',
+            'regex:/^[A-Za-z0-9]+$/',
+        ];
     }
 
     /**
@@ -1274,7 +1284,7 @@ class DocumentController extends Controller
 
     protected function buildDocumentNumber(DocumentLevel $documentLevel, array $validated): ?string
     {
-        $suffix = $validated['nomor_dokumen_suffix'] ?? null;
+        $suffix = $this->normalizeDocumentNumberSuffix($validated['nomor_dokumen_suffix'] ?? null);
 
         if (! filled($suffix)) {
             return null;
@@ -1283,7 +1293,7 @@ class DocumentController extends Controller
         $segments = [$documentLevel->prefix];
 
         if ($documentLevel->kode === 'level-1') {
-            $segments[] = Str::upper(trim($suffix));
+            $segments[] = $suffix;
         } elseif ($documentLevel->kode === 'level-2') {
             if (! filled($validated['m_proses_fungsi_id'] ?? null)) {
                 return null;
@@ -1298,9 +1308,9 @@ class DocumentController extends Controller
             }
 
             $segments[] = $businessFunctionCode;
-            $segments[] = Str::upper(trim($suffix));
+            $segments[] = $suffix;
         } elseif ($documentLevel->kode === 'level-4') {
-            $segments[] = Str::upper(trim($suffix));
+            $segments[] = $suffix;
         } elseif ($documentLevel->kode === 'level-3') {
             if (! filled($validated['reference'] ?? null)) {
                 return null;
@@ -1308,17 +1318,32 @@ class DocumentController extends Controller
 
             $segments = collect([$documentLevel->prefix])
                 ->merge($this->procedureNumberSegments((int) ($validated['reference'] ?? 0)))
-                ->push(Str::upper(trim($suffix)))
+                ->push($suffix)
                 ->all();
         } else {
             $segments[] = 'XXX';
             $segments[] = 'YY';
-            $segments[] = Str::upper(trim($suffix));
+            $segments[] = $suffix;
         }
 
         return collect($segments)
             ->filter()
             ->implode('-');
+    }
+
+    private function normalizeDocumentNumberSuffix(mixed $suffix): ?string
+    {
+        if (! filled($suffix)) {
+            return null;
+        }
+
+        $suffix = Str::upper(trim((string) $suffix));
+
+        if (ctype_digit($suffix) && strlen($suffix) === 1) {
+            return str_pad($suffix, 2, '0', STR_PAD_LEFT);
+        }
+
+        return $suffix;
     }
 
     private function procedureNumberSegments(int $referenceId): Collection

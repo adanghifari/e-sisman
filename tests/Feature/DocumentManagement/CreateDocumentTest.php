@@ -1919,6 +1919,65 @@ class CreateDocumentTest extends TestCase
             ->assertSee('Catatan penolakan 4');
     }
 
+    public function test_rejected_initial_resubmission_normalizes_single_digit_suffix_before_linking_history(): void
+    {
+        Storage::fake('local');
+
+        [$user, $businessProcess, $businessFunction, $department, $level, $documentType] = $this->initialResubmissionFixture();
+        $firstAttempt = $this->createRejectedInitialAttempt(
+            $user,
+            $level,
+            $documentType,
+            $businessProcess,
+            $businessFunction,
+            'PS-QA-07',
+            [],
+            'Catatan penolakan awal',
+        );
+        $secondAttempt = $this->createRejectedInitialAttempt(
+            $user,
+            $level,
+            $documentType,
+            $businessProcess,
+            $businessFunction,
+            'PS-QA-07',
+            ['resubmitted_from' => $firstAttempt->id],
+            'Catatan penolakan kedua',
+        );
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '7'))
+            ->assertRedirect(route('documents.create'));
+
+        $active = Document::query()
+            ->where('nomor_dokumen', 'PS-QA-07')
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED))
+            ->firstOrFail();
+
+        $this->assertSame($secondAttempt->id, $active->resubmitted_from);
+        $this->assertFalse(Document::query()->where('nomor_dokumen', 'PS-QA-7')->exists());
+
+        $history = app(DocumentRejectionHistory::class)->forDocument($active);
+
+        $this->assertSame(
+            ['Catatan penolakan awal', 'Catatan penolakan kedua'],
+            $history->pluck('catatan')->all(),
+        );
+    }
+
+    public function test_document_number_suffix_must_be_alphanumeric(): void
+    {
+        Storage::fake('local');
+
+        [$user, $businessProcess, $businessFunction, $department] = $this->initialResubmissionFixture();
+
+        $this->actingAs($user)
+            ->from(route('documents.create.level', 'level-2'))
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '07-A'))
+            ->assertRedirect(route('documents.create.level', 'level-2'))
+            ->assertSessionHasErrors(['nomor_dokumen_suffix']);
+    }
+
     public function test_active_document_number_duplicate_is_blocked(): void
     {
         Storage::fake('local');
