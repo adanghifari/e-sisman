@@ -5,6 +5,6 @@
         :can-edit="auth()->user()->hasAnyPermission(['document-templates.edit', 'document-templates.manage'])"
         :can-delete="auth()->user()->hasAnyPermission(['document-templates.delete', 'document-templates.manage'])"
         :upload-limits="config('document-templates.upload')"
-        :active-level="old('document_level', session('active_template_level'))"
+        :active-level="request('level', old('document_level', session('active_template_level')))"
     />
 </x-layouts::app>

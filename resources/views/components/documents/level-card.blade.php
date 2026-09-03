@@ -4,6 +4,8 @@
     'level' => null,
     'href' => null,
     'actionLabel' => 'Ajukan Dokumen',
+    'templateHref' => null,
+    'templateLabel' => 'Download Template',
 ])
 
 <section {{ $attributes->class(['group overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm transition hover:border-sky-200 hover:shadow-md']) }}>
@@ -23,10 +25,22 @@
             </p>
         </div>
 
-        <div class="flex items-center md:justify-end">
-            <x-ui.action-button :href="$href" class="w-full min-w-40 md:w-auto">
-                {{ $actionLabel }}
-            </x-ui.action-button>
+        <div class="flex items-center justify-center md:justify-end">
+            <div class="flex w-full flex-col items-center justify-center gap-2 md:w-auto">
+                <x-ui.action-button :href="$href" class="w-full min-w-40 md:w-auto">
+                    {{ $actionLabel }}
+                </x-ui.action-button>
+                @if ($templateHref)
+                    <a
+                        href="{{ $templateHref }}"
+                        class="inline-flex items-center justify-center gap-1.5 text-center text-xs font-semibold text-sky-600 transition hover:text-sky-700 hover:underline"
+                        wire:navigate
+                    >
+                        <flux:icon name="arrow-down-tray" class="size-3.5" />
+                        {{ $templateLabel }}
+                    </a>
+                @endif
+            </div>
         </div>
     </div>
 </section>
