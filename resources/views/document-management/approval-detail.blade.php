@@ -60,6 +60,22 @@
             : $contentFiles;
         $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
         $readonlySelect = 'h-12 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
+        $departmentOptions = collect($departments ?? [])
+            ->map(fn ($department) => [
+                'value' => $department->id,
+                'label' => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department,
+            ])
+            ->values();
+        $formatBusinessProcess = fn ($businessProcess) => $businessProcess
+            ? (($businessProcess->kode ? $businessProcess->kode.' - ' : '').$businessProcess->nama_proses_bisnis)
+            : '-';
+        $formatBusinessFunction = fn ($businessFunction) => $businessFunction
+            ? (($businessFunction->kode ? $businessFunction->kode.' - ' : '').$businessFunction->nama_proses_fungsi)
+            : '-';
+        $documentNumberSuffix = filled($document->nomor_dokumen)
+            ? \Illuminate\Support\Str::afterLast($document->nomor_dokumen, '-')
+            : null;
+        $metadataEditorStartsOpen = old('_update_scope') === 'metadata';
     @endphp
 
     <div class="space-y-8">
@@ -101,28 +117,157 @@
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
             <div class="space-y-6">
                 <x-documents.form-section title="Informasi Dokumen">
-                    <dl class="divide-y divide-slate-100 px-6 py-4">
-                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
-                            <dt class="text-sm font-semibold text-slate-500">Nama Dokumen</dt>
-                            <dd class="text-sm font-bold text-slate-900">{{ $document->nama_dokumen }}</dd>
-                        </div>
-                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
-                            <dt class="text-sm font-semibold text-slate-500">Level Dokumen</dt>
-                            <dd class="text-sm font-bold text-slate-900">{{ $document->documentLevel?->nama_level }} : {{ \Illuminate\Support\Str::after($document->documentLevel?->nama_dokumen ?? '', ': ') }}</dd>
-                        </div>
-                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
-                            <dt class="text-sm font-semibold text-slate-500">Proses Bisnis</dt>
-                            <dd class="text-sm font-bold text-slate-900">{{ $document->businessProcess?->nama_proses_bisnis ?? '-' }}</dd>
-                        </div>
-                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
-                            <dt class="text-sm font-semibold text-slate-500">Department Terkait</dt>
-                            <dd class="text-sm font-bold text-slate-900">{{ $document->departments->map(fn ($department) => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department)->implode(', ') ?: '-' }}</dd>
-                        </div>
-                        <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
-                            <dt class="text-sm font-semibold text-slate-500">Proses / Fungsi</dt>
-                            <dd class="text-sm font-bold text-slate-900">{{ $document->businessFunction?->nama_proses_fungsi ?? '-' }}</dd>
-                        </div>
-                    </dl>
+                    <div class="px-6 py-4" data-submitted-document-editor>
+                        @if ($canUpdateSubmittedDocument)
+                            <div class="mb-4 flex justify-end {{ $metadataEditorStartsOpen ? 'hidden' : '' }}" data-submitted-document-readonly-action>
+                                <button type="button" class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" data-submitted-document-edit-open>
+                                    <flux:icon name="pencil-square" class="size-4" />
+                                    Edit Informasi
+                                </button>
+                            </div>
+                        @endif
+
+                        <dl class="divide-y divide-slate-100 {{ $metadataEditorStartsOpen ? 'hidden' : '' }}" data-submitted-document-readonly>
+                            <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                <dt class="text-sm font-semibold text-slate-500">Nama Dokumen</dt>
+                                <dd class="text-sm font-bold text-slate-900">{{ $document->nama_dokumen }}</dd>
+                            </div>
+                            <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                <dt class="text-sm font-semibold text-slate-500">Level Dokumen</dt>
+                                <dd class="text-sm font-bold text-slate-900">{{ $document->documentLevel?->nama_level }} : {{ \Illuminate\Support\Str::after($document->documentLevel?->nama_dokumen ?? '', ': ') }}</dd>
+                            </div>
+                            <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                <dt class="text-sm font-semibold text-slate-500">Proses Bisnis</dt>
+                                <dd class="text-sm font-bold text-slate-900">{{ $document->businessProcess?->nama_proses_bisnis ?? '-' }}</dd>
+                            </div>
+                            <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                <dt class="text-sm font-semibold text-slate-500">Department Terkait</dt>
+                                <dd class="text-sm font-bold text-slate-900">{{ $document->departments->map(fn ($department) => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department)->implode(', ') ?: '-' }}</dd>
+                            </div>
+                            <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
+                                <dt class="text-sm font-semibold text-slate-500">Proses / Fungsi</dt>
+                                <dd class="text-sm font-bold text-slate-900">{{ $document->businessFunction?->nama_proses_fungsi ?? '-' }}</dd>
+                            </div>
+                        </dl>
+
+                        @if ($canUpdateSubmittedDocument)
+                            <form method="POST" action="{{ route('documents.approval.update-submitted', $document) }}" class="{{ $metadataEditorStartsOpen ? '' : 'hidden' }} space-y-5" data-submitted-document-form>
+                                @csrf
+                                <input type="hidden" name="_update_scope" value="metadata">
+
+                                <label class="block">
+                                    <span class="mb-2 block text-base font-medium text-slate-500">Nama Dokumen</span>
+                                    <input type="text" name="nama_dokumen" value="{{ old('nama_dokumen', $document->nama_dokumen) }}" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                    @error('nama_dokumen')
+                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                </label>
+
+                                @if ($levelKey !== 'level-1')
+                                    <div class="grid gap-5 md:grid-cols-2">
+                                        <label class="block">
+                                            <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
+                                            <select name="m_proses_bisnis_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                                <option value="">-Pilih-</option>
+                                                @foreach ($businessProcesses as $businessProcess)
+                                                    <option value="{{ $businessProcess->id }}" @selected((string) old('m_proses_bisnis_id', $document->m_proses_bisnis_id) === (string) $businessProcess->id)>
+                                                        {{ $formatBusinessProcess($businessProcess) }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                            @error('m_proses_bisnis_id')
+                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                            @enderror
+                                        </label>
+
+                                        <label class="block">
+                                            <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
+                                            <select name="m_proses_fungsi_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                                <option value="">-Pilih-</option>
+                                                @foreach ($businessFunctions as $businessFunction)
+                                                    <option value="{{ $businessFunction->id }}" @selected((string) old('m_proses_fungsi_id', $document->m_proses_fungsi_id) === (string) $businessFunction->id)>
+                                                        {{ $formatBusinessFunction($businessFunction) }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                            @error('m_proses_fungsi_id')
+                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                            @enderror
+                                        </label>
+
+                                        <x-ui.multi-select
+                                            label="Department Terkait"
+                                            name="department_ids"
+                                            :options="$departmentOptions"
+                                            :selected="old('department_ids', $document->departments->pluck('id')->all())"
+                                            selected-placeholder="Tambah Department"
+                                            required
+                                        />
+
+                                        <label class="block">
+                                            <span class="mb-2 block text-base font-medium text-slate-500">Penyusun Resmi</span>
+                                            <select name="official_preparer_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                                <option value="">-Pilih-</option>
+                                                @foreach ($assignableUsers as $user)
+                                                    <option value="{{ $user->id }}" @selected((string) old('official_preparer_id', $document->official_preparer_id) === (string) $user->id)>
+                                                        {{ $user->name }}{{ $user->jabatan ? ' - '.$user->jabatan : '' }}
+                                                    </option>
+                                                @endforeach
+                                            </select>
+                                            @error('official_preparer_id')
+                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                            @enderror
+                                        </label>
+
+                                        @if ($levelKey === 'level-3')
+                                            <label class="block md:col-span-2">
+                                                <span class="mb-2 block text-base font-medium text-slate-500">Dokumen Acuan</span>
+                                                <select name="reference" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                                    <option value="">-Pilih-</option>
+                                                    @foreach ($procedureReferences as $procedureReference)
+                                                        <option value="{{ $procedureReference->id }}" @selected((string) old('reference', $document->reference) === (string) $procedureReference->id)>
+                                                            {{ $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }}
+                                                        </option>
+                                                    @endforeach
+                                                </select>
+                                                @error('reference')
+                                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                                @enderror
+                                            </label>
+                                        @endif
+                                    </div>
+                                @endif
+
+                                @if (in_array($levelKey, ['level-1', 'level-2', 'level-3'], true))
+                                    <label class="block">
+                                        <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen Suffix</span>
+                                        <input type="text" name="nomor_dokumen_suffix" value="{{ old('nomor_dokumen_suffix', $documentNumberSuffix) }}" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                        @error('nomor_dokumen_suffix')
+                                            <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                        @enderror
+                                    </label>
+                                @endif
+
+                                <x-ui.date-input
+                                    label="Tanggal Terbit"
+                                    name="tanggal_terbit"
+                                    :value="old('tanggal_terbit', $document->tanggal_terbit?->format('Y-m-d'))"
+                                />
+
+                                @if ($levelKey === 'level-1')
+                                    <label class="block">
+                                        <span class="mb-2 block text-base font-medium text-slate-500">Catatan</span>
+                                        <textarea name="catatan_revisi" rows="4" class="w-full resize-none rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-medium text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">{{ old('catatan_revisi', $document->catatan_revisi) }}</textarea>
+                                    </label>
+                                @endif
+
+                                <div class="flex flex-wrap justify-end gap-3">
+                                    <button type="button" class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" data-submitted-document-edit-cancel>Batal</button>
+                                    <button type="submit" class="inline-flex h-10 items-center justify-center rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white transition hover:bg-sky-700">Save</button>
+                                </div>
+                            </form>
+                        @endif
+                    </div>
                 </x-documents.form-section>
 
                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -236,10 +381,22 @@
                                     @foreach ($revisionMainFiles as $file)
                                         <section class="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                                             <div class="min-h-20 border-b border-slate-200 bg-white px-4 py-3">
-                                                <div class="min-w-0">
-                                                    <p class="text-sm font-bold text-slate-900">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
-                                                    <p class="mt-1 truncate text-xs font-semibold text-slate-500">{{ $file->original_file_name }}</p>
-                                                </div>
+                                                <form method="POST" action="{{ route('documents.approval.update-submitted', $document) }}" enctype="multipart/form-data" class="flex flex-wrap items-start justify-between gap-3" data-submitted-file-form>
+                                                    @csrf
+                                                    <input type="hidden" name="_update_scope" value="files">
+                                                    <div class="min-w-0">
+                                                        <p class="text-sm font-bold text-slate-900">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                                        <p class="mt-1 truncate text-xs font-semibold text-slate-500" data-selected-file-name>{{ $file->original_file_name }}</p>
+                                                    </div>
+                                                    @if ($canUpdateSubmittedDocument)
+                                                        <div class="flex shrink-0 flex-wrap gap-2">
+                                                            <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700">Download</a>
+                                                            <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>Perbarui</button>
+                                                            <button type="submit" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700">Save</button>
+                                                        </div>
+                                                        <input type="file" name="replacement_files[{{ $file->id }}]" accept=".pdf,application/pdf" class="sr-only" data-file-picker-input>
+                                                    @endif
+                                                </form>
                                             </div>
 
                                             <x-documents.lazy-pdf-preview
@@ -254,10 +411,22 @@
                             @foreach ($otherContentFiles as $file)
                                 <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                                     <div class="border-b border-slate-200 bg-white px-4 py-3">
-                                        <div class="min-w-0">
-                                            <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
-                                            <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
-                                        </div>
+                                        <form method="POST" action="{{ route('documents.approval.update-submitted', $document) }}" enctype="multipart/form-data" class="flex flex-wrap items-start justify-between gap-3" data-submitted-file-form>
+                                            @csrf
+                                            <input type="hidden" name="_update_scope" value="files">
+                                            <div class="min-w-0">
+                                                <p class="truncate text-sm font-bold text-slate-900" data-selected-file-name>{{ $file->original_file_name }}</p>
+                                                <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                            </div>
+                                            @if ($canUpdateSubmittedDocument)
+                                                <div class="flex shrink-0 flex-wrap gap-2">
+                                                    <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700">Download</a>
+                                                    <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>Perbarui</button>
+                                                    <button type="submit" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700">Save</button>
+                                                </div>
+                                                <input type="file" name="replacement_files[{{ $file->id }}]" accept=".pdf,application/pdf" class="sr-only" data-file-picker-input>
+                                            @endif
+                                        </form>
                                     </div>
 
                                     <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
@@ -273,10 +442,22 @@
                         @forelse ($contentFiles as $file)
                             <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
                                 <div class="border-b border-slate-200 bg-white px-4 py-3">
-                                    <div class="min-w-0">
-                                        <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
-                                        <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
-                                    </div>
+                                    <form method="POST" action="{{ route('documents.approval.update-submitted', $document) }}" enctype="multipart/form-data" class="flex flex-wrap items-start justify-between gap-3" data-submitted-file-form>
+                                        @csrf
+                                        <input type="hidden" name="_update_scope" value="files">
+                                        <div class="min-w-0">
+                                            <p class="truncate text-sm font-bold text-slate-900" data-selected-file-name>{{ $file->original_file_name }}</p>
+                                            <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                        </div>
+                                        @if ($canUpdateSubmittedDocument)
+                                            <div class="flex shrink-0 flex-wrap gap-2">
+                                                <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700">Download</a>
+                                                <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>Perbarui</button>
+                                                <button type="submit" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700">Save</button>
+                                            </div>
+                                            <input type="file" name="replacement_files[{{ $file->id }}]" accept=".pdf,application/pdf" class="sr-only" data-file-picker-input>
+                                        @endif
+                                    </form>
                                 </div>
 
                                 <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
@@ -292,18 +473,76 @@
 
                     <x-documents.form-section title="Lampiran" icon="paper-clip">
                         <div class="space-y-3 px-6 py-6">
-                            @forelse ($attachmentFiles as $file)
-                                <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
-                                    <div class="min-w-0">
-                                        <p class="truncate text-sm font-bold text-slate-900">{{ $file->attachment_title ?: $file->original_file_name }}</p>
-                                        <p class="text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
+                            @if ($canUpdateSubmittedDocument)
+                                <form method="POST" action="{{ route('documents.approval.update-submitted', $document) }}" enctype="multipart/form-data" class="space-y-4" data-attachment-list>
+                                    @csrf
+                                    <input type="hidden" name="_update_scope" value="files">
+
+                                    <div class="space-y-3">
+                                        @foreach ($attachmentFiles as $file)
+                                            <div class="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.7fr)_auto]" data-existing-attachment-row>
+                                                <input type="hidden" name="existing_attachment_orders[{{ $file->id }}]" value="{{ $file->attachment_order ?? $loop->iteration }}" data-attachment-order-input>
+                                                <label class="block min-w-0">
+                                                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nama Dokumen/Lampiran</span>
+                                                    <input type="text" name="existing_attachment_titles[{{ $file->id }}]" value="{{ $file->attachment_title ?: $file->original_file_name }}" class="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                                </label>
+
+                                                <div class="min-w-0">
+                                                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">File</span>
+                                                    <div class="flex min-h-11 items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                                        <span class="grid size-9 shrink-0 place-items-center rounded-md border border-red-100 bg-red-50 text-[10px] font-bold text-red-600">PDF</span>
+                                                        <span class="min-w-0">
+                                                            <span class="block truncate text-sm font-semibold text-slate-800" data-selected-file-name>{{ $file->original_file_name }}</span>
+                                                            <span class="block text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</span>
+                                                        </span>
+                                                    </div>
+                                                    <input type="file" name="replacement_attachments[{{ $file->id }}]" accept=".pdf,application/pdf" class="sr-only" data-file-picker-input>
+                                                </div>
+
+                                                <div class="mt-5 flex flex-wrap gap-2">
+                                                    <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex size-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700" aria-label="Download lampiran">
+                                                        <flux:icon name="arrow-down-tray" class="size-5" />
+                                                    </a>
+                                                    <button type="button" class="inline-flex size-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button aria-label="Perbarui lampiran">
+                                                        <flux:icon name="arrow-up-tray" class="size-5" />
+                                                    </button>
+                                                    <button type="button" class="inline-flex size-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-existing-attachment-remove aria-label="Hapus lampiran">
+                                                        <input type="hidden" value="{{ $file->id }}" data-existing-attachment-id>
+                                                        <flux:icon name="trash" class="size-5" />
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        @endforeach
                                     </div>
-                                </div>
-                            @empty
-                                <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                    Tidak ada lampiran.
-                                </p>
-                            @endforelse
+
+                                    <x-documents.attachment-list :existing-files="collect()" />
+
+                                    @error('attachments.*')
+                                        <span class="block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                    @error('attachment_titles.*')
+                                        <span class="block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+                                    @error('replacement_attachments.*')
+                                        <span class="block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                    @enderror
+
+                                    <button type="submit" class="inline-flex h-11 w-full items-center justify-center rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white transition hover:bg-sky-700">Save Lampiran</button>
+                                </form>
+                            @else
+                                @forelse ($attachmentFiles as $file)
+                                    <div class="rounded-lg border border-slate-200 bg-white px-4 py-3">
+                                        <div class="min-w-0">
+                                            <p class="truncate text-sm font-bold text-slate-900">{{ $file->attachment_title ?: $file->original_file_name }}</p>
+                                            <p class="text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
+                                        </div>
+                                    </div>
+                                @empty
+                                    <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                        Tidak ada lampiran.
+                                    </p>
+                                @endforelse
+                            @endif
                         </div>
                     </x-documents.form-section>
                 @endif
@@ -816,6 +1055,60 @@
 
                 if (event.target.closest('[data-approver-edit-confirm]')) {
                     enableEditMode();
+                }
+            });
+        })();
+    </script>
+
+    <script>
+        (() => {
+            const editor = document.querySelector('[data-submitted-document-editor]');
+
+            if (editor) {
+                const readonly = editor.querySelector('[data-submitted-document-readonly]');
+                const readonlyAction = editor.querySelector('[data-submitted-document-readonly-action]');
+                const form = editor.querySelector('[data-submitted-document-form]');
+
+                document.addEventListener('click', (event) => {
+                    if (event.target.closest('[data-submitted-document-edit-open]')) {
+                        readonly?.classList.add('hidden');
+                        readonlyAction?.classList.add('hidden');
+                        form?.classList.remove('hidden');
+                        return;
+                    }
+
+                    if (event.target.closest('[data-submitted-document-edit-cancel]')) {
+                        form?.classList.add('hidden');
+                        readonly?.classList.remove('hidden');
+                        readonlyAction?.classList.remove('hidden');
+                    }
+                });
+            }
+
+            document.addEventListener('click', (event) => {
+                const button = event.target.closest('[data-file-picker-button]');
+
+                if (!button) {
+                    return;
+                }
+
+                const container = button.closest('form, [data-existing-attachment-row]');
+                container?.querySelector('[data-file-picker-input]')?.click();
+            });
+
+            document.addEventListener('change', (event) => {
+                const input = event.target.closest('[data-file-picker-input]');
+                const file = input?.files?.[0];
+
+                if (!input || !file) {
+                    return;
+                }
+
+                const container = input.closest('form, [data-existing-attachment-row]');
+                const name = container?.querySelector('[data-selected-file-name]');
+
+                if (name) {
+                    name.textContent = file.name;
                 }
             });
         })();

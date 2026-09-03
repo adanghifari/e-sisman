@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\DocumentManagement;
 
+use App\Models\ApprovalStatus;
 use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
 use App\Models\Department;
@@ -90,6 +91,71 @@ class DocumentAssignmentAccessTest extends TestCase
         $this->assertTrue($admin->refresh()->canAssignDocument($document));
     }
 
+    public function test_document_control_admin_with_update_permission_can_update_submitted_document_before_assignment(): void
+    {
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'metadata',
+                'nama_dokumen' => 'Dokumen hasil koreksi admin',
+                'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
+                'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $document->official_preparer_id,
+                'nomor_dokumen_suffix' => '77',
+            ]);
+
+        $response->assertRedirect(route('documents.approval.show', $document));
+        $this->assertSame('Dokumen hasil koreksi admin', $document->refresh()->nama_dokumen);
+        $this->assertSame('PS-'.$document->businessFunction->kode.'-77', $document->nomor_dokumen);
+    }
+
+    public function test_submitted_document_update_is_blocked_after_approver_assigned(): void
+    {
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $approver = User::factory()->create();
+
+        $document->approvals()->create([
+            'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::PENDING)->id,
+            'user_id' => $approver->id,
+            'assigned_by' => $admin->id,
+            'assigned_at' => now(),
+            'stages' => 'Approval 1',
+            'created_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'metadata',
+                'nama_dokumen' => 'Tidak boleh berubah',
+                'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
+                'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $document->official_preparer_id,
+                'nomor_dokumen_suffix' => '88',
+            ]);
+
+        $response->assertForbidden();
+        $this->assertNotSame('Tidak boleh berubah', $document->refresh()->nama_dokumen);
+    }
+
     public function test_document_control_admin_can_assign_multi_department_document_when_one_department_matches(): void
     {
         $qa = Department::create([
@@ -128,6 +194,39 @@ class DocumentAssignmentAccessTest extends TestCase
         $user->roles()->attach($role);
 
         return $user->refresh();
+    }
+
+    private function grantPermission(User $user, string $code, string $name, string $route, string $action): void
+    {
+        $role = $user->roles()->firstOrFail();
+        $permission = Permission::query()->firstOrCreate(
+            ['code' => $code],
+            [
+                'name' => $name,
+                'module' => 'Manajemen Dokumen',
+                'route' => $route,
+                'action' => $action,
+            ],
+        );
+
+        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        $user->unsetRelation('roles');
+    }
+
+    private function ensureApprovalStatuses(): void
+    {
+        foreach ([
+            ApprovalStatus::PENDING => 'Dalam Review',
+            ApprovalStatus::WAITING => 'Menunggu',
+            ApprovalStatus::APPROVED => 'Disetujui',
+            ApprovalStatus::REJECTED => 'Ditolak',
+            ApprovalStatus::TERMINATED => 'Dihentikan',
+        ] as $code => $name) {
+            ApprovalStatus::query()->firstOrCreate(
+                ['kode_status' => $code],
+                ['nama_status' => $name],
+            );
+        }
     }
 
     /**
