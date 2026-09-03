@@ -70,7 +70,7 @@ class FinalPdfComposer
             $approvalSheetPages = $context->includesApprovalSheet()
                 ? $this->importPdf($pdf, (string) $approvalSheetPath, stampBody: false, payload: $payload, mode: $mode)
                 : ['count' => 0, 'pages' => []];
-            $bodyPageCount = $this->countPdfPages($bodyPdfPath);
+            [$bodyPdfPath, $bodyPageCount] = $this->importablePdfPath($bodyPdfPath, $tempFiles);
             $attachments = $this->attachmentPayloads($payload, $tempFiles);
             $attachments = $this->resolveRevisionApprovalPageBreaks($attachments, $payload);
             $attachmentPageCount = collect($attachments)->sum(
@@ -934,6 +934,25 @@ class FinalPdfComposer
     }
 
     /**
+     * @param  array<int, string>  $tempFiles
+     * @return array{0: string, 1: int}
+     */
+    private function importablePdfPath(string $path, array &$tempFiles): array
+    {
+        try {
+            return [$path, $this->countPdfPages($path)];
+        } catch (Throwable $exception) {
+            $normalizedPath = $this->normalizePdfForImport($path, $tempFiles);
+
+            if ($normalizedPath === null) {
+                throw $exception;
+            }
+
+            return [$normalizedPath, $this->countPdfPages($normalizedPath)];
+        }
+    }
+
+    /**
      * @param  array<string, mixed>  $attachment
      * @param  array<string, mixed>  $payload
      */
@@ -943,12 +962,15 @@ class FinalPdfComposer
 
         if ($this->attachmentHeaderType($attachment) === 'revision_form') {
             $document = $payload['document'] ?? [];
-            $revisionFormNumber = $this->value($document['revision_form_number'] ?? ($document['number'] ?? null));
+            $revisionFormNumber = $this->value($attachment['document_number'] ?? ($document['revision_form_number'] ?? ($document['number'] ?? null)));
 
             return 'Lampiran '.$number.'. Form Lembar Revisi ('.$revisionFormNumber.')';
         }
 
-        return 'Lampiran '.$number.'. '.$this->value($attachment['title'] ?? null);
+        $attachmentNumber = $this->value($attachment['document_number'] ?? null);
+        $title = 'Lampiran '.$number.'. '.$this->value($attachment['title'] ?? null);
+
+        return $attachmentNumber === '-' ? $title : $title.' ('.$attachmentNumber.')';
     }
 
     /**

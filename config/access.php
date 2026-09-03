@@ -300,6 +300,13 @@ return [
             'action' => 'assign',
         ],
         [
+            'code' => 'documents.approval.update-submitted',
+            'name' => 'Edit Dokumen Sebelum Assign Approver',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.approval.update-submitted',
+            'action' => 'update',
+        ],
+        [
             'code' => 'document-templates.view',
             'name' => 'Lihat Template Dokumen',
             'module' => 'Manajemen Dokumen',

@@ -41,7 +41,6 @@
 
     <x-ui.page-header
         title="Template Dokumen"
-        description="Atur template file yang digunakan saat pengajuan dokumen berdasarkan level dokumen."
     />
 
     @if (session('status'))

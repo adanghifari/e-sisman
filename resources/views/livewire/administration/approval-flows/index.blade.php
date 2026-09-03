@@ -53,13 +53,6 @@
                         <div>
                             <p class="text-xs font-semibold uppercase tracking-wide text-sky-700">Flow Aktif</p>
                             <h2 class="mt-1 text-xl font-bold text-slate-950">{{ $selectedDocumentLevel->nama_level }}</h2>
-                            <p class="mt-2 max-w-2xl text-sm leading-6 text-slate-500">
-                                @if ($selectedLevelInheritsApprovalFlow)
-                                    {{ $selectedDocumentLevel->nama_dokumen }} mengikuti approval flow dokumen induk yang sedang direvisi.
-                                @else
-                                    {{ $selectedDocumentLevel->nama_dokumen }}. Nama tahap dibawah ini akan dipakai pada alur approval dokumen.
-                                @endif
-                            </p>
                         </div>
 
                         @if ($canCreate)

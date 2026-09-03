@@ -7,6 +7,7 @@ use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
 use App\Models\Department;
 use App\Models\Document;
+use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentNumberingSetup;
 use App\Models\DocumentNumberRegistry;
@@ -15,6 +16,7 @@ use App\Models\ImportedExistingDocument;
 use App\Models\ImportedExistingDocumentFile;
 use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
+use App\Support\DocumentFiles\DocumentFileNumbering;
 use App\Support\FinalDocuments\AutoGenerateApprovalPreview;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
@@ -440,6 +442,7 @@ class ImportedExistingDocumentController extends Controller
         DB::transaction(function () use ($request, $validated, $importedExistingDocument, &$document): void {
             $status = StatusDocument::findByName(StatusDocument::PROPOSED);
             $nextRevision = $this->nextImportedExistingRevisionNumber($importedExistingDocument);
+            $revisionFormNumber = $this->revisionFormNumberForImportedExisting($importedExistingDocument);
 
             $relation = $importedExistingDocument->outgoingRelations()
                 ->where('relation_type', ImportedExistingDocumentRelation::REFERENCES)
@@ -471,6 +474,7 @@ class ImportedExistingDocumentController extends Controller
                 'request_type' => 'revision',
                 'nama_dokumen' => $validated['nama_dokumen'] ?? $importedExistingDocument->nama_dokumen,
                 'nomor_dokumen' => $importedExistingDocument->nomor_dokumen,
+                'nomor_lembar_revisi' => $revisionFormNumber,
                 'nomor_revisi' => $nextRevision,
                 'catatan_revisi' => $validated['catatan_revisi'] ?? null,
                 'tanggal_terbit' => $validated['tanggal_terbit'] ?? null,
@@ -483,6 +487,7 @@ class ImportedExistingDocumentController extends Controller
             $this->storeTDocumentFile($document, $request->file('revision_content'), 'revision_content', $request->user()->id);
             $this->storeTDocumentFile($document, $request->file('revision_form'), 'revision_form', $request->user()->id);
             $this->storeTDocumentAttachments($request, $document);
+            app(DocumentFileNumbering::class)->assignMissingNumbers($document);
 
             $documentId = $document->id;
             $generatedById = $request->user()->id;
@@ -689,9 +694,24 @@ class ImportedExistingDocumentController extends Controller
         $titles = collect($request->input('attachment_titles', []))->values();
         $orders = collect($request->input('attachment_orders', []))->values();
 
-        foreach (array_values($request->file('attachments', [])) as $index => $attachment) {
-            $title = trim((string) $titles->get($index, ''));
-            $order = max(1, (int) ($orders->get($index) ?: ($index + 1)));
+        $attachments = collect(array_values($request->file('attachments', [])))
+            ->map(function (mixed $attachment, int $index) use ($titles, $orders): array {
+                return [
+                    'file' => $attachment,
+                    'title' => trim((string) $titles->get($index, '')),
+                    'order' => max(1, (int) ($orders->get($index) ?: ($index + 1))),
+                    'index' => $index,
+                ];
+            })
+            ->sortBy([
+                ['order', 'asc'],
+                ['index', 'asc'],
+            ]);
+
+        foreach ($attachments as $attachmentData) {
+            $attachment = $attachmentData['file'];
+            $title = $attachmentData['title'];
+            $order = $attachmentData['order'];
 
             $this->storeTDocumentFile(
                 $document,
@@ -711,21 +731,38 @@ class ImportedExistingDocumentController extends Controller
         int $uploadedBy,
         ?string $attachmentTitle = null,
         ?int $attachmentOrder = null,
-    ): void
-    {
+    ): void {
         $path = $file->store("documents/{$document->id}", 'local');
 
         $document->files()->create([
             'type_file' => $type,
+            'document_number' => app(DocumentFileNumbering::class)->numberFor($document, $type, $attachmentOrder),
             'path_file' => $path,
             'uploaded_by' => $uploadedBy,
             'updated_at' => now(),
             'original_file_name' => $file->getClientOriginalName(),
             'stored_file_name' => basename($path),
             'file_size' => $file->getSize(),
+            'source_file_id' => $type === 'revision_form' ? $this->latestRevisionFormSourceFileId($document) : null,
             'attachment_title' => $attachmentTitle,
             'attachment_order' => $attachmentOrder,
         ]);
+    }
+
+    private function latestRevisionFormSourceFileId(Document $document): ?int
+    {
+        if ($document->request_type !== 'revision' || ! filled($document->nomor_dokumen)) {
+            return null;
+        }
+
+        return DocumentFile::query()
+            ->join('t_document', 't_document_files.t_document_id', '=', 't_document.id')
+            ->where('t_document.nomor_dokumen', $document->nomor_dokumen)
+            ->where('t_document.id', '!=', $document->id)
+            ->where('t_document_files.type_file', 'revision_form')
+            ->orderByDesc('t_document.nomor_revisi')
+            ->orderByDesc('t_document_files.id')
+            ->value('t_document_files.id');
     }
 
     private function authorizeImportedExistingFileAccess(
@@ -810,6 +847,17 @@ class ImportedExistingDocumentController extends Controller
         $minor = (int) preg_replace('/\D+/', '', $parts[1] ?? '0');
 
         return ($major * 100) + $minor;
+    }
+
+    private function revisionFormNumberForImportedExisting(ImportedExistingDocument $source): ?string
+    {
+        $document = new Document([
+            'm_document_level_id' => $source->m_document_level_id,
+            'nomor_dokumen' => $source->nomor_dokumen,
+        ]);
+        $document->setRelation('documentLevel', $source->documentLevel);
+
+        return app(DocumentFileNumbering::class)->revisionFormNumber($document);
     }
 
     /**

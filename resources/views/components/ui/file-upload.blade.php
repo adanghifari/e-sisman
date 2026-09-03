@@ -258,7 +258,7 @@
                 }
             };
 
-            document.addEventListener('change', (event) => {
+            const handleFileUploadChange = (event) => {
                 const input = event.target.closest('[data-file-upload-input]');
 
                 if (! input) {
@@ -266,9 +266,9 @@
                 }
 
                 renderFileList(input);
-            });
+            };
 
-            document.addEventListener('click', (event) => {
+            const handleFileUploadClick = (event) => {
                 const removeButton = event.target.closest('[data-existing-file-remove]');
 
                 if (!removeButton) {
@@ -296,9 +296,9 @@
                 if (!hasFiles) {
                     list?.classList.remove('grid', 'grid-cols-2', 'gap-4', 'sm:grid-cols-3', 'lg:grid-cols-5');
                 }
-            });
+            };
 
-            document.addEventListener('dragover', (event) => {
+            const handleFileUploadDragOver = (event) => {
                 const dropzone = event.target.closest('[data-file-upload-dropzone]');
 
                 if (! dropzone) {
@@ -307,9 +307,9 @@
 
                 event.preventDefault();
                 dropzone.dataset.dragging = 'true';
-            });
+            };
 
-            document.addEventListener('dragleave', (event) => {
+            const handleFileUploadDragLeave = (event) => {
                 const dropzone = event.target.closest('[data-file-upload-dropzone]');
 
                 if (! dropzone || dropzone.contains(event.relatedTarget)) {
@@ -317,9 +317,9 @@
                 }
 
                 dropzone.dataset.dragging = 'false';
-            });
+            };
 
-            document.addEventListener('drop', (event) => {
+            const handleFileUploadDrop = (event) => {
                 const dropzone = event.target.closest('[data-file-upload-dropzone]');
 
                 if (! dropzone) {
@@ -339,7 +339,25 @@
                 syncInputFiles(input, Array.from(event.dataTransfer.files || []));
                 renderFileList(input);
                 input.dispatchEvent(new Event('change', { bubbles: true }));
-            });
+            };
+
+            document.removeEventListener('change', window.handleFileUploadChange);
+            document.removeEventListener('click', window.handleFileUploadClick);
+            document.removeEventListener('dragover', window.handleFileUploadDragOver);
+            document.removeEventListener('dragleave', window.handleFileUploadDragLeave);
+            document.removeEventListener('drop', window.handleFileUploadDrop);
+
+            window.handleFileUploadChange = handleFileUploadChange;
+            window.handleFileUploadClick = handleFileUploadClick;
+            window.handleFileUploadDragOver = handleFileUploadDragOver;
+            window.handleFileUploadDragLeave = handleFileUploadDragLeave;
+            window.handleFileUploadDrop = handleFileUploadDrop;
+
+            document.addEventListener('change', window.handleFileUploadChange);
+            document.addEventListener('click', window.handleFileUploadClick);
+            document.addEventListener('dragover', window.handleFileUploadDragOver);
+            document.addEventListener('dragleave', window.handleFileUploadDragLeave);
+            document.addEventListener('drop', window.handleFileUploadDrop);
         })();
     </script>
 @endonce

@@ -125,7 +125,7 @@
                 syncMultiSelect(picker);
             };
 
-            document.addEventListener('change', (event) => {
+            const handleMultiSelectChange = (event) => {
                 const select = event.target.closest('[data-multi-select-input]');
 
                 if (!select || !select.value) {
@@ -138,9 +138,9 @@
                 createMultiSelectChip(picker, option.value, option.textContent.trim());
                 select.value = '';
                 syncMultiSelect(picker);
-            });
+            };
 
-            document.addEventListener('click', (event) => {
+            const handleMultiSelectClick = (event) => {
                 const removeButton = event.target.closest('[data-multi-select-remove]');
 
                 if (!removeButton) {
@@ -150,9 +150,25 @@
                 const picker = removeButton.closest('[data-multi-select]');
                 removeButton.closest('[data-multi-select-chip]')?.remove();
                 syncMultiSelect(picker);
-            });
+            };
 
-            document.querySelectorAll('[data-multi-select]').forEach(window.initMultiSelect);
+            const initMultiSelects = () => {
+                document.querySelectorAll('[data-multi-select]').forEach(window.initMultiSelect);
+            };
+
+            document.removeEventListener('change', window.handleMultiSelectChange);
+            document.removeEventListener('click', window.handleMultiSelectClick);
+            document.removeEventListener('livewire:navigated', window.initMultiSelects);
+
+            window.handleMultiSelectChange = handleMultiSelectChange;
+            window.handleMultiSelectClick = handleMultiSelectClick;
+            window.initMultiSelects = initMultiSelects;
+
+            document.addEventListener('change', window.handleMultiSelectChange);
+            document.addEventListener('click', window.handleMultiSelectClick);
+            document.addEventListener('livewire:navigated', window.initMultiSelects);
+
+            window.initMultiSelects();
         })();
     </script>
 @endonce

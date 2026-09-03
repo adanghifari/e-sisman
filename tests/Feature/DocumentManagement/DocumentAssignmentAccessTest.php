@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\DocumentManagement;
 
+use App\Models\ApprovalStatus;
 use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
 use App\Models\Department;
@@ -13,6 +14,8 @@ use App\Models\Role;
 use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
+use Illuminate\Http\UploadedFile;
+use Illuminate\Support\Facades\Storage;
 use Tests\TestCase;
 
 class DocumentAssignmentAccessTest extends TestCase
@@ -90,6 +93,160 @@ class DocumentAssignmentAccessTest extends TestCase
         $this->assertTrue($admin->refresh()->canAssignDocument($document));
     }
 
+    public function test_document_control_admin_with_update_permission_can_update_submitted_document_before_assignment(): void
+    {
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'metadata',
+                'nama_dokumen' => 'Dokumen hasil koreksi admin',
+                'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
+                'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $document->official_preparer_id,
+                'nomor_dokumen_suffix' => '77',
+            ]);
+
+        $response->assertRedirect(route('documents.approval.show', $document));
+        $this->assertSame('Dokumen hasil koreksi admin', $document->refresh()->nama_dokumen);
+        $this->assertSame('PS-'.$document->businessFunction->kode.'-77', $document->nomor_dokumen);
+    }
+
+    public function test_submitted_document_update_is_blocked_after_approver_assigned(): void
+    {
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $approver = User::factory()->create();
+
+        $document->approvals()->create([
+            'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::PENDING)->id,
+            'user_id' => $approver->id,
+            'assigned_by' => $admin->id,
+            'assigned_at' => now(),
+            'stages' => 'Approval 1',
+            'created_at' => now(),
+        ]);
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'metadata',
+                'nama_dokumen' => 'Tidak boleh berubah',
+                'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
+                'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $document->official_preparer_id,
+                'nomor_dokumen_suffix' => '88',
+            ]);
+
+        $response->assertForbidden();
+        $this->assertNotSame('Tidak boleh berubah', $document->refresh()->nama_dokumen);
+    }
+
+    public function test_submitted_attachment_replacement_updates_file_record(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill(['nomor_dokumen' => 'PS-QA-01'])->save();
+        $attachment = $this->attachmentFile($document, 'lampiran-lama.pdf', 'PS-QA-01-02');
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'existing_attachment_titles' => [$attachment->id => 'Lampiran A'],
+                'existing_attachment_orders' => [$attachment->id => 1],
+                'replacement_attachments' => [
+                    $attachment->id => UploadedFile::fake()->create('lampiran-baru.pdf', 20, 'application/pdf'),
+                ],
+            ]);
+
+        $response->assertRedirect(route('documents.approval.show', $document));
+        $attachment->refresh();
+        $this->assertSame('lampiran-baru.pdf', $attachment->original_file_name);
+        $this->assertStringEndsWith('-02', $attachment->document_number);
+    }
+
+    public function test_submitted_content_file_replacement_updates_file_record(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill(['nomor_dokumen' => 'PS-QA-01'])->save();
+        $contentFile = $this->documentFile($document, 'filled_template', 'template-lama.pdf', 'PS-QA-01');
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'replacement_files' => [
+                    $contentFile->id => UploadedFile::fake()->create('template-baru.pdf', 20, 'application/pdf'),
+                ],
+            ]);
+
+        $response->assertRedirect(route('documents.approval.show', $document));
+        $contentFile->refresh();
+        $this->assertSame('template-baru.pdf', $contentFile->original_file_name);
+        $this->assertSame('PS-QA-01', $contentFile->document_number);
+    }
+
+    public function test_submitted_attachment_delete_renumbers_remaining_attachments_from_02(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill(['nomor_dokumen' => 'PS-QA-01'])->save();
+        $firstAttachment = $this->attachmentFile($document, 'lampiran-1.pdf', 'PS-QA-01-02', 1);
+        $secondAttachment = $this->attachmentFile($document, 'lampiran-2.pdf', 'PS-QA-01-03', 2);
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'remove_existing_files' => [$firstAttachment->id],
+                'existing_attachment_titles' => [$secondAttachment->id => 'Lampiran 2'],
+                'existing_attachment_orders' => [$secondAttachment->id => 1],
+            ]);
+
+        $response->assertRedirect(route('documents.approval.show', $document));
+        $this->assertDatabaseMissing('t_document_files', ['id' => $firstAttachment->id]);
+        $this->assertStringEndsWith('-02', $secondAttachment->refresh()->document_number);
+    }
+
     public function test_document_control_admin_can_assign_multi_department_document_when_one_department_matches(): void
     {
         $qa = Department::create([
@@ -128,6 +285,63 @@ class DocumentAssignmentAccessTest extends TestCase
         $user->roles()->attach($role);
 
         return $user->refresh();
+    }
+
+    private function grantPermission(User $user, string $code, string $name, string $route, string $action): void
+    {
+        $role = $user->roles()->firstOrFail();
+        $permission = Permission::query()->firstOrCreate(
+            ['code' => $code],
+            [
+                'name' => $name,
+                'module' => 'Manajemen Dokumen',
+                'route' => $route,
+                'action' => $action,
+            ],
+        );
+
+        $role->permissions()->syncWithoutDetaching([$permission->id]);
+        $user->unsetRelation('roles');
+    }
+
+    private function ensureApprovalStatuses(): void
+    {
+        foreach ([
+            ApprovalStatus::PENDING => 'Dalam Review',
+            ApprovalStatus::WAITING => 'Menunggu',
+            ApprovalStatus::APPROVED => 'Disetujui',
+            ApprovalStatus::REJECTED => 'Ditolak',
+            ApprovalStatus::TERMINATED => 'Dihentikan',
+        ] as $code => $name) {
+            ApprovalStatus::query()->firstOrCreate(
+                ['kode_status' => $code],
+                ['nama_status' => $name],
+            );
+        }
+    }
+
+    private function attachmentFile(Document $document, string $fileName, string $documentNumber, int $order = 1)
+    {
+        return $this->documentFile($document, 'attachment', $fileName, $documentNumber, $order);
+    }
+
+    private function documentFile(Document $document, string $type, string $fileName, string $documentNumber, ?int $order = null)
+    {
+        $path = "documents/{$document->id}/{$fileName}";
+        Storage::disk('local')->put($path, 'PDF');
+
+        return $document->files()->create([
+            'type_file' => $type,
+            'document_number' => $documentNumber,
+            'attachment_title' => $type === 'attachment' ? pathinfo($fileName, PATHINFO_FILENAME) : null,
+            'attachment_order' => $order,
+            'path_file' => $path,
+            'uploaded_by' => $document->user_id,
+            'updated_at' => now(),
+            'original_file_name' => $fileName,
+            'stored_file_name' => $fileName,
+            'file_size' => 3,
+        ]);
     }
 
     /**

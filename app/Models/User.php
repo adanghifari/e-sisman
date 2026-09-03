@@ -137,6 +137,13 @@ class User extends Authenticatable implements PasskeyUser
             || $this->hasExplicitPermission('documents.approval.assign');
     }
 
+    public function canUpdateSubmittedDocument(Document $document): bool
+    {
+        return $this->isDeveloper()
+            || $this->isAdmin()
+            || $this->hasExplicitPermission('documents.approval.update-submitted');
+    }
+
     public function hasExplicitPermission(string $permissionCode): bool
     {
         return $this->roles()

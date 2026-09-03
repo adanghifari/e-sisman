@@ -1,25 +1,54 @@
 <x-layouts::app :title="__('Tambah Dokumen')">
     @php
-        $draft ??= null;
-        $revisionSource ??= null;
+        $draft = $draft ?? null;
+        $revisionSource = $revisionSource ?? null;
         $isEditingDraft = $draft !== null;
         $draftFilesByType = $draft?->files?->groupBy('type_file') ?? collect();
+        $attachmentNumberSuffix = function (?string $documentNumber): ?int {
+            if (! filled($documentNumber)) {
+                return null;
+            }
+
+            $suffix = \Illuminate\Support\Str::afterLast($documentNumber, '-');
+
+            return ctype_digit($suffix) ? (int) $suffix : null;
+        };
+        $attachmentSortKey = fn ($file) => sprintf(
+            '%010d-%010d-%010d',
+            $attachmentNumberSuffix($file->document_number) ?? PHP_INT_MAX,
+            $file->attachment_order ?? PHP_INT_MAX,
+            $file->id,
+        );
         $existingFilePayload = fn (string $type) => $draftFilesByType
             ->get($type, collect())
-            ->sortBy(fn ($file) => sprintf(
-                '%d-%010d-%010d',
-                $file->attachment_order === null ? 1 : 0,
-                $file->attachment_order ?? 0,
-                $file->id,
-            ))
+            ->sortBy($attachmentSortKey)
             ->map(fn ($file) => [
                 'id' => $file->id,
                 'name' => $file->original_file_name,
                 'title' => $file->attachment_title,
                 'order' => $file->attachment_order,
                 'size' => $file->file_size,
+                'document_number' => $file->document_number,
             ])
             ->values();
+        $revisionSourceAttachments = $revisionSource
+            ? $revisionSource->availableRevisionSourceAttachments()
+            : collect();
+        $revisionSourceCurrentAttachmentIds = $revisionSource
+            ? $revisionSource->files()
+                ->where('type_file', 'attachment')
+                ->pluck('id')
+                ->map(fn ($id) => (string) $id)
+                ->all()
+            : [];
+        $carriedForwardSourceFileIds = $draft
+            ? $draft->files
+                ->where('type_file', 'attachment')
+                ->pluck('source_file_id')
+                ->filter()
+                ->map(fn ($id) => (string) $id)
+                ->all()
+            : [];
         $levelKey ??= request()->route('level') ?? $draft?->documentLevel?->kode;
         $level = config("document-levels.{$levelKey}");
         $levelNumbers = [
@@ -99,16 +128,36 @@
                 ->orderBy('nomor_dokumen')
                 ->get()
             : collect();
+        $draftStatusId = \Illuminate\Support\Facades\Schema::hasTable('m_status_document')
+            ? \App\Models\StatusDocument::query()->where('nama_status', \App\Models\StatusDocument::DRAFT)->value('id')
+            : null;
+        $documentNumberSequence = function (?string $documentNumber): ?int {
+            if (! filled($documentNumber)) {
+                return null;
+            }
+
+            $suffix = \Illuminate\Support\Str::afterLast($documentNumber, '-');
+
+            return ctype_digit($suffix) ? (int) $suffix : null;
+        };
         $documentNumberSuggestions = ($documentLevelRecord && in_array($levelKey, ['level-2', 'level-3'], true))
             ? \App\Models\Document::query()
-                ->select(['m_proses_bisnis_id', 'm_proses_fungsi_id', 'nomor_revisi', 'nomor_dokumen'])
+                ->select(['m_proses_bisnis_id', 'm_proses_fungsi_id', 'm_status_document_id', 'nomor_revisi', 'nomor_dokumen'])
                 ->where('m_document_level_id', $documentLevelRecord->id)
                 ->whereNull('revised_from')
                 ->where('nomor_revisi', 0)
                 ->whereNotNull('nomor_dokumen')
+                ->when($draftStatusId, fn ($query) => $query->where('m_status_document_id', '!=', $draftStatusId))
                 ->get()
                 ->groupBy(fn ($document) => $document->m_proses_fungsi_id)
-                ->map(fn ($documents) => str_pad((string) ($documents->count() + 1), 2, '0', STR_PAD_LEFT))
+                ->map(function ($documents) use ($documentNumberSequence) {
+                    $nextSequence = ((int) $documents
+                        ->map(fn ($document) => $documentNumberSequence($document->nomor_dokumen))
+                        ->filter()
+                        ->max()) + 1;
+
+                    return str_pad((string) $nextSequence, 2, '0', STR_PAD_LEFT);
+                })
                 ->all()
             : [];
         $departmentOptions = $departments
@@ -592,7 +641,117 @@
                                     </span>
                                 </div>
 
-                                <x-documents.attachment-list :existing-files="$existingFilePayload('attachment')" />
+                                <x-documents.attachment-list :existing-files="$existingFilePayload('attachment')" :show-create-controls="false" />
+
+                                @if ($revisionSource && $revisionSourceAttachments->isNotEmpty())
+                                    <div class="mt-5 border-t border-slate-200 pt-5">
+                                        <div class="mb-3">
+                                            <p class="text-sm font-bold text-slate-900">Lampiran Master Sebelumnya</p>
+                                        </div>
+
+                                        <div class="space-y-2">
+                                            @foreach ($revisionSourceAttachments as $sourceAttachment)
+                                                @php
+                                                    $isSourceAttachmentIncluded = $draft
+                                                        ? in_array((string) $sourceAttachment->id, $carriedForwardSourceFileIds, true)
+                                                        : in_array((string) $sourceAttachment->id, $revisionSourceCurrentAttachmentIds, true);
+                                                @endphp
+                                                <div
+                                                    class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto]"
+                                                    data-master-attachment-row
+                                                    data-included="{{ $isSourceAttachmentIncluded ? 'true' : 'false' }}"
+                                                >
+                                                    <input
+                                                        type="hidden"
+                                                        name="included_attachment_ids[]"
+                                                        value="{{ $sourceAttachment->id }}"
+                                                        data-master-attachment-include
+                                                        @disabled(! $isSourceAttachmentIncluded)
+                                                    >
+
+                                                    <div class="grid min-w-0 gap-3 md:grid-cols-[auto_minmax(0,1fr)]">
+                                                        <label class="flex w-36 shrink-0 cursor-pointer flex-col items-center gap-2">
+                                                            <input
+                                                                type="checkbox"
+                                                                class="size-5 rounded border-slate-300 text-sky-600"
+                                                                data-master-attachment-checkbox
+                                                                @checked($isSourceAttachmentIncluded)
+                                                            >
+                                                            <span
+                                                                @class([
+                                                                    'inline-flex min-w-32 justify-center whitespace-nowrap rounded-full px-3 py-1 text-center text-[11px] font-bold',
+                                                                    'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100' => $isSourceAttachmentIncluded,
+                                                                    'bg-red-50 text-red-700 ring-1 ring-red-100' => ! $isSourceAttachmentIncluded,
+                                                                ])
+                                                                data-master-attachment-badge
+                                                            >
+                                                                {{ $isSourceAttachmentIncluded ? 'Dicantumkan' : 'Tidak Dicantumkan' }}
+                                                            </span>
+                                                        </label>
+
+                                                        <span class="min-w-0">
+                                                            <span class="block truncate text-sm font-bold text-slate-900">{{ $sourceAttachment->attachment_title ?: $sourceAttachment->original_file_name }}</span>
+                                                            <span class="mt-1 block truncate text-xs font-medium text-slate-500">{{ $sourceAttachment->document_number ?: 'Nomor lampiran akan disinkronkan saat submit' }}</span>
+                                                        </span>
+
+                                                        <div
+                                                            class="mt-3 hidden max-w-2xl grid-cols-[minmax(0,1fr)_auto] items-stretch gap-3"
+                                                            data-revised-attachment-file
+                                                            data-source-file-name="{{ $sourceAttachment->original_file_name }}"
+                                                        >
+                                                            <label class="grid min-h-16 cursor-pointer grid-cols-[auto_minmax(0,1fr)] items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-white px-4 py-3 transition hover:border-sky-300 hover:bg-sky-50">
+                                                                <span class="grid size-12 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500" data-revised-attachment-icon>
+                                                                    <flux:icon name="arrow-up-tray" class="size-6" />
+                                                                </span>
+                                                                <span class="min-w-0">
+                                                                    <span class="block truncate text-sm font-bold text-slate-800" data-revised-attachment-name>Pilih file PDF</span>
+                                                                    <span class="block text-xs font-medium text-slate-500" data-revised-attachment-meta>Maksimal 10 MB</span>
+                                                                </span>
+                                                                <input
+                                                                    type="file"
+                                                                    name="revised_attachments[{{ $sourceAttachment->id }}]"
+                                                                    accept=".pdf,application/pdf"
+                                                                    class="sr-only"
+                                                                    data-revised-attachment-input
+                                                                >
+                                                            </label>
+                                                            <button
+                                                                type="button"
+                                                                class="grid min-h-16 w-16 shrink-0 place-items-center rounded-lg border border-sky-100 bg-sky-50 text-sky-600 transition hover:border-sky-200 hover:bg-sky-100"
+                                                                data-revised-attachment-upload-button
+                                                                aria-label="Pilih ulang file revisi"
+                                                            >
+                                                                <flux:icon name="arrow-up-tray" class="size-6" />
+                                                            </button>
+                                                        </div>
+                                                    </div>
+
+                                                    <div class="flex flex-wrap items-start gap-2 md:justify-end">
+                                                        <button
+                                                            type="button"
+                                                            class="inline-flex h-10 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+                                                            data-master-attachment-update-button
+                                                        >
+                                                            Perbarui
+                                                        </button>
+                                                        <button
+                                                            type="button"
+                                                            class="hidden size-10 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+                                                            data-revised-attachment-close
+                                                            aria-label="Tutup field perbarui"
+                                                        >
+                                                            <flux:icon name="x-mark" class="size-5" />
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            @endforeach
+                                        </div>
+                                    </div>
+                                @endif
+
+                                <div @class(['mt-5' => $revisionSource && $revisionSourceAttachments->isNotEmpty()])>
+                                    <x-documents.attachment-list :existing-files="collect()" />
+                                </div>
 
                                 @error('attachments')
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -604,6 +763,9 @@
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                 @enderror
                                 @error('existing_attachment_titles.*')
+                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                @enderror
+                                @error('revised_attachments.*')
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                 @enderror
                             </div>
@@ -1140,6 +1302,163 @@
                         title: user.title,
                         initials: user.initials,
                     }, 'Diwakilkan');
+                });
+            })();
+        </script>
+    @endonce
+
+    @once
+        <script>
+            (() => {
+                const formatFileSize = (file) => {
+                    const sizeKb = Math.ceil(file.size / 1024);
+
+                    return sizeKb >= 1024
+                        ? `${(sizeKb / 1024).toFixed(1)} MB`
+                        : `${sizeKb} KB`;
+                };
+
+                const setIncluded = (row, included) => {
+                    const input = row?.querySelector('[data-master-attachment-include]');
+                    const checkbox = row?.querySelector('[data-master-attachment-checkbox]');
+                    const badge = row?.querySelector('[data-master-attachment-badge]');
+
+                    if (!row || !input || !checkbox || !badge) {
+                        return;
+                    }
+
+                    row.dataset.included = included ? 'true' : 'false';
+                    input.disabled = !included;
+                    checkbox.checked = included;
+                    badge.textContent = included ? 'Dicantumkan' : 'Tidak Dicantumkan';
+                    badge.className = included
+                        ? 'inline-flex min-w-32 justify-center whitespace-nowrap rounded-full bg-emerald-50 px-3 py-1 text-center text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-100'
+                        : 'inline-flex min-w-32 justify-center whitespace-nowrap rounded-full bg-red-50 px-3 py-1 text-center text-[11px] font-bold text-red-700 ring-1 ring-red-100';
+                };
+
+                const pickerForRow = (row) => row?.querySelector('[data-revised-attachment-file]');
+
+                const resetPicker = (picker) => {
+                    const input = picker?.querySelector('[data-revised-attachment-input]');
+                    const name = picker?.querySelector('[data-revised-attachment-name]');
+                    const meta = picker?.querySelector('[data-revised-attachment-meta]');
+                    const icon = picker?.querySelector('[data-revised-attachment-icon]');
+                    const row = picker?.closest('[data-master-attachment-row]');
+                    const closeButton = row?.querySelector('[data-revised-attachment-close]');
+
+                    if (!picker || !input || !name || !meta || !icon || !row || !closeButton) {
+                        return;
+                    }
+
+                    input.value = '';
+                    picker.classList.add('hidden');
+                    picker.classList.remove('grid');
+                    closeButton.classList.add('hidden');
+                    closeButton.classList.remove('inline-flex');
+                    name.textContent = 'Pilih file PDF';
+                    meta.textContent = 'Maksimal 10 MB';
+                    icon.className = 'grid size-12 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white text-slate-500';
+                    icon.innerHTML = '<svg class="size-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 0 0 5.25 21h13.5A2.25 2.25 0 0 0 21 18.75V16.5M7.5 7.5 12 3m0 0 4.5 4.5M12 3v13.5" /></svg>';
+                };
+
+                const showSourceFile = (picker) => {
+                    const name = picker?.querySelector('[data-revised-attachment-name]');
+                    const meta = picker?.querySelector('[data-revised-attachment-meta]');
+                    const icon = picker?.querySelector('[data-revised-attachment-icon]');
+                    const sourceFileName = picker?.dataset.sourceFileName || 'File master sebelumnya';
+
+                    if (!picker || !name || !meta || !icon) {
+                        return;
+                    }
+
+                    picker.classList.remove('hidden');
+                    picker.classList.add('grid');
+                    name.textContent = sourceFileName;
+                    meta.textContent = 'File master sebelumnya';
+                    icon.className = 'grid size-12 shrink-0 place-items-center rounded-lg border border-red-100 bg-red-50 text-xs font-bold text-red-600';
+                    icon.textContent = 'PDF';
+                };
+
+                document.addEventListener('change', (event) => {
+                    const checkbox = event.target.closest('[data-master-attachment-checkbox]');
+
+                    if (checkbox) {
+                        const row = checkbox.closest('[data-master-attachment-row]');
+                        setIncluded(row, checkbox.checked);
+
+                        if (!checkbox.checked) {
+                            resetPicker(pickerForRow(row));
+                        }
+
+                        return;
+                    }
+
+                    const input = event.target.closest('[data-revised-attachment-input]');
+
+                    if (!input) {
+                        return;
+                    }
+
+                    const picker = input.closest('[data-revised-attachment-file]');
+                    const row = input.closest('[data-master-attachment-row]');
+                    const file = input.files?.[0];
+
+                    if (!file) {
+                        resetPicker(picker);
+
+                        return;
+                    }
+
+                    setIncluded(row, true);
+
+                    const name = picker?.querySelector('[data-revised-attachment-name]');
+                    const meta = picker?.querySelector('[data-revised-attachment-meta]');
+                    const icon = picker?.querySelector('[data-revised-attachment-icon]');
+
+                    if (!name || !meta || !icon) {
+                        return;
+                    }
+
+                    name.textContent = file.name;
+                    meta.textContent = formatFileSize(file);
+                    icon.className = 'grid size-12 shrink-0 place-items-center rounded-lg border border-red-100 bg-red-50 text-xs font-bold text-red-600';
+                    icon.textContent = 'PDF';
+                });
+
+                document.addEventListener('click', (event) => {
+                    const updateButton = event.target.closest('[data-master-attachment-update-button]');
+
+                    if (updateButton) {
+                        const row = updateButton.closest('[data-master-attachment-row]');
+                        const picker = pickerForRow(row);
+                        const closeButton = row?.querySelector('[data-revised-attachment-close]');
+
+                        setIncluded(row, true);
+                        showSourceFile(picker);
+                        closeButton?.classList.remove('hidden');
+                        closeButton?.classList.add('inline-flex');
+                        picker?.querySelector('[data-revised-attachment-input]')?.click();
+
+                        return;
+                    }
+
+                    const uploadButton = event.target.closest('[data-revised-attachment-upload-button]');
+
+                    if (uploadButton) {
+                        uploadButton.closest('[data-revised-attachment-file]')?.querySelector('[data-revised-attachment-input]')?.click();
+
+                        return;
+                    }
+
+                    const closeButton = event.target.closest('[data-revised-attachment-close]');
+
+                    if (closeButton) {
+                        resetPicker(pickerForRow(closeButton.closest('[data-master-attachment-row]')));
+                    }
+                });
+
+                document.querySelectorAll('[data-master-attachment-row]').forEach((row) => {
+                    setIncluded(row, row.dataset.included === 'true');
                 });
             })();
         </script>

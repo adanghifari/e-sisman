@@ -1,5 +1,6 @@
 @props([
     'existingFiles' => collect(),
+    'showCreateControls' => true,
 ])
 
 @php
@@ -55,55 +56,51 @@
         @endforeach
     </div>
 
-    <button type="button" class="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-add-attachment-row>
-        <flux:icon name="plus" class="size-5" />
-        Tambah Lampiran
-    </button>
+    @if ($showCreateControls)
+        <button type="button" class="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-dashed border-slate-300 bg-white px-4 text-sm font-semibold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-add-attachment-row>
+            <flux:icon name="plus" class="size-5" />
+            Tambah Lampiran
+        </button>
 
-    <template data-attachment-row-template>
-        <div class="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.9fr)_auto]" data-attachment-row>
-            <input type="hidden" name="attachment_orders[]" value="" data-attachment-order-input>
-            <label class="block min-w-0">
-                <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nama Dokumen/Lampiran</span>
-                <input
-                    type="text"
-                    name="attachment_titles[]"
-                    placeholder="Masukkan nama lampiran"
-                    required
-                    class="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                >
-            </label>
+        <template data-attachment-row-template>
+            <div class="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-[minmax(0,1fr)_minmax(260px,0.9fr)_auto]" data-attachment-row>
+                <input type="hidden" name="attachment_orders[]" value="" data-attachment-order-input>
+                <label class="block min-w-0">
+                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nama Dokumen/Lampiran</span>
+                    <input
+                        type="text"
+                        name="attachment_titles[]"
+                        placeholder="Masukkan nama lampiran"
+                        required
+                        class="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                    >
+                </label>
 
-            <label class="block min-w-0">
-                <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">File</span>
-                <span class="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 transition hover:border-sky-300 hover:bg-sky-50" data-attachment-picker>
-                    <span class="grid size-9 shrink-0 place-items-center rounded-md border border-slate-200 bg-white text-slate-500" data-attachment-file-icon>
-                        <flux:icon name="arrow-up-tray" class="size-5" />
+                <label class="block min-w-0">
+                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">File</span>
+                    <span class="flex min-h-11 cursor-pointer items-center gap-3 rounded-lg border border-dashed border-slate-300 bg-slate-50 px-3 py-2 transition hover:border-sky-300 hover:bg-sky-50" data-attachment-picker>
+                        <span class="grid size-9 shrink-0 place-items-center rounded-md border border-slate-200 bg-white text-slate-500" data-attachment-file-icon>
+                            <flux:icon name="arrow-up-tray" class="size-5" />
+                        </span>
+                        <span class="min-w-0">
+                            <span class="block truncate text-sm font-semibold text-slate-700" data-attachment-file-name>Pilih file PDF</span>
+                            <span class="block text-xs font-medium text-slate-500" data-attachment-file-meta>Maksimal 10 MB</span>
+                        </span>
                     </span>
-                    <span class="min-w-0">
-                        <span class="block truncate text-sm font-semibold text-slate-700" data-attachment-file-name>Pilih file PDF</span>
-                        <span class="block text-xs font-medium text-slate-500" data-attachment-file-meta>Maksimal 10 MB</span>
-                    </span>
-                </span>
-                <input type="file" name="attachments[]" accept=".pdf,application/pdf" class="sr-only" data-attachment-file-input required>
-            </label>
+                    <input type="file" name="attachments[]" accept=".pdf,application/pdf" class="sr-only" data-attachment-file-input required>
+                </label>
 
-            <button type="button" class="mt-5 inline-flex size-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-remove-attachment-row aria-label="Hapus lampiran">
-                <flux:icon name="trash" class="size-5" />
-            </button>
-        </div>
-    </template>
+                <button type="button" class="mt-5 inline-flex size-11 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-remove-attachment-row aria-label="Hapus lampiran">
+                    <flux:icon name="trash" class="size-5" />
+                </button>
+            </div>
+        </template>
+    @endif
 </div>
 
 @once
     <script>
         (() => {
-            if (window.attachmentListReady) {
-                return;
-            }
-
-            window.attachmentListReady = true;
-
             const formatFileSize = (file) => {
                 const sizeKb = Math.ceil(file.size / 1024);
 
@@ -144,7 +141,7 @@
                 });
             };
 
-            document.addEventListener('click', (event) => {
+            const handleAttachmentListClick = (event) => {
                 const addButton = event.target.closest('[data-add-attachment-row]');
 
                 if (addButton) {
@@ -189,17 +186,38 @@
                     row?.remove();
                     renumberRows(root);
                 }
-            });
+            };
 
-            document.addEventListener('change', (event) => {
+            const handleAttachmentListChange = (event) => {
                 const input = event.target.closest('[data-attachment-file-input]');
 
                 if (input) {
                     renderSelectedFile(input);
                 }
-            });
+            };
 
-            document.querySelectorAll('[data-attachment-list]').forEach(renumberRows);
+            const initAttachmentLists = () => {
+                document.querySelectorAll('[data-attachment-list]').forEach(renumberRows);
+            };
+
+            if (window.handleAttachmentListClick) {
+                document.removeEventListener('click', window.handleAttachmentListClick);
+            }
+
+            if (window.handleAttachmentListChange) {
+                document.removeEventListener('change', window.handleAttachmentListChange);
+            }
+
+            window.handleAttachmentListClick = handleAttachmentListClick;
+            window.handleAttachmentListChange = handleAttachmentListChange;
+            window.initAttachmentLists = initAttachmentLists;
+
+            document.addEventListener('click', window.handleAttachmentListClick);
+            document.addEventListener('change', window.handleAttachmentListChange);
+            document.addEventListener('DOMContentLoaded', window.initAttachmentLists);
+            document.addEventListener('livewire:navigated', window.initAttachmentLists);
+
+            initAttachmentLists();
         })();
     </script>
 @endonce

@@ -19,6 +19,8 @@ use RuntimeException;
 
 class FinalArtifactGenerator
 {
+    private const OFFICIAL_PREPARER_SIGNATURE_STAGE = 'TTD Penyusun Resmi';
+
     /**
      * Prepare a final artifact record and normalized renderer payload.
      *
@@ -145,6 +147,7 @@ class FinalArtifactGenerator
     public function buildPayload(Document $document, DocumentFile $sourceFile): array
     {
         $document->loadMissing([
+            'status',
             'documentLevel',
             'documentType',
             'businessProcess',
@@ -158,7 +161,6 @@ class FinalArtifactGenerator
         ]);
         $coverDocumentLevel = $this->coverDocumentLevel($document);
         $coverDocumentType = $this->coverDocumentType($document);
-        $approvalSheetDocument = $this->approvalSheetDocument($document);
 
         return [
             'document' => [
@@ -189,13 +191,12 @@ class FinalArtifactGenerator
                     ->all(),
             ],
             'preparers' => $this->collectPreparers($document),
-            'approvals' => $this->collectApprovals($approvalSheetDocument),
-            'revision_approvals' => $document->request_type === 'revision'
-                ? $this->collectApprovals($document)
-                : [],
+            'approvals' => $this->collectApprovals($document),
+            'revision_approvals' => $this->collectRevisionApprovals($document),
             'source' => [
                 'id' => $sourceFile->id,
                 'type' => $sourceFile->type_file,
+                'document_number' => $sourceFile->document_number,
                 'path_file' => $sourceFile->path_file,
                 'original_file_name' => $sourceFile->original_file_name,
                 'stored_file_name' => $sourceFile->stored_file_name,
@@ -223,21 +224,6 @@ class FinalArtifactGenerator
         return $document->documentType;
     }
 
-    private function approvalSheetDocument(Document $document): Document
-    {
-        if ($document->request_type !== 'revision' || $document->revised_from === null) {
-            return $document;
-        }
-
-        return Document::query()
-            ->whereKey($document->revisionRootId())
-            ->with([
-                'documentLevel.approvalFlows.stages',
-                'approvals.status',
-            ])
-            ->firstOrFail();
-    }
-
     /**
      * @return array<int, array<string, mixed>>
      */
@@ -245,10 +231,9 @@ class FinalArtifactGenerator
     {
         $attachments = $document->files()
             ->where('type_file', 'attachment')
-            ->orderByRaw('CASE WHEN attachment_order IS NULL THEN 1 ELSE 0 END')
-            ->orderBy('attachment_order')
             ->orderBy('id')
-            ->get();
+            ->get()
+            ->sortBy(fn (DocumentFile $file): string => $file->attachmentSortKey());
 
         if ($document->request_type === 'revision') {
             $revisionForm = $document->files()
@@ -266,6 +251,7 @@ class FinalArtifactGenerator
             ->map(fn (DocumentFile $file, int $index): array => [
                 'id' => $file->id,
                 'number' => $index + 1,
+                'document_number' => $file->document_number,
                 'title' => $file->type_file === 'revision_form'
                     ? ($file->attachment_title ?: 'Lembar Revisi')
                     : ($file->attachment_title ?: $file->original_file_name),
@@ -292,9 +278,9 @@ class FinalArtifactGenerator
 
         return [[
             'id' => $document->officialPreparer->id,
-            'name' => $document->official_preparer_name_snapshot,
-            'position' => $document->official_preparer_position_snapshot,
-            'department' => $document->official_preparer_department_snapshot,
+            'name' => $document->official_preparer_name_snapshot ?: $document->officialPreparer->name,
+            'position' => $document->official_preparer_position_snapshot ?: $document->officialPreparer->jabatan,
+            'department' => $document->official_preparer_department_snapshot ?: $document->officialPreparer->department?->nama_department,
             'department_code' => null,
         ]];
     }
@@ -308,7 +294,7 @@ class FinalArtifactGenerator
 
         return $document->approvals
             ->filter(fn (Approval $approval): bool => $approval->responded_at !== null
-                && ! $approval->shouldHideAsOfficialPreparerDisplay($document))
+                && ! $this->isOfficialPreparerSignatureStage($approval))
             ->map(fn (Approval $approval): array => [
                 'id' => $approval->id,
                 'stage_name' => $approval->stage_name_snapshot ?? $approval->stages,
@@ -351,6 +337,32 @@ class FinalArtifactGenerator
             ])
             ->values()
             ->all();
+    }
+
+    /**
+     * @return array<int, array<string, mixed>>
+     */
+    private function collectRevisionApprovals(Document $document): array
+    {
+        if ($document->request_type !== 'revision') {
+            return [];
+        }
+
+        if (! in_array($document->status?->nama_status, [StatusDocument::APPROVED, StatusDocument::OBSOLETE], true)) {
+            return [];
+        }
+
+        return $this->collectApprovals($document);
+    }
+
+    private function isOfficialPreparerSignatureStage(Approval $approval): bool
+    {
+        return collect([
+            $approval->stages,
+            $approval->stage_name_snapshot,
+        ])
+            ->filter()
+            ->contains(fn (string $stage): bool => trim($stage) === self::OFFICIAL_PREPARER_SIGNATURE_STAGE);
     }
 
     private function createPendingArtifact(
