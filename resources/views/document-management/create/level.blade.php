@@ -128,16 +128,36 @@
                 ->orderBy('nomor_dokumen')
                 ->get()
             : collect();
+        $draftStatusId = \Illuminate\Support\Facades\Schema::hasTable('m_status_document')
+            ? \App\Models\StatusDocument::query()->where('nama_status', \App\Models\StatusDocument::DRAFT)->value('id')
+            : null;
+        $documentNumberSequence = function (?string $documentNumber): ?int {
+            if (! filled($documentNumber)) {
+                return null;
+            }
+
+            $suffix = \Illuminate\Support\Str::afterLast($documentNumber, '-');
+
+            return ctype_digit($suffix) ? (int) $suffix : null;
+        };
         $documentNumberSuggestions = ($documentLevelRecord && in_array($levelKey, ['level-2', 'level-3'], true))
             ? \App\Models\Document::query()
-                ->select(['m_proses_bisnis_id', 'm_proses_fungsi_id', 'nomor_revisi', 'nomor_dokumen'])
+                ->select(['m_proses_bisnis_id', 'm_proses_fungsi_id', 'm_status_document_id', 'nomor_revisi', 'nomor_dokumen'])
                 ->where('m_document_level_id', $documentLevelRecord->id)
                 ->whereNull('revised_from')
                 ->where('nomor_revisi', 0)
                 ->whereNotNull('nomor_dokumen')
+                ->when($draftStatusId, fn ($query) => $query->where('m_status_document_id', '!=', $draftStatusId))
                 ->get()
                 ->groupBy(fn ($document) => $document->m_proses_fungsi_id)
-                ->map(fn ($documents) => str_pad((string) ($documents->count() + 1), 2, '0', STR_PAD_LEFT))
+                ->map(function ($documents) use ($documentNumberSequence) {
+                    $nextSequence = ((int) $documents
+                        ->map(fn ($document) => $documentNumberSequence($document->nomor_dokumen))
+                        ->filter()
+                        ->max()) + 1;
+
+                    return str_pad((string) $nextSequence, 2, '0', STR_PAD_LEFT);
+                })
                 ->all()
             : [];
         $departmentOptions = $departments

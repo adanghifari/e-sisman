@@ -168,6 +168,8 @@ class DocumentApprovalController extends Controller
                 'm_status_document_id' => StatusDocument::findByName(StatusDocument::REJECTED)->id,
                 'rejected_at' => now(),
             ]);
+
+            $this->clearRejectedInitialSubmissionFileNumbers($document);
         });
 
         return redirect()
@@ -175,6 +177,20 @@ class DocumentApprovalController extends Controller
             ->with('document_success', [
                 'title' => 'Dokumen Berhasil Ditolak',
                 'message' => 'Catatan penolakan Anda sudah tersimpan pada riwayat dokumen.',
+            ]);
+    }
+
+    private function clearRejectedInitialSubmissionFileNumbers(Document $document): void
+    {
+        if ($document->revised_from !== null || $document->request_type !== null) {
+            return;
+        }
+
+        $document->files()
+            ->whereNotNull('document_number')
+            ->update([
+                'document_number' => null,
+                'updated_at' => now(),
             ]);
     }
 

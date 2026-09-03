@@ -101,12 +101,6 @@
 @once
     <script>
         (() => {
-            if (window.attachmentListReady) {
-                return;
-            }
-
-            window.attachmentListReady = true;
-
             const formatFileSize = (file) => {
                 const sizeKb = Math.ceil(file.size / 1024);
 
@@ -147,7 +141,7 @@
                 });
             };
 
-            document.addEventListener('click', (event) => {
+            const handleAttachmentListClick = (event) => {
                 const addButton = event.target.closest('[data-add-attachment-row]');
 
                 if (addButton) {
@@ -192,17 +186,38 @@
                     row?.remove();
                     renumberRows(root);
                 }
-            });
+            };
 
-            document.addEventListener('change', (event) => {
+            const handleAttachmentListChange = (event) => {
                 const input = event.target.closest('[data-attachment-file-input]');
 
                 if (input) {
                     renderSelectedFile(input);
                 }
-            });
+            };
 
-            document.querySelectorAll('[data-attachment-list]').forEach(renumberRows);
+            const initAttachmentLists = () => {
+                document.querySelectorAll('[data-attachment-list]').forEach(renumberRows);
+            };
+
+            if (window.handleAttachmentListClick) {
+                document.removeEventListener('click', window.handleAttachmentListClick);
+            }
+
+            if (window.handleAttachmentListChange) {
+                document.removeEventListener('change', window.handleAttachmentListChange);
+            }
+
+            window.handleAttachmentListClick = handleAttachmentListClick;
+            window.handleAttachmentListChange = handleAttachmentListChange;
+            window.initAttachmentLists = initAttachmentLists;
+
+            document.addEventListener('click', window.handleAttachmentListClick);
+            document.addEventListener('change', window.handleAttachmentListChange);
+            document.addEventListener('DOMContentLoaded', window.initAttachmentLists);
+            document.addEventListener('livewire:navigated', window.initAttachmentLists);
+
+            initAttachmentLists();
         })();
     </script>
 @endonce

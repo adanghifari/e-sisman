@@ -1754,14 +1754,14 @@ class CreateDocumentTest extends TestCase
             'kode_department' => 'QA',
             'nama_department' => 'Quality Assurance',
         ]);
-        $draftStatus = StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
-        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        $proposedStatus = StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
         $documentType = DocumentType::create(['nama_types' => 'Prosedur']);
         $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
 
         Document::create([
             'm_document_level_id' => $level->id,
-            'm_status_document_id' => $draftStatus->id,
+            'm_status_document_id' => $proposedStatus->id,
             'm_document_types_id' => $documentType->id,
             'm_proses_bisnis_id' => $businessProcess->id,
             'm_proses_fungsi_id' => $businessFunction->id,
@@ -1780,7 +1780,7 @@ class CreateDocumentTest extends TestCase
                 'official_preparer_id' => $user->id,
                 'nomor_dokumen_suffix' => '001',
                 'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
-                'submit_action' => 'draft',
+                'submit_action' => 'submit',
             ])
             ->assertRedirect(route('documents.create.level', 'level-2'))
             ->assertSessionHasErrors(['nomor_dokumen_suffix']);
@@ -1807,6 +1807,71 @@ class CreateDocumentTest extends TestCase
 
         $this->assertSame($previous->id, $newDocument->resubmitted_from);
         $this->assertSame(StatusDocument::REJECTED, $previous->refresh()->status->nama_status);
+    }
+
+    public function test_rejected_initial_submission_clears_file_numbers_before_resubmission(): void
+    {
+        Storage::fake('local');
+
+        [$user, $businessProcess, $businessFunction, $department] = $this->initialResubmissionFixture();
+        $approver = User::factory()->create();
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '008', [
+                'attachment_titles' => ['Lampiran Ditolak A', 'Lampiran Ditolak B'],
+                'attachment_orders' => [1, 2],
+                'attachments' => [
+                    UploadedFile::fake()->create('lampiran-ditolak-a.pdf', 24, 'application/pdf'),
+                    UploadedFile::fake()->create('lampiran-ditolak-b.pdf', 24, 'application/pdf'),
+                ],
+            ]))
+            ->assertRedirect(route('documents.create'));
+
+        $rejectedAttempt = Document::query()
+            ->where('nomor_dokumen', 'PS-QA-008')
+            ->firstOrFail();
+
+        Approval::create([
+            't_document_id' => $rejectedAttempt->id,
+            'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::PENDING)->id,
+            'user_id' => $approver->id,
+            'role_id' => null,
+            'assigned_by' => $user->id,
+            'assigned_at' => now(),
+            'stages' => 'Approval Dokumen',
+        ]);
+
+        $this->actingAs($approver)
+            ->post(route('documents.approval.reject', $rejectedAttempt), [
+                'catatan' => 'Lampiran perlu diperbaiki.',
+            ])
+            ->assertRedirect(route('documents.approval.show', $rejectedAttempt));
+
+        $rejectedAttempt->refresh();
+
+        $this->assertSame(StatusDocument::REJECTED, $rejectedAttempt->status->nama_status);
+        $this->assertSame(0, $rejectedAttempt->files()->whereNotNull('document_number')->count());
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '008', [
+                'attachment_titles' => ['Lampiran Baru'],
+                'attachment_orders' => [1],
+                'attachments' => [
+                    UploadedFile::fake()->create('lampiran-baru.pdf', 24, 'application/pdf'),
+                ],
+            ]))
+            ->assertRedirect(route('documents.create'));
+
+        $resubmission = Document::query()
+            ->where('nomor_dokumen', 'PS-QA-008')
+            ->whereKeyNot($rejectedAttempt->id)
+            ->firstOrFail();
+        $attachment = $resubmission->files()
+            ->where('type_file', 'attachment')
+            ->firstOrFail();
+
+        $this->assertSame($rejectedAttempt->id, $resubmission->resubmitted_from);
+        $this->assertSame('FMPS-QA-008-02', $attachment->document_number);
     }
 
     public function test_multiple_rejected_initial_submissions_keep_immediate_chain_and_history_notes(): void
@@ -1852,6 +1917,220 @@ class CreateDocumentTest extends TestCase
             ->assertOk()
             ->assertSee('Pengajuan ulang dibuat dari transaksi #'.$attempts->last()->id)
             ->assertSee('Catatan penolakan 4');
+    }
+
+    public function test_rejected_initial_resubmission_normalizes_single_digit_suffix_before_linking_history(): void
+    {
+        Storage::fake('local');
+
+        [$user, $businessProcess, $businessFunction, $department, $level, $documentType] = $this->initialResubmissionFixture();
+        $firstAttempt = $this->createRejectedInitialAttempt(
+            $user,
+            $level,
+            $documentType,
+            $businessProcess,
+            $businessFunction,
+            'PS-QA-07',
+            [],
+            'Catatan penolakan awal',
+        );
+        $secondAttempt = $this->createRejectedInitialAttempt(
+            $user,
+            $level,
+            $documentType,
+            $businessProcess,
+            $businessFunction,
+            'PS-QA-07',
+            ['resubmitted_from' => $firstAttempt->id],
+            'Catatan penolakan kedua',
+        );
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '7'))
+            ->assertRedirect(route('documents.create'));
+
+        $active = Document::query()
+            ->where('nomor_dokumen', 'PS-QA-07')
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED))
+            ->firstOrFail();
+
+        $this->assertSame($secondAttempt->id, $active->resubmitted_from);
+        $this->assertFalse(Document::query()->where('nomor_dokumen', 'PS-QA-7')->exists());
+
+        $history = app(DocumentRejectionHistory::class)->forDocument($active);
+
+        $this->assertSame(
+            ['Catatan penolakan awal', 'Catatan penolakan kedua'],
+            $history->pluck('catatan')->all(),
+        );
+    }
+
+    public function test_document_number_suffix_must_be_alphanumeric(): void
+    {
+        Storage::fake('local');
+
+        [$user, $businessProcess, $businessFunction, $department] = $this->initialResubmissionFixture();
+
+        $this->actingAs($user)
+            ->from(route('documents.create.level', 'level-2'))
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '07-A'))
+            ->assertRedirect(route('documents.create.level', 'level-2'))
+            ->assertSessionHasErrors(['nomor_dokumen_suffix']);
+    }
+
+    public function test_drafts_do_not_lock_document_number_until_one_user_submits_it(): void
+    {
+        Storage::fake('local');
+
+        [$firstUser, $businessProcess, $businessFunction, $department, $level, $documentType] = $this->initialResubmissionFixture();
+        $secondUser = User::factory()->create();
+        $thirdUser = User::factory()->create();
+        $draftStatus = StatusDocument::query()->where('nama_status', StatusDocument::DRAFT)->firstOrFail();
+        $drafts = collect([$firstUser, $secondUser])->map(function (User $user, int $index) use ($businessProcess, $businessFunction, $department, $level, $documentType, $draftStatus): Document {
+            $draft = Document::create([
+                'm_document_level_id' => $level->id,
+                'm_status_document_id' => $draftStatus->id,
+                'm_document_types_id' => $documentType->id,
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'user_id' => $user->id,
+                'official_preparer_id' => $user->id,
+                'nama_dokumen' => 'Draft Nomor Sama '.($index + 1),
+                'nomor_dokumen' => 'PS-QA-010',
+                'nomor_revisi' => 0,
+            ]);
+
+            $draft->departments()->sync([$department->id]);
+            Storage::disk('local')->put("documents/{$draft->id}/template.pdf", 'PDF draft content');
+            $draft->files()->create([
+                'type_file' => 'filled_template',
+                'path_file' => "documents/{$draft->id}/template.pdf",
+                'original_file_name' => 'template.pdf',
+                'stored_file_name' => 'template.pdf',
+                'file_size' => 1024,
+                'uploaded_by' => $user->id,
+            ]);
+
+            return $draft;
+        });
+
+        $this->assertSame(2, Document::query()
+            ->where('nomor_dokumen', 'PS-QA-010')
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::DRAFT))
+            ->count());
+
+        $this->actingAs($thirdUser)
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '010', [
+                'official_preparer_id' => $thirdUser->id,
+            ]))
+            ->assertRedirect(route('documents.create'));
+
+        $submitted = Document::query()
+            ->where('nomor_dokumen', 'PS-QA-010')
+            ->where('user_id', $thirdUser->id)
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED))
+            ->firstOrFail();
+
+        $this->assertNull($submitted->resubmitted_from);
+
+        $blockedDraft = $drafts->first();
+
+        $this->actingAs($firstUser)
+            ->from(route('documents.create.drafts.edit', $blockedDraft))
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '010', [
+                'draft_id' => $blockedDraft->id,
+                'filled_template' => null,
+                'official_preparer_id' => $firstUser->id,
+            ]))
+            ->assertRedirect(route('documents.create.drafts.edit', $blockedDraft))
+            ->assertSessionHasErrors(['nomor_dokumen_suffix']);
+
+        $blockedDraft->refresh();
+
+        $this->assertSame(StatusDocument::DRAFT, $blockedDraft->status->nama_status);
+        $this->assertSame('PS-QA-010', $blockedDraft->nomor_dokumen);
+    }
+
+    public function test_document_number_suggestion_ignores_drafts(): void
+    {
+        [$user, $businessProcess, $businessFunction, $department, $level, $documentType] = $this->initialResubmissionFixture();
+        $approvedStatus = StatusDocument::query()->where('nama_status', StatusDocument::APPROVED)->firstOrFail();
+        $draftStatus = StatusDocument::query()->where('nama_status', StatusDocument::DRAFT)->firstOrFail();
+
+        Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Nomor Terakhir Submit',
+            'nomor_dokumen' => 'PS-QA-009',
+            'nomor_revisi' => 0,
+            'approved_at' => now(),
+        ]);
+        Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $draftStatus->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => User::factory()->create()->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Draft Tidak Mengunci Nomor',
+            'nomor_dokumen' => 'PS-QA-010',
+            'nomor_revisi' => 0,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.create.level', 'level-2'))
+            ->assertOk()
+            ->assertSee('"'.$businessFunction->id.'":"10"', false)
+            ->assertDontSee('"'.$businessFunction->id.'":"11"', false);
+    }
+
+    public function test_autosave_updates_same_draft_when_document_number_changes(): void
+    {
+        [$user, $businessProcess, $businessFunction, $department, $level, $documentType] = $this->initialResubmissionFixture();
+        $draft = Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => StatusDocument::query()->where('nama_status', StatusDocument::DRAFT)->firstOrFail()->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Draft Nomor Lama',
+            'nomor_dokumen' => 'PS-QA-010',
+            'nomor_revisi' => 0,
+        ]);
+
+        $this->actingAs($user)
+            ->postJson(route('documents.autosave', 'level-2'), [
+                'draft_id' => $draft->id,
+                'nama_dokumen' => 'Draft Nomor Baru',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'nomor_dokumen_suffix' => '7',
+                'nomor_revisi' => '00.00',
+            ])
+            ->assertOk()
+            ->assertJson([
+                'saved' => true,
+                'draft_id' => $draft->id,
+            ]);
+
+        $draft->refresh();
+
+        $this->assertSame('Draft Nomor Baru', $draft->nama_dokumen);
+        $this->assertSame('PS-QA-07', $draft->nomor_dokumen);
+        $this->assertSame(1, Document::query()
+            ->where('user_id', $user->id)
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::DRAFT))
+            ->count());
     }
 
     public function test_active_document_number_duplicate_is_blocked(): void

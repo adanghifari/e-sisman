@@ -242,12 +242,6 @@
 
         <script>
             (() => {
-                if (window.userSearchSelectReady) {
-                    return;
-                }
-
-                window.userSearchSelectReady = true;
-
                 const closePicker = (root) => {
                     root?.querySelector('[data-user-search-panel]')?.classList.add('hidden');
                     root?.querySelector('[data-user-search-trigger]')?.setAttribute('aria-expanded', 'false');
@@ -334,7 +328,15 @@
                     root.dataset.placeholder = root.querySelector('[data-user-search-name]')?.textContent || 'Pilih user';
                 };
 
-                document.addEventListener('click', (event) => {
+                window.initUserSearchSelect = (root) => {
+                    syncPlaceholder(root);
+                };
+
+                const initUserSearchSelects = () => {
+                    document.querySelectorAll('[data-user-search-select]').forEach(window.initUserSearchSelect);
+                };
+
+                const handleUserSearchClick = (event) => {
                     const trigger = event.target.closest('[data-user-search-trigger]');
 
                     if (trigger) {
@@ -349,6 +351,7 @@
                             closePicker(root);
                         }
 
+                        event.preventDefault();
                         return;
                     }
 
@@ -377,6 +380,7 @@
                             window.clearUserSearchSelect(root);
                         }
 
+                        event.preventDefault();
                         return;
                     }
 
@@ -385,9 +389,9 @@
                             closePicker(root);
                         }
                     });
-                });
+                };
 
-                document.addEventListener('input', (event) => {
+                const handleUserSearchInput = (event) => {
                     const input = event.target.closest('[data-user-search-input]');
 
                     if (!input) {
@@ -405,13 +409,32 @@
                     });
 
                     root?.querySelector('[data-user-search-empty]')?.classList.toggle('hidden', visibleCount > 0);
-                });
+                };
 
-                document.addEventListener('keydown', (event) => {
+                const handleUserSearchKeydown = (event) => {
                     if (event.key === 'Escape') {
                         document.querySelectorAll('[data-user-search-select]').forEach(closePicker);
                     }
-                });
+                };
+
+                document.removeEventListener('click', window.handleUserSearchClick);
+                document.removeEventListener('input', window.handleUserSearchInput);
+                document.removeEventListener('keydown', window.handleUserSearchKeydown);
+                document.removeEventListener('DOMContentLoaded', window.initUserSearchSelects);
+                document.removeEventListener('livewire:navigated', window.initUserSearchSelects);
+
+                window.handleUserSearchClick = handleUserSearchClick;
+                window.handleUserSearchInput = handleUserSearchInput;
+                window.handleUserSearchKeydown = handleUserSearchKeydown;
+                window.initUserSearchSelects = initUserSearchSelects;
+
+                document.addEventListener('click', window.handleUserSearchClick);
+                document.addEventListener('input', window.handleUserSearchInput);
+                document.addEventListener('keydown', window.handleUserSearchKeydown);
+                document.addEventListener('DOMContentLoaded', window.initUserSearchSelects);
+                document.addEventListener('livewire:navigated', window.initUserSearchSelects);
+
+                window.initUserSearchSelects();
             })();
         </script>
     </body>
