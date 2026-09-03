@@ -99,8 +99,8 @@ class Document extends Model
 
         if (
             $this->official_preparer_name_snapshot !== null
-            || $this->official_preparer_position_snapshot !== null
-            || $this->official_preparer_department_snapshot !== null
+            && $this->official_preparer_position_snapshot !== null
+            && $this->official_preparer_department_snapshot !== null
         ) {
             return;
         }
@@ -108,9 +108,9 @@ class Document extends Model
         $this->loadMissing('officialPreparer.department');
 
         $this->forceFill([
-            'official_preparer_name_snapshot' => $this->officialPreparer?->name,
-            'official_preparer_position_snapshot' => $this->officialPreparer?->jabatan,
-            'official_preparer_department_snapshot' => $this->officialPreparer?->department?->nama_department,
+            'official_preparer_name_snapshot' => $this->official_preparer_name_snapshot ?: $this->officialPreparer?->name,
+            'official_preparer_position_snapshot' => $this->official_preparer_position_snapshot ?: $this->officialPreparer?->jabatan,
+            'official_preparer_department_snapshot' => $this->official_preparer_department_snapshot ?: $this->officialPreparer?->department?->nama_department,
         ])->save();
     }
 

@@ -278,9 +278,9 @@ class FinalArtifactGenerator
 
         return [[
             'id' => $document->officialPreparer->id,
-            'name' => $document->official_preparer_name_snapshot,
-            'position' => $document->official_preparer_position_snapshot,
-            'department' => $document->official_preparer_department_snapshot,
+            'name' => $document->official_preparer_name_snapshot ?: $document->officialPreparer->name,
+            'position' => $document->official_preparer_position_snapshot ?: $document->officialPreparer->jabatan,
+            'department' => $document->official_preparer_department_snapshot ?: $document->officialPreparer->department?->nama_department,
             'department_code' => null,
         ]];
     }
