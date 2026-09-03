@@ -674,13 +674,7 @@ class DocumentController extends Controller
 
             $this->authorizeDraftAccess($request, $draft);
 
-            $numberChanged = filled($documentNumber)
-                && filled($draft->nomor_dokumen)
-                && $draft->nomor_dokumen !== $documentNumber;
-
-            if (! $numberChanged) {
-                return $draft;
-            }
+            return $draft;
         }
 
         $query = $this->draftQuery($request)
@@ -1015,6 +1009,7 @@ class DocumentController extends Controller
     {
         $otherDocuments = $sameNumberDocuments
             ->reject(fn (Document $document): bool => $draft !== null && $document->id === $draft->id)
+            ->reject(fn (Document $document): bool => $this->isDraftDocument($document))
             ->values();
 
         if ($otherDocuments->isEmpty()) {
@@ -1050,6 +1045,11 @@ class DocumentController extends Controller
                 StatusDocument::APPROVED,
                 StatusDocument::OBSOLETE,
             ], true);
+    }
+
+    private function isDraftDocument(Document $document): bool
+    {
+        return $document->status?->nama_status === StatusDocument::DRAFT;
     }
 
     private function assertDocumentNumberAllowedForV2(string $documentNumber): void
