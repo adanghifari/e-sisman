@@ -32,6 +32,7 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::get('documents/inbox/{document}', [DocumentApprovalController::class, 'show'])->name('documents.approval.show');
     Route::get('documents/inbox/{document}/assign', fn ($document) => redirect()->route('documents.approval.show', $document));
     Route::post('documents/inbox/{document}', [DocumentApprovalController::class, 'assign'])->name('documents.approval.assign');
+    Route::post('documents/inbox/{document}/update-submitted', [DocumentApprovalController::class, 'updateSubmitted'])->name('documents.approval.update-submitted');
     Route::post('documents/inbox/{document}/approve', [DocumentApprovalController::class, 'approve'])->name('documents.approval.approve');
     Route::post('documents/inbox/{document}/reject', [DocumentApprovalController::class, 'reject'])->name('documents.approval.reject');
     Route::post('documents/inbox/{document}/assign', fn ($document) => redirect()

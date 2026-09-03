@@ -25,6 +25,7 @@
                     :title="$level['name']"
                     :description="$level['create_description']"
                     :href="route('documents.create.level', $levelKey)"
+                    :template-href="route('document-templates.index', ['level' => $levelKey])"
                 />
             @endforeach
         </div>

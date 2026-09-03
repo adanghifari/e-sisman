@@ -6,10 +6,14 @@ use App\Http\Controllers\Controller;
 use App\Models\Approval;
 use App\Models\ApprovalFlowStage;
 use App\Models\ApprovalStatus;
+use App\Models\BusinessFunction;
+use App\Models\BusinessProcess;
+use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentFile;
 use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
+use App\Models\DocumentNumberRegistry;
 use App\Models\DocumentType;
 use App\Models\ImportedExistingDocument;
 use App\Models\ImportedExistingDocumentRelation;
@@ -18,6 +22,7 @@ use App\Models\User;
 use App\Support\DocumentFiles\DocumentFileNumbering;
 use App\Support\DocumentHistory;
 use App\Support\DocumentRejectionHistory;
+use App\Support\FinalDocuments\AutoGenerateApprovalPreview;
 use App\Support\FinalDocuments\AutoGenerateFinalDocument;
 use App\Support\FinalDocuments\DynamicFinalDocumentRenderer;
 use App\Support\FinalDocuments\PdfDocumentContext;
@@ -28,6 +33,8 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\Rule;
+use Illuminate\Validation\ValidationException;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
 use Symfony\Component\HttpKernel\Exception\ConflictHttpException;
@@ -75,7 +82,12 @@ class DocumentApprovalController extends Controller
             'approvalFlowStages' => $this->approvalFlowStages($document),
             'approvalFlowDocumentLevel' => $this->approvalFlowDocumentLevel($document),
             'canManageApproverAssignment' => $this->canManageApproverAssignment($request, $document),
+            'canUpdateSubmittedDocument' => $this->canUpdateSubmittedDocument($request, $document),
             'assignableUsers' => User::query()->with('department')->orderBy('name')->get(),
+            'businessProcesses' => BusinessProcess::query()->active()->orderBy('nama_proses_bisnis')->get(),
+            'businessFunctions' => BusinessFunction::query()->active()->orderBy('nama_proses_fungsi')->get(),
+            'departments' => Department::query()->active()->orderBy('nama_department')->get(),
+            'procedureReferences' => $this->activeProcedureReferences($document),
             'contentFiles' => $document->files->whereIn('type_file', [
                 'filled_template',
                 'imported_document',
@@ -318,6 +330,86 @@ class DocumentApprovalController extends Controller
             ->withInput();
     }
 
+    public function updateSubmitted(Request $request, Document $document): RedirectResponse
+    {
+        $document->refresh();
+        abort_unless($this->canUpdateSubmittedDocument($request, $document), 403);
+
+        $validated = $request->validate($this->submittedDocumentUpdateRules($document));
+
+        DB::transaction(function () use ($request, $document, $validated): void {
+            $document = Document::query()
+                ->with(['status', 'documentLevel', 'revisedFrom.documentLevel', 'files'])
+                ->whereKey($document->id)
+                ->lockForUpdate()
+                ->firstOrFail();
+
+            abort_unless($this->canUpdateSubmittedDocument($request, $document), 403);
+
+            $oldDocumentNumber = $document->nomor_dokumen;
+            $oldOfficialPreparerId = $document->official_preparer_id;
+            $levelKey = $document->documentLevel?->kode;
+            $isMetadataUpdate = ($validated['_update_scope'] ?? null) === 'metadata';
+
+            if ($isMetadataUpdate) {
+                $metadata = $this->submittedDocumentMetadata($document, $validated);
+                $documentNumber = $this->updatedDocumentNumber($document, $metadata);
+
+                $documentAttributes = [
+                    'nama_dokumen' => $metadata['nama_dokumen'],
+                    'm_proses_bisnis_id' => $metadata['m_proses_bisnis_id'],
+                    'm_proses_fungsi_id' => $metadata['m_proses_fungsi_id'],
+                    'reference' => $levelKey === 'level-3' ? ($metadata['reference'] ?? null) : $document->reference,
+                    'official_preparer_id' => $metadata['official_preparer_id'],
+                    'nomor_dokumen' => $documentNumber,
+                    'tanggal_terbit' => $metadata['tanggal_terbit'],
+                    'catatan_revisi' => $metadata['catatan_revisi'],
+                ];
+
+                if ($oldOfficialPreparerId !== $metadata['official_preparer_id']) {
+                    $documentAttributes['official_preparer_name_snapshot'] = null;
+                    $documentAttributes['official_preparer_position_snapshot'] = null;
+                    $documentAttributes['official_preparer_department_snapshot'] = null;
+                }
+
+                $document->forceFill($documentAttributes)->save();
+
+                if ($oldOfficialPreparerId !== $document->official_preparer_id) {
+                    $document->snapshotOfficialPreparer();
+                    $this->syncOfficialPreparerApproval($document, $request->user()->id);
+                }
+
+                if ($levelKey !== 'level-1') {
+                    $document->departments()->sync($metadata['department_ids'] ?? []);
+                }
+            }
+
+            $this->removeSubmittedFiles($document, $validated['remove_existing_files'] ?? []);
+            $this->updateSubmittedAttachments($document, $validated['existing_attachment_titles'] ?? [], $validated['existing_attachment_orders'] ?? []);
+            $this->replaceSubmittedContentFiles($request, $document);
+            $this->replaceSubmittedAttachments($request, $document);
+            $this->storeSubmittedAttachments($request, $document);
+
+            if ($oldDocumentNumber !== $document->nomor_dokumen) {
+                $this->syncDocumentNumberRegistry($document, $oldDocumentNumber, $request->user()->id);
+            }
+
+            $this->renumberSubmittedFiles($document);
+
+            $this->clearApprovalPreviewArtifacts($document);
+
+            $documentId = $document->id;
+            $generatedById = $request->user()->id;
+
+            DB::afterCommit(fn () => app(AutoGenerateApprovalPreview::class)
+                ->generateIfNeeded($documentId, $generatedById));
+        });
+
+        return redirect()
+            ->route('documents.approval.show', $document)
+            ->with('status', 'Dokumen berhasil diperbarui.');
+    }
+
     private function markRevisionRequestAsAssigned(Document $document): void
     {
         if ($document->request_type !== 'revision') {
@@ -347,7 +439,14 @@ class DocumentApprovalController extends Controller
         abort_unless($document->status?->nama_status === StatusDocument::PROPOSED, 404);
         $this->authorizedFileDocument($document, $file);
 
-        abort(404);
+        $sourcePath = Storage::disk('local')->path($file->path_file);
+        abort_unless(is_file($sourcePath), 404);
+
+        return response()->download($sourcePath, $file->original_file_name, [
+            'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
+            'Pragma' => 'no-cache',
+            'Expires' => '0',
+        ]);
     }
 
     public function preview(Request $request, Document $document, DocumentFile $file): BinaryFileResponse
@@ -591,6 +690,484 @@ class DocumentApprovalController extends Controller
         }
 
         return $request->user()->isDeveloper() || $request->user()->canAssignDocument($document);
+    }
+
+    private function canUpdateSubmittedDocument(Request $request, Document $document): bool
+    {
+        $document->loadMissing('status');
+
+        if ($document->request_type === 'obsolete') {
+            return false;
+        }
+
+        if ($document->status?->nama_status !== StatusDocument::PROPOSED) {
+            return false;
+        }
+
+        if ($this->hasAssignedApprovalFlowApprovers($document)) {
+            return false;
+        }
+
+        return $request->user()->isDeveloper() || $request->user()->canUpdateSubmittedDocument($document);
+    }
+
+    private function hasAssignedApprovalFlowApprovers(Document $document): bool
+    {
+        return $document->approvals()
+            ->where(function ($query): void {
+                $query
+                    ->where('stages', '!=', self::OFFICIAL_PREPARER_STAGE)
+                    ->orWhereNull('stages');
+            })
+            ->exists();
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function submittedDocumentUpdateRules(Document $document): array
+    {
+        $document->loadMissing('documentLevel');
+        $levelKey = $document->documentLevel?->kode;
+        $isMetadataUpdate = request('_update_scope') === 'metadata';
+        $metadataPresence = $isMetadataUpdate ? 'required' : 'nullable';
+        $rules = [
+            '_update_scope' => ['nullable', Rule::in(['metadata', 'files'])],
+            'nama_dokumen' => [$metadataPresence, 'string', 'max:255'],
+            'tanggal_terbit' => ['nullable', 'date'],
+            'nomor_dokumen_suffix' => ['nullable', 'string', 'max:50', 'regex:/^[A-Za-z0-9]+$/'],
+            'replacement_files' => ['nullable', 'array'],
+            'replacement_files.*' => ['file', 'mimes:pdf', 'max:10240'],
+            'replacement_attachments' => ['nullable', 'array'],
+            'replacement_attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
+            'attachments' => ['nullable', 'array', 'max:10'],
+            'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
+            'attachment_titles' => ['nullable', 'array', 'max:10'],
+            'attachment_titles.*' => ['required_with:attachments.*', 'string', 'max:255'],
+            'attachment_orders' => ['nullable', 'array', 'max:10'],
+            'attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:50'],
+            'remove_existing_files' => ['nullable', 'array'],
+            'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
+            'existing_attachment_titles' => ['nullable', 'array'],
+            'existing_attachment_titles.*' => ['nullable', 'string', 'max:255'],
+            'existing_attachment_orders' => ['nullable', 'array'],
+            'existing_attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:50'],
+        ];
+
+        if ($levelKey !== 'level-1') {
+            $rules += [
+                'm_proses_bisnis_id' => [$metadataPresence, 'integer', Rule::exists('m_proses_bisnis', 'id')],
+                'm_proses_fungsi_id' => [$metadataPresence, 'integer', Rule::exists('m_proses_fungsi', 'id')],
+                'department_ids' => [$metadataPresence, 'array', 'min:1'],
+                'department_ids.*' => [$metadataPresence, 'integer', Rule::exists('departments', 'id')],
+                'official_preparer_id' => [$metadataPresence, 'integer', Rule::exists('users', 'id')],
+            ];
+        }
+
+        if ($levelKey === 'level-3') {
+            $rules['reference'] = [$metadataPresence, 'integer', Rule::in($this->activeProcedureReferences($document)->pluck('id')->all())];
+        }
+
+        if ($isMetadataUpdate && in_array($levelKey, ['level-1', 'level-2', 'level-3'], true)) {
+            $rules['nomor_dokumen_suffix'][0] = 'required';
+        }
+
+        if ($levelKey === 'level-1') {
+            $rules['catatan_revisi'] = ['nullable', 'string', 'max:1000'];
+        }
+
+        return $rules;
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function submittedDocumentMetadata(Document $document, array $validated): array
+    {
+        $document->loadMissing('departments');
+        $levelKey = $document->documentLevel?->kode;
+
+        return [
+            'nama_dokumen' => $validated['nama_dokumen'] ?? $document->nama_dokumen,
+            'm_proses_bisnis_id' => $levelKey === 'level-1'
+                ? $document->m_proses_bisnis_id
+                : ($validated['m_proses_bisnis_id'] ?? $document->m_proses_bisnis_id),
+            'm_proses_fungsi_id' => $levelKey === 'level-1'
+                ? $document->m_proses_fungsi_id
+                : ($validated['m_proses_fungsi_id'] ?? $document->m_proses_fungsi_id),
+            'reference' => $levelKey === 'level-3'
+                ? ($validated['reference'] ?? $document->reference)
+                : $document->reference,
+            'official_preparer_id' => $levelKey === 'level-1'
+                ? $document->official_preparer_id
+                : ($validated['official_preparer_id'] ?? $document->official_preparer_id),
+            'department_ids' => $levelKey === 'level-1'
+                ? $document->departments->pluck('id')->all()
+                : ($validated['department_ids'] ?? $document->departments->pluck('id')->all()),
+            'nomor_dokumen_suffix' => $validated['nomor_dokumen_suffix']
+                ?? Str::afterLast((string) $document->nomor_dokumen, '-'),
+            'tanggal_terbit' => array_key_exists('tanggal_terbit', $validated)
+                ? $validated['tanggal_terbit']
+                : $document->tanggal_terbit?->format('Y-m-d'),
+            'catatan_revisi' => array_key_exists('catatan_revisi', $validated)
+                ? $validated['catatan_revisi']
+                : $document->catatan_revisi,
+        ];
+    }
+
+    private function updatedDocumentNumber(Document $document, array $validated): ?string
+    {
+        $document->loadMissing('documentLevel');
+        $levelKey = $document->documentLevel?->kode;
+
+        if (! in_array($levelKey, ['level-1', 'level-2', 'level-3'], true)) {
+            return $document->nomor_dokumen;
+        }
+
+        $suffix = Str::upper(trim((string) ($validated['nomor_dokumen_suffix'] ?? '')));
+        $suffix = ctype_digit($suffix) && strlen($suffix) === 1
+            ? str_pad($suffix, 2, '0', STR_PAD_LEFT)
+            : $suffix;
+
+        $segments = [$document->documentLevel?->prefix];
+
+        if ($levelKey === 'level-2') {
+            $functionCode = BusinessFunction::query()
+                ->whereKey($validated['m_proses_fungsi_id'])
+                ->value('kode');
+            $segments[] = $functionCode ?: 'SMR';
+        }
+
+        if ($levelKey === 'level-3') {
+            $segments = collect([$document->documentLevel?->prefix])
+                ->merge($this->procedureNumberSegments((int) ($validated['reference'] ?? 0)))
+                ->all();
+        }
+
+        $segments[] = $suffix;
+        $documentNumber = collect($segments)->filter()->implode('-');
+
+        $this->assertUpdatedDocumentNumberAvailable($document, $documentNumber);
+
+        return $documentNumber;
+    }
+
+    private function assertUpdatedDocumentNumberAvailable(Document $document, string $documentNumber): void
+    {
+        $registryConflict = DocumentNumberRegistry::query()
+            ->where('document_number', $documentNumber)
+            ->where(function ($query) use ($document): void {
+                $query
+                    ->where('source_type', '!=', DocumentNumberRegistry::SOURCE_T_DOCUMENT)
+                    ->orWhere('source_id', '!=', $document->id);
+            })
+            ->exists();
+
+        $documentConflict = Document::query()
+            ->where('nomor_dokumen', $documentNumber)
+            ->whereKeyNot($document->id)
+            ->whereNull('revised_from')
+            ->exists();
+
+        if ($registryConflict || $documentConflict) {
+            throw ValidationException::withMessages([
+                'nomor_dokumen_suffix' => 'Nomor dokumen sudah digunakan.',
+            ]);
+        }
+    }
+
+    private function syncDocumentNumberRegistry(Document $document, ?string $oldDocumentNumber, int $userId): void
+    {
+        if (filled($oldDocumentNumber)) {
+            DocumentNumberRegistry::query()
+                ->where('document_number', $oldDocumentNumber)
+                ->where('source_type', DocumentNumberRegistry::SOURCE_T_DOCUMENT)
+                ->where('source_id', $document->id)
+                ->delete();
+        }
+
+        if (! filled($document->nomor_dokumen)) {
+            return;
+        }
+
+        DocumentNumberRegistry::query()->updateOrCreate(
+            ['document_number' => $document->nomor_dokumen],
+            [
+                'scope_identifier' => $this->numberScope($document->nomor_dokumen),
+                'source_type' => DocumentNumberRegistry::SOURCE_T_DOCUMENT,
+                'source_id' => $document->id,
+                'registered_by' => $userId,
+                'registered_at' => now(),
+            ],
+        );
+    }
+
+    private function numberScope(string $documentNumber): ?string
+    {
+        $segments = collect(explode('-', $documentNumber))
+            ->map(fn (string $segment): string => trim($segment))
+            ->filter()
+            ->values();
+
+        if ($segments->count() < 2 || ! ctype_digit((string) $segments->last())) {
+            return null;
+        }
+
+        $segments->pop();
+
+        return $segments->implode('-');
+    }
+
+    private function procedureNumberSegments(int $referenceId): Collection
+    {
+        $procedureNumber = Document::query()
+            ->whereKey($referenceId)
+            ->value('nomor_dokumen');
+
+        return collect(explode('-', (string) $procedureNumber))
+            ->filter()
+            ->values()
+            ->skip(1)
+            ->map(fn (string $segment): string => Str::upper(trim($segment)))
+            ->values();
+    }
+
+    private function replaceSubmittedContentFiles(Request $request, Document $document): void
+    {
+        foreach ($request->file('replacement_files', []) as $fileId => $uploadedFile) {
+            $file = $document->files()
+                ->whereKey($fileId)
+                ->whereIn('type_file', ['filled_template', 'imported_document', 'revision_content', 'revision_form'])
+                ->first();
+
+            if ($file === null) {
+                continue;
+            }
+
+            $type = $file->type_file;
+            $this->replaceSubmittedFileRecord($file, $uploadedFile, $type, $request->user()->id);
+        }
+    }
+
+    private function syncOfficialPreparerApproval(Document $document, int $assignedBy): void
+    {
+        if ($document->official_preparer_id === null) {
+            return;
+        }
+
+        $respondedAt = $document->submitted_at ?? now();
+
+        $document->approvals()
+            ->where('stages', self::OFFICIAL_PREPARER_STAGE)
+            ->where('user_id', '!=', $document->official_preparer_id)
+            ->delete();
+
+        $approval = $document->approvals()->firstOrNew([
+            'user_id' => $document->official_preparer_id,
+            'stages' => self::OFFICIAL_PREPARER_STAGE,
+        ]);
+
+        $approval->fill([
+            'm_approval_status_id' => ApprovalStatus::findByCode(ApprovalStatus::APPROVED)->id,
+            'role_id' => null,
+            'assigned_by' => $assignedBy,
+            'assigned_at' => $respondedAt,
+            'responded_at' => $respondedAt,
+            'catatan' => 'Tanda tangan penyusun resmi tercatat saat submit dokumen.',
+            'created_at' => $approval->created_at ?? $respondedAt,
+        ])->fillResponseSnapshot()
+            ->save();
+    }
+
+    private function replaceSubmittedAttachments(Request $request, Document $document): void
+    {
+        foreach ($request->file('replacement_attachments', []) as $fileId => $uploadedFile) {
+            $file = $document->files()
+                ->whereKey($fileId)
+                ->where('type_file', 'attachment')
+                ->first();
+
+            if ($file === null) {
+                continue;
+            }
+
+            $title = $file->attachment_title;
+            $order = $file->attachment_order;
+            $sourceFileId = $file->source_file_id;
+            $documentNumber = $file->document_number;
+
+            $this->replaceSubmittedFileRecord($file, $uploadedFile, 'attachment', $request->user()->id, $title, $order, $sourceFileId, $documentNumber);
+        }
+    }
+
+    private function storeSubmittedAttachments(Request $request, Document $document): void
+    {
+        $titles = collect($request->input('attachment_titles', []))->values();
+        $orders = collect($request->input('attachment_orders', []))->values();
+
+        foreach (array_values($request->file('attachments', [])) as $index => $uploadedFile) {
+            $title = trim((string) $titles->get($index, ''));
+            $order = max(1, (int) ($orders->get($index) ?: ($index + 1)));
+
+            $this->storeSubmittedFile($document, $uploadedFile, 'attachment', $request->user()->id, $title ?: null, $order);
+        }
+    }
+
+    private function storeSubmittedFile(
+        Document $document,
+        mixed $file,
+        string $type,
+        int $uploadedBy,
+        ?string $attachmentTitle = null,
+        ?int $attachmentOrder = null,
+        ?int $sourceFileId = null,
+        ?string $documentNumber = null,
+    ): void {
+        $path = $file->store("documents/{$document->id}", 'local');
+
+        $document->files()->create([
+            'type_file' => $type,
+            'document_number' => $documentNumber ?? app(DocumentFileNumbering::class)->numberFor($document, $type, $attachmentOrder),
+            'attachment_title' => $attachmentTitle,
+            'attachment_order' => $attachmentOrder,
+            'path_file' => $path,
+            'uploaded_by' => $uploadedBy,
+            'updated_at' => now(),
+            'original_file_name' => $file->getClientOriginalName(),
+            'stored_file_name' => basename($path),
+            'source_file_id' => $sourceFileId,
+            'file_size' => $file->getSize(),
+        ]);
+    }
+
+    private function replaceSubmittedFileRecord(
+        DocumentFile $file,
+        mixed $uploadedFile,
+        string $type,
+        int $uploadedBy,
+        ?string $attachmentTitle = null,
+        ?int $attachmentOrder = null,
+        ?int $sourceFileId = null,
+        ?string $documentNumber = null,
+    ): void {
+        Storage::disk('local')->delete($file->path_file);
+
+        $path = $uploadedFile->store("documents/{$file->t_document_id}", 'local');
+
+        $file->forceFill([
+            'type_file' => $type,
+            'document_number' => $documentNumber ?? $file->document_number,
+            'attachment_title' => $attachmentTitle,
+            'attachment_order' => $attachmentOrder,
+            'path_file' => $path,
+            'uploaded_by' => $uploadedBy,
+            'updated_at' => now(),
+            'original_file_name' => $uploadedFile->getClientOriginalName(),
+            'stored_file_name' => basename($path),
+            'source_file_id' => $sourceFileId,
+            'file_size' => $uploadedFile->getSize(),
+        ])->save();
+    }
+
+    private function updateSubmittedAttachments(Document $document, array $titles, array $orders): void
+    {
+        $fileIds = collect(array_keys($titles))
+            ->merge(array_keys($orders))
+            ->unique();
+
+        foreach ($fileIds as $fileId) {
+            $document->files()
+                ->whereKey($fileId)
+                ->where('type_file', 'attachment')
+                ->update([
+                    'attachment_title' => filled($titles[$fileId] ?? null) ? trim((string) $titles[$fileId]) : null,
+                    'attachment_order' => filled($orders[$fileId] ?? null) ? max(1, (int) $orders[$fileId]) : null,
+                    'updated_at' => now(),
+                ]);
+        }
+    }
+
+    private function removeSubmittedFiles(Document $document, array $fileIds): void
+    {
+        if ($fileIds === []) {
+            return;
+        }
+
+        $document->files()
+            ->whereIn('id', $fileIds)
+            ->where('type_file', 'attachment')
+            ->get()
+            ->each(fn (DocumentFile $file) => $this->deleteDocumentFile($file));
+    }
+
+    private function deleteDocumentFile(DocumentFile $file): void
+    {
+        Storage::disk('local')->delete($file->path_file);
+        $file->delete();
+    }
+
+    private function renumberSubmittedFiles(Document $document): void
+    {
+        $numbering = app(DocumentFileNumbering::class);
+
+        $document->files()
+            ->whereIn('type_file', ['filled_template', 'revision_content', 'imported_document'])
+            ->update([
+                'document_number' => $numbering->mainDocumentNumber($document),
+                'updated_at' => now(),
+            ]);
+
+        $document->files()
+            ->where('type_file', 'revision_form')
+            ->update([
+                'document_number' => $numbering->revisionFormNumber($document),
+                'updated_at' => now(),
+            ]);
+
+        $document->files()
+            ->where('type_file', 'attachment')
+            ->update([
+                'document_number' => null,
+                'updated_at' => now(),
+            ]);
+
+        $document->unsetRelation('files');
+        $numbering->assignMissingNumbers($document);
+    }
+
+    private function clearApprovalPreviewArtifacts(Document $document): void
+    {
+        $document->finalArtifacts()
+            ->where('artifact_type', DocumentFinalArtifact::TYPE_APPROVAL_PREVIEW)
+            ->get()
+            ->each(function (DocumentFinalArtifact $artifact): void {
+                if (filled($artifact->path_file)) {
+                    Storage::disk('local')->delete($artifact->path_file);
+                }
+
+                $artifact->delete();
+            });
+    }
+
+    private function activeProcedureReferences(Document $document): Collection
+    {
+        if ($document->documentLevel?->kode !== 'level-3') {
+            return collect();
+        }
+
+        $procedureLevelId = DocumentLevel::query()->where('kode', 'level-2')->value('id');
+        $approvedStatusId = StatusDocument::query()->where('nama_status', StatusDocument::APPROVED)->value('id');
+
+        if ($procedureLevelId === null || $approvedStatusId === null) {
+            return collect();
+        }
+
+        return Document::query()
+            ->select(['id', 'nomor_dokumen', 'nama_dokumen', 'm_proses_bisnis_id', 'm_proses_fungsi_id'])
+            ->where('m_document_level_id', $procedureLevelId)
+            ->where('m_status_document_id', $approvedStatusId)
+            ->orderBy('nomor_dokumen')
+            ->get();
     }
 
     private function stageApproverIds(Request $request, Document $document, ApprovalFlowStage $stage): Collection
