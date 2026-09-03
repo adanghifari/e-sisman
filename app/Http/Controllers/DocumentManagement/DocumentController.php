@@ -291,11 +291,10 @@ class DocumentController extends Controller
                 );
 
                 if ($lockedRevisionSource !== null) {
-                    $this->syncIncludedRevisionAttachments(
+                    $this->syncRevisionSourceAttachments(
                         $request,
                         $document,
                         $lockedRevisionSource,
-                        $documentAttributes['included_attachment_ids'] ?? [],
                     );
                 }
 
@@ -723,11 +722,10 @@ class DocumentController extends Controller
         );
 
         if ($document->revisedFrom !== null) {
-            $this->syncIncludedRevisionAttachments(
+            $this->syncRevisionSourceAttachments(
                 $request,
                 $document,
                 $document->revisedFrom,
-                $request->input('included_attachment_ids', []),
             );
         }
 
@@ -775,17 +773,8 @@ class DocumentController extends Controller
         }
     }
 
-    /**
-     * @param  array<int, int|string>  $sourceFileIds
-     */
-    private function syncIncludedRevisionAttachments(Request $request, Document $document, Document $source, array $sourceFileIds): void
+    private function syncRevisionSourceAttachments(Request $request, Document $document, Document $source): void
     {
-        $ids = collect($sourceFileIds)
-            ->map(fn (int|string $id): int => (int) $id)
-            ->filter()
-            ->unique()
-            ->values();
-
         $allSourceAttachments = $source->files()
             ->where('type_file', 'attachment')
             ->orderByRaw('CASE WHEN attachment_order IS NULL THEN 1 ELSE 0 END')
@@ -793,17 +782,11 @@ class DocumentController extends Controller
             ->orderBy('id')
             ->get();
 
-        $this->removeUnselectedRevisionAttachments($document, $allSourceAttachments, $ids);
-
-        if ($ids->isEmpty()) {
+        if ($allSourceAttachments->isEmpty()) {
             return;
         }
 
-        $sourceFiles = $allSourceAttachments
-            ->whereIn('id', $ids->all())
-            ->values();
-
-        foreach ($sourceFiles as $sourceFile) {
+        foreach ($allSourceAttachments as $sourceFile) {
             $replacement = $request->file("revised_attachments.{$sourceFile->id}");
             $existing = $document->files()
                 ->where('type_file', 'attachment')
@@ -862,40 +845,13 @@ class DocumentController extends Controller
         }
     }
 
-    /**
-     * @param  Collection<int, DocumentFile>  $sourceAttachments
-     * @param  Collection<int, int>  $includedIds
-     */
-    private function removeUnselectedRevisionAttachments(Document $document, Collection $sourceAttachments, Collection $includedIds): void
-    {
-        $sourceIds = $sourceAttachments
-            ->pluck('id')
-            ->map(fn (int|string $id): int => (int) $id);
-
-        if ($sourceIds->isEmpty()) {
-            return;
-        }
-
-        $document->files()
-            ->where('type_file', 'attachment')
-            ->whereIn('source_file_id', $sourceIds)
-            ->get()
-            ->each(function (DocumentFile $file) use ($includedIds): void {
-                if ($includedIds->contains((int) $file->source_file_id)) {
-                    return;
-                }
-
-                $this->deleteDocumentFile($file);
-            });
-    }
-
     private function copyDocumentFileToDocument(DocumentFile $sourceFile, Document $targetDocument): string
     {
         $extension = pathinfo($sourceFile->stored_file_name ?: $sourceFile->path_file, PATHINFO_EXTENSION);
         $fileName = Str::random(40).($extension ? '.'.$extension : '');
         $targetPath = "documents/{$targetDocument->id}/{$fileName}";
 
-        Storage::disk('local')->copy($sourceFile->path_file, $targetPath);
+        Storage::disk('local')->put($targetPath, Storage::disk('local')->get($sourceFile->path_file));
 
         return $targetPath;
     }
@@ -907,9 +863,13 @@ class DocumentController extends Controller
             ->where('original_file_name', $file->getClientOriginalName())
             ->where('file_size', $file->getSize())
             ->where(function ($query) use ($title): void {
-                filled($title)
-                    ? $query->where('attachment_title', $title)
-                    : $query->whereNull('attachment_title');
+                if (filled($title)) {
+                    $query->where('attachment_title', $title);
+
+                    return;
+                }
+
+                $query->whereNull('attachment_title');
             })
             ->update([
                 'attachment_order' => $order,
@@ -924,9 +884,13 @@ class DocumentController extends Controller
             ->where('original_file_name', $file->getClientOriginalName())
             ->where('file_size', $file->getSize())
             ->where(function ($query) use ($title): void {
-                filled($title)
-                    ? $query->where('attachment_title', $title)
-                    : $query->whereNull('attachment_title');
+                if (filled($title)) {
+                    $query->where('attachment_title', $title);
+
+                    return;
+                }
+
+                $query->whereNull('attachment_title');
             })
             ->exists();
     }

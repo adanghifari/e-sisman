@@ -629,43 +629,33 @@
 
                                         <div class="space-y-2">
                                             @foreach ($revisionSourceAttachments as $sourceAttachment)
-                                                @php
-                                                    $sourceAttachmentId = (string) $sourceAttachment->id;
-                                                    $checkedSourceAttachmentIds = old(
-                                                        'included_attachment_ids',
-                                                        $isEditingDraft ? $carriedForwardSourceFileIds : $revisionSourceAttachments->pluck('id')->map(fn ($id) => (string) $id)->all(),
-                                                    );
-                                                @endphp
                                                 <div
                                                     class="grid gap-3 rounded-lg border border-slate-200 bg-slate-50 px-4 py-4 md:grid-cols-[minmax(0,1fr)_auto]"
                                                     data-master-attachment-row
-                                                    data-included="{{ in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true) ? 'true' : 'false' }}"
+                                                    data-included="true"
+                                                    data-always-carry="true"
                                                 >
                                                     <input
                                                         type="hidden"
                                                         name="included_attachment_ids[]"
                                                         value="{{ $sourceAttachment->id }}"
                                                         data-master-attachment-include
-                                                        @disabled(! in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true))
                                                     >
 
                                                     <div class="grid min-w-0 gap-3 md:grid-cols-[auto_minmax(0,1fr)]">
-                                                        <label class="flex w-36 shrink-0 cursor-pointer flex-col items-center gap-2">
+                                                        <label class="flex w-36 shrink-0 cursor-default flex-col items-center gap-2">
                                                             <input
                                                                 type="checkbox"
-                                                                class="size-5 rounded border-slate-300 text-sky-600 focus:ring-sky-500"
+                                                                class="size-5 rounded border-slate-300 text-sky-600"
                                                                 data-master-attachment-checkbox
-                                                                @checked(in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true))
+                                                                checked
+                                                                disabled
                                                             >
                                                             <span
-                                                                @class([
-                                                                    'inline-flex min-w-32 justify-center whitespace-nowrap rounded-full px-3 py-1 text-center text-[11px] font-bold',
-                                                                    'bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100' => in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true),
-                                                                    'bg-red-50 text-red-700 ring-1 ring-red-100' => ! in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true),
-                                                                ])
+                                                                class="inline-flex min-w-32 justify-center whitespace-nowrap rounded-full bg-emerald-50 px-3 py-1 text-center text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-100"
                                                                 data-master-attachment-badge
                                                             >
-                                                                {{ in_array($sourceAttachmentId, $checkedSourceAttachmentIds, true) ? 'Dicantumkan' : 'Tidak Dicantumkan' }}
+                                                                Tetap Dibawa
                                                             </span>
                                                         </label>
 
@@ -1304,6 +1294,17 @@
                     const badge = row?.querySelector('[data-master-attachment-badge]');
 
                     if (!row || !input || !checkbox || !badge) {
+                        return;
+                    }
+
+                    if (row.dataset.alwaysCarry === 'true') {
+                        row.dataset.included = 'true';
+                        input.disabled = false;
+                        checkbox.checked = true;
+                        checkbox.disabled = true;
+                        badge.textContent = 'Tetap Dibawa';
+                        badge.className = 'inline-flex min-w-32 justify-center whitespace-nowrap rounded-full bg-emerald-50 px-3 py-1 text-center text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-100';
+
                         return;
                     }
 

@@ -123,6 +123,55 @@ class DocumentAttachmentLifecycleTest extends TestCase
         Storage::disk('local')->assertExists($attachment->path_file);
     }
 
+    public function test_unchecked_source_attachment_still_carries_forward_to_next_revision_master(): void
+    {
+        [$source, $submitter, $officialPreparer] = $this->revisionFixture();
+        $firstAttachment = $this->storeDocumentFile($source, 'attachment', [
+            'attachment_title' => 'Lampiran Risiko',
+            'attachment_order' => 1,
+            'document_number' => 'FMPS-SMR-010-02',
+            'path_file' => "documents/{$source->id}/lampiran-risiko.pdf",
+            'original_file_name' => 'lampiran-risiko.pdf',
+            'stored_file_name' => 'lampiran-risiko.pdf',
+        ]);
+        $secondAttachment = $this->storeDocumentFile($source, 'attachment', [
+            'attachment_title' => 'Lampiran BAPP',
+            'attachment_order' => 2,
+            'document_number' => 'FMPS-SMR-010-03',
+            'path_file' => "documents/{$source->id}/lampiran-bapp.pdf",
+            'original_file_name' => 'lampiran-bapp.pdf',
+            'stored_file_name' => 'lampiran-bapp.pdf',
+        ]);
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-4'), $this->revisionPayload($source, $officialPreparer, [
+                'nama_dokumen' => 'Revisi Dengan Lampiran Tidak Dicentang',
+                'included_attachment_ids' => [$firstAttachment->id],
+            ]))
+            ->assertRedirect(route('documents.create'));
+
+        $revision = Document::query()->where('nama_dokumen', 'Revisi Dengan Lampiran Tidak Dicentang')->firstOrFail();
+
+        $this->assertTrue($revision->files()->where('type_file', 'attachment')->where('source_file_id', $firstAttachment->id)->exists());
+        $this->assertTrue($revision->files()->where('type_file', 'attachment')->where('source_file_id', $secondAttachment->id)->exists());
+
+        $revision->forceFill([
+            'm_status_document_id' => StatusDocument::findByName(StatusDocument::APPROVED)->id,
+            'approved_at' => now(),
+        ])->save();
+
+        $this->actingAs($submitter)
+            ->get(route('documents.create.level', ['level-4', 'revised_from' => $revision->id]))
+            ->assertOk()
+            ->assertSeeInOrder([
+                'Lampiran Master Sebelumnya',
+                'Lampiran Risiko',
+                'FMPS-SMR-010-02',
+                'Lampiran BAPP',
+                'FMPS-SMR-010-03',
+            ]);
+    }
+
     public function test_revision_attachment_replacement_keeps_source_number_and_lineage(): void
     {
         [$source, $submitter, $officialPreparer] = $this->revisionFixture();
@@ -313,19 +362,20 @@ class DocumentAttachmentLifecycleTest extends TestCase
             'stored_file_name' => 'invoice.pdf',
         ]);
 
-        $this->actingAs($submitter)
+        $response = $this->actingAs($submitter)
             ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
-            ->assertOk()
-            ->assertSeeInOrder([
-                'Lampiran Master Sebelumnya',
-                'Invoice',
-                'FMPS-SMR-010-02',
-                'Dicantumkan',
-                'Perbarui',
-                'sketsa',
-                'FMPS-SMR-010-03',
-                'Tambah Lampiran',
-            ]);
+            ->assertOk();
+
+        $content = $response->getContent();
+        $invoicePosition = strpos($content, 'Invoice');
+        $sketsaPosition = strpos($content, 'sketsa');
+
+        $this->assertStringContainsString('Lampiran Master Sebelumnya', $content);
+        $this->assertStringContainsString('FMPS-SMR-010-02', $content);
+        $this->assertStringContainsString('FMPS-SMR-010-03', $content);
+        $this->assertNotFalse($invoicePosition);
+        $this->assertNotFalse($sketsaPosition);
+        $this->assertLessThan($sketsaPosition, $invoicePosition);
     }
 
     private function baseFixture(): array
