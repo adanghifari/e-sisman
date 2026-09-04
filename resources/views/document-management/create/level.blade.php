@@ -581,7 +581,6 @@
                             @if ($levelKey === 'level-4')
                                 <x-documents.upload-toggle-card
                                     title="1. Lembar Revisi"
-                                    button-label="Upload Lembar Revisi"
                                     tone="sky"
                                 >
                                     <x-ui.file-upload
@@ -602,7 +601,6 @@
 
                                 <x-documents.upload-toggle-card
                                     title="2. Dokumen Revisi"
-                                    button-label="Upload Dokumen Revisi"
                                     tone="sky"
                                 >
                                     <x-ui.file-upload
@@ -623,7 +621,6 @@
                             @else
                                 <x-documents.upload-toggle-card
                                     title="Template Dokumen yang Sudah Diisi"
-                                    button-label="Upload Template"
                                     tone="sky"
                                 >
                                     <x-ui.file-upload

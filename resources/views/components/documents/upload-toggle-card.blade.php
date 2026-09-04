@@ -1,6 +1,6 @@
 @props([
     'title',
-    'buttonLabel',
+    'buttonLabel' => null,
     'tone' => 'slate',
     'badge' => null,
 ])
@@ -29,14 +29,16 @@
             @endif
         </span>
 
-        <button
-            type="button"
-            class="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border px-4 text-sm font-semibold shadow-sm transition focus:outline-none focus:ring-2 {{ $buttonClasses }}"
-            data-document-upload-trigger
-            aria-expanded="true"
-        >
-            {{ $buttonLabel }}
-        </button>
+        @if ($buttonLabel)
+            <button
+                type="button"
+                class="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border px-4 text-sm font-semibold shadow-sm transition focus:outline-none focus:ring-2 {{ $buttonClasses }}"
+                data-document-upload-trigger
+                aria-expanded="true"
+            >
+                {{ $buttonLabel }}
+            </button>
+        @endif
     </div>
 
     <div class="mt-4" data-document-upload-panel>
