@@ -257,7 +257,7 @@ class DashboardTest extends TestCase
         $this->actingAs($user)
             ->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('FMPS-SMR-SNAP-01 00.01')
+            ->assertSee('FMPS-SMR-SNAP-01 ke 00.01')
             ->assertDontSee('Rev. 00.01');
 
         $this->actingAs($user)

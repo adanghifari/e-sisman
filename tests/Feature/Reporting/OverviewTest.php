@@ -1,0 +1,119 @@
+<?php
+
+namespace Tests\Feature\Reporting;
+
+use App\Models\BusinessFunction;
+use App\Models\BusinessProcess;
+use App\Models\Department;
+use App\Models\Document;
+use App\Models\DocumentLevel;
+use App\Models\DocumentType;
+use App\Models\StatusDocument;
+use App\Models\User;
+use Illuminate\Foundation\Testing\RefreshDatabase;
+use Tests\TestCase;
+
+class OverviewTest extends TestCase
+{
+    use RefreshDatabase;
+
+    public function test_overview_returns_published_procedures_with_instruction_children(): void
+    {
+        $user = User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
+        $approved = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        $obsolete = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::OBSOLETE]);
+        $procedureLevel = DocumentLevel::query()->firstOrCreate(
+            ['kode' => 'level-2'],
+            ['nama_level' => 'Level II', 'nama_dokumen' => 'Dokumen Level II : Prosedur SKMBS', 'sort_order' => 2],
+        );
+        $instructionLevel = DocumentLevel::query()->firstOrCreate(
+            ['kode' => 'level-3'],
+            ['nama_level' => 'Level III', 'nama_dokumen' => 'Dokumen Level III : Instruksi Kerja', 'sort_order' => 3],
+        );
+        $type = DocumentType::query()->firstOrCreate(['nama_types' => 'Prosedur']);
+        $department = Department::query()->create([
+            'kode_department' => 'OVR',
+            'nama_department' => 'Department Overview',
+            'is_active' => true,
+        ]);
+        $businessProcess = BusinessProcess::query()->create([
+            'kode' => 'OVR',
+            'nama_proses_bisnis' => 'Proses Overview',
+            'is_active' => true,
+        ]);
+        $businessFunction = BusinessFunction::query()->create([
+            'kode' => 'OVR',
+            'nama_proses_fungsi' => 'Fungsi Overview',
+            'is_active' => true,
+        ]);
+
+        $procedure = Document::query()->create([
+            'm_document_level_id' => $procedureLevel->id,
+            'm_status_document_id' => $approved->id,
+            'm_document_types_id' => $type->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Prosedur Bongkar Muat',
+            'nomor_dokumen' => 'PS-OVR-01',
+            'nomor_revisi' => 1,
+            'tanggal_terbit' => now()->toDateString(),
+        ]);
+        $procedure->departments()->attach($department);
+
+        Document::query()->create([
+            'm_document_level_id' => $instructionLevel->id,
+            'm_status_document_id' => $approved->id,
+            'm_document_types_id' => $type->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'reference' => $procedure->id,
+            'nama_dokumen' => 'Instruksi Kerja Bongkar Curah',
+            'nomor_dokumen' => 'IK-OVR-01',
+            'nomor_revisi' => 0,
+            'tanggal_terbit' => now()->toDateString(),
+        ])->departments()->attach($department);
+
+        Document::query()->create([
+            'm_document_level_id' => $procedureLevel->id,
+            'm_status_document_id' => $obsolete->id,
+            'm_document_types_id' => $type->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Request Obsolete Tidak Ditampilkan',
+            'nomor_dokumen' => 'PS-OVR-02',
+            'nomor_revisi' => 0,
+            'request_type' => 'obsolete',
+        ]);
+
+        $response = $this->actingAs($user)
+            ->get(route('reports.index', [
+                'procedure' => 'PS-OVR',
+                'instruction' => 'Bongkar',
+                'department_id' => $department->id,
+                'business_function_id' => $businessFunction->id,
+            ]));
+
+        $rows = $response->viewData('overviewRows');
+        $firstRow = $rows->getCollection()->first();
+
+        $response->assertOk();
+        $this->assertSame(10, $rows->perPage());
+        $this->assertSame('PS-OVR-01', $firstRow['number']);
+        $this->assertSame('00.01', $firstRow['revision']);
+        $this->assertSame('IK-OVR-01', $firstRow['instructions']->first()['number']);
+        $this->assertSame('Department Overview', $firstRow['departments']->first());
+        $this->assertSame('Fungsi Overview', $firstRow['business_function']);
+        $this->assertEquals([
+            'procedure' => 'PS-OVR',
+            'instruction' => 'Bongkar',
+            'department_id' => (string) $department->id,
+            'business_function_id' => (string) $businessFunction->id,
+        ], $response->viewData('overviewFilters'));
+    }
+}

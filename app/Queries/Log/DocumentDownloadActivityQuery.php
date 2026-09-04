@@ -40,7 +40,7 @@ class DocumentDownloadActivityQuery
                 return [
                     'downloaded_by' => $activity->downloaded_by ?: '-',
                     'number' => $number,
-                    'display_number' => trim($number.' '.$revision),
+                    'display_number' => trim($number.' ke '.$revision),
                     'name' => $activity->name,
                     'is_obsolete' => $activity->download_context === 'obsolete',
                     'time' => Carbon::parse($activity->downloaded_at)->format('d/m/Y H:i'),

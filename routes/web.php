@@ -11,6 +11,7 @@ use App\Http\Controllers\DocumentManagement\DocumentTemplateController;
 use App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController;
 use App\Http\Controllers\Log\ActivityLogController;
 use App\Http\Controllers\Log\ActivityLogExportController;
+use App\Http\Controllers\Reporting\OverviewController;
 use App\Http\Middleware\EnsureRoutePermission;
 use App\Livewire\Administration\AccessGroup\Index as AccessGroupIndex;
 use App\Livewire\Administration\AccessMenu\Index as AccessMenuIndex;
@@ -98,7 +99,7 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::get('documents/master/{document}/files/{file}', [DocumentMasterController::class, 'file'])->name('documents.master.files.show');
     Route::get('documents/master/{document}/files/{file}/preview', [DocumentMasterController::class, 'preview'])->name('documents.master.files.preview');
     Route::get('documents/master/{document}/generated', [DocumentMasterController::class, 'generatedFile'])->name('documents.master.generated.show');
-    Route::view('reports', 'reporting.index')->name('reports.index');
+    Route::get('reports', OverviewController::class)->name('reports.index');
     Route::livewire('users', UserIndex::class)->name('users.index');
     Route::livewire('access-groups', AccessGroupIndex::class)->name('access-groups.index');
     Route::livewire('access-menus', AccessMenuIndex::class)->name('access-menus.index');
