@@ -74,6 +74,17 @@ class DocumentFileNumbering
         return $this->fileFamilyPrefix($document).'-'.str_pad((string) $suffix, 2, '0', STR_PAD_LEFT);
     }
 
+    public function attachmentNumberForPosition(Document $document, int $position): ?string
+    {
+        if (! filled($document->nomor_dokumen)) {
+            return null;
+        }
+
+        $suffix = self::FIRST_ATTACHMENT_SUFFIX + max(0, $position - 1);
+
+        return $this->fileFamilyPrefix($document).'-'.str_pad((string) $suffix, 2, '0', STR_PAD_LEFT);
+    }
+
     public function assignMissingNumbers(Document $document): void
     {
         $document->loadMissing('files');

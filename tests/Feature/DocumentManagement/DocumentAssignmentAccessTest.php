@@ -247,6 +247,51 @@ class DocumentAssignmentAccessTest extends TestCase
         $this->assertStringEndsWith('-02', $secondAttachment->refresh()->document_number);
     }
 
+    public function test_submitted_attachment_update_compacts_active_attachment_numbers(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill(['nomor_dokumen' => 'PS-QA-01', 'request_type' => 'revision'])->save();
+
+        $historicalDocument = $document->replicate(['submitted_at']);
+        $historicalDocument->forceFill([
+            'm_status_document_id' => StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED])->id,
+            'submitted_at' => now()->subDay(),
+            'approved_at' => now()->subDay(),
+        ])->save();
+        $this->attachmentFile($historicalDocument, 'lampiran-historis.pdf', 'FMPS-QA-01-02', 1);
+
+        $this->documentFile($document, 'revision_form', 'lembar-revisi.pdf', 'FMPS-QA-01-01');
+        $firstAttachment = $this->attachmentFile($document, 'test-lampiran.pdf', 'FMPS-QA-01-03', 1);
+        $secondAttachment = $this->attachmentFile($document, 'daftar-hadir.pdf', 'FMPS-QA-01-04', 2);
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'existing_attachment_titles' => [
+                    $firstAttachment->id => 'Test Lampiran',
+                    $secondAttachment->id => 'Daftar Hadir',
+                ],
+                'existing_attachment_orders' => [
+                    $firstAttachment->id => 1,
+                    $secondAttachment->id => 2,
+                ],
+            ]);
+
+        $response->assertRedirect(route('documents.approval.show', $document));
+
+        $this->assertSame('FMPS-QA-01-02', $firstAttachment->refresh()->document_number);
+        $this->assertSame('FMPS-QA-01-03', $secondAttachment->refresh()->document_number);
+    }
+
     public function test_document_control_admin_can_assign_multi_department_document_when_one_department_matches(): void
     {
         $qa = Department::create([
