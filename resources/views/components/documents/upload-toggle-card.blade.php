@@ -33,13 +33,13 @@
             type="button"
             class="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border px-4 text-sm font-semibold shadow-sm transition focus:outline-none focus:ring-2 {{ $buttonClasses }}"
             data-document-upload-trigger
-            aria-expanded="false"
+            aria-expanded="true"
         >
             {{ $buttonLabel }}
         </button>
     </div>
 
-    <div class="mt-4 hidden" data-document-upload-panel>
+    <div class="mt-4" data-document-upload-panel>
         {{ $slot }}
     </div>
 </div>

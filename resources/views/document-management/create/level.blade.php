@@ -1084,13 +1084,14 @@
                     const root = button.closest('[data-document-upload]');
                     const panel = root?.querySelector('[data-document-upload-panel]');
 
-                    if (!panel) {
-                        return;
+                    if (panel) {
+                        panel.classList.remove('hidden');
                     }
 
-                    panel.classList.remove('hidden');
-                    button.setAttribute('aria-expanded', 'true');
-                    button.classList.add('hidden');
+                    const fileInput = root?.querySelector('[data-file-upload-input]');
+                    if (fileInput) {
+                        fileInput.click();
+                    }
                 });
 
                 document.addEventListener('submit', (event) => {
