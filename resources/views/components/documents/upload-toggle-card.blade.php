@@ -6,15 +6,15 @@
 ])
 
 @php
-    $cardClasses = [
+    $cardClasses = match ($tone ?? 'slate') {
         'sky' => 'border-sky-100 bg-sky-50/40',
-        'slate' => 'border-slate-200 bg-white',
-    ][$tone] ?? 'border-slate-200 bg-white';
+        default => 'border-slate-200 bg-white',
+    };
 
-    $buttonClasses = [
+    $buttonClasses = match ($tone ?? 'slate') {
         'sky' => 'border-sky-200 bg-white text-sky-700 hover:border-sky-300 hover:bg-sky-50 focus:ring-sky-200',
-        'slate' => 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-200',
-    ][$tone] ?? 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-200';
+        default => 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-200',
+    };
 @endphp
 
 <div class="rounded-lg border px-4 py-4 {{ $cardClasses }}" data-document-upload>
