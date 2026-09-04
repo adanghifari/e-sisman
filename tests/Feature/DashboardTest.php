@@ -2,6 +2,8 @@
 
 namespace Tests\Feature;
 
+use App\Models\Approval;
+use App\Models\ApprovalStatus;
 use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
 use App\Models\Document;
@@ -33,6 +35,61 @@ class DashboardTest extends TestCase
 
         $response = $this->get(route('dashboard'));
         $response->assertOk();
+    }
+
+    public function test_dashboard_needs_process_table_uses_real_tasks_only(): void
+    {
+        $user = User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
+        $submitter = User::factory()->create(['name' => 'Pengaju Real']);
+        $status = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::PROPOSED]);
+        $approvalStatus = ApprovalStatus::query()->firstOrCreate(
+            ['kode_status' => ApprovalStatus::PENDING],
+            ['nama_status' => 'Menunggu'],
+        );
+        $level = DocumentLevel::query()->firstOrCreate(
+            ['kode' => 'level-2'],
+            ['nama_level' => 'Level II', 'nama_dokumen' => 'Level II : Prosedur SKMBS', 'sort_order' => 2],
+        );
+        $type = DocumentType::query()->firstOrCreate(['nama_types' => 'Prosedur']);
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'REAL',
+            'nama_proses_bisnis' => 'Proses Real',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'REAL',
+            'nama_proses_fungsi' => 'Fungsi Real',
+        ]);
+        $document = Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $status->id,
+            'm_document_types_id' => $type->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $submitter->id,
+            'nama_dokumen' => 'Dokumen Real Dashboard',
+            'nomor_dokumen' => 'PS-REAL-01',
+            'nomor_revisi' => 0,
+            'submitted_at' => now(),
+        ]);
+
+        Approval::create([
+            't_document_id' => $document->id,
+            'user_id' => $user->id,
+            'assigned_by' => $submitter->id,
+            'm_approval_status_id' => $approvalStatus->id,
+            'stages' => 'Verifikasi Real',
+            'assigned_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('dashboard'))
+            ->assertOk()
+            ->assertSee('PS-REAL-01')
+            ->assertSee('Dokumen Real Dashboard')
+            ->assertDontSee('KBS-PB-PR-001');
     }
 
     public function test_department_warning_popup_is_rendered_when_session_exists(): void

@@ -1,20 +1,4 @@
 <x-layouts::app :title="__('Dashboard')">
-    @php
-        $needsProcess = [
-            ['number' => 'KBS-PB-PR-001', 'name' => 'Prosedur Pengendalian Dokumen', 'type' => 'Prosedur', 'stage' => 'Verifikasi Admin', 'owner' => 'Rendy Aulia', 'date' => '10 Agu 2026', 'status' => 'Menunggu'],
-            ['number' => 'KBS-OPS-IK-014', 'name' => 'Instruksi Kerja Bongkar Muat Curah', 'type' => 'IK', 'stage' => 'Review Kadis', 'owner' => 'Oktavia Putri', 'date' => '09 Agu 2026', 'status' => 'Review'],
-            ['number' => 'KBS-HSE-IK-008', 'name' => 'Instruksi Kerja Inspeksi Area Dermaga', 'type' => 'IK', 'stage' => 'Approval Manager', 'owner' => 'Aditya Chandra', 'date' => '08 Agu 2026', 'status' => 'Approval'],
-            ['number' => 'KBS-QA-FM-011', 'name' => 'Form Checklist Audit Mutu Internal', 'type' => 'Form', 'stage' => 'Verifikasi Admin', 'owner' => 'Siska Amelia', 'date' => '08 Agu 2026', 'status' => 'Menunggu'],
-            ['number' => 'KBS-HC-PR-004', 'name' => 'Prosedur Onboarding Karyawan Baru', 'type' => 'Prosedur', 'stage' => 'Review Kadis', 'owner' => 'Bima Pratama', 'date' => '07 Agu 2026', 'status' => 'Review'],
-            ['number' => 'KBS-FIN-IK-006', 'name' => 'IK Rekonsiliasi Pembayaran Vendor', 'type' => 'IK', 'stage' => 'Approval Manager', 'owner' => 'Dian Kartika', 'date' => '07 Agu 2026', 'status' => 'Approval'],
-            ['number' => 'KBS-OPS-PR-018', 'name' => 'Prosedur Penjadwalan Kapal Sandar', 'type' => 'Prosedur', 'stage' => 'Verifikasi Admin', 'owner' => 'Naufal Rizky', 'date' => '06 Agu 2026', 'status' => 'Menunggu'],
-            ['number' => 'KBS-HSE-FM-003', 'name' => 'Form Laporan Insiden Keselamatan', 'type' => 'Form', 'stage' => 'Review Kadis', 'owner' => 'Maya Safitri', 'date' => '06 Agu 2026', 'status' => 'Review'],
-            ['number' => 'KBS-IT-IK-009', 'name' => 'IK Backup Database Aplikasi Internal', 'type' => 'IK', 'stage' => 'Approval Manager', 'owner' => 'Fajar Nugroho', 'date' => '05 Agu 2026', 'status' => 'Approval'],
-            ['number' => 'KBS-PB-PR-013', 'name' => 'Prosedur Distribusi Dokumen Terkendali', 'type' => 'Prosedur', 'stage' => 'Verifikasi Admin', 'owner' => 'Ayu Lestari', 'date' => '05 Agu 2026', 'status' => 'Menunggu'],
-        ];
-
-    @endphp
-
     <div class="space-y-6">
         <x-ui.page-header title="Dashboard">
             <x-ui.action-button :href="route('documents.create')">
@@ -65,7 +49,7 @@
                     </tr>
                 </thead>
                 <tbody class="divide-y divide-slate-100">
-                    @foreach (array_slice($needsProcess, 0, 3) as $document)
+                    @forelse ($needsProcessDocuments as $document)
                         <tr class="hover:bg-slate-50/70">
                             <td class="break-words px-4 py-4 align-top font-semibold leading-5 text-slate-800">{{ $document['number'] }}</td>
                             <td class="break-words px-4 py-4 align-top leading-5 text-slate-700">{{ $document['name'] }}</td>
@@ -74,10 +58,16 @@
                             <td class="break-words px-4 py-4 align-top leading-5 text-slate-600">{{ $document['owner'] }}</td>
                             <td class="break-words px-4 py-4 align-top leading-5 text-slate-600">{{ $document['date'] }}</td>
                             <td class="px-4 py-4 align-top">
-                                <x-ui.status-badge :label="$document['status']" class="whitespace-nowrap" />
+                                <x-ui.status-badge :label="$document['status']" :tone="$document['tone'] ?? 'sky'" class="whitespace-nowrap" />
                             </td>
                         </tr>
-                    @endforeach
+                    @empty
+                        <tr>
+                            <td colspan="7" class="px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                Tidak ada dokumen yang perlu diproses.
+                            </td>
+                        </tr>
+                    @endforelse
                 </tbody>
             </x-ui.scrollable-table>
         </x-ui.panel>

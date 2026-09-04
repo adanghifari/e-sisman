@@ -51,6 +51,7 @@ class DashboardController extends Controller
                     'tab' => 'processed-history',
                 ],
             ],
+            'needsProcessDocuments' => $documentInboxController->dashboardNeedsProcessRows($request, 3),
             'activities' => $activityQuery->dashboardRows(),
             'levelStatistics' => $this->levelStatistics(),
             'businessFunctionStatistics' => $this->businessFunctionStatistics(),

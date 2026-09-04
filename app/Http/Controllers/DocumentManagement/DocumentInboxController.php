@@ -112,6 +112,31 @@ class DocumentInboxController extends Controller
     }
 
     /**
+     * @return Collection<int, array<string, mixed>>
+     */
+    public function dashboardNeedsProcessRows(Request $request, int $limit = 3): Collection
+    {
+        $filters = [
+            'search' => '',
+            'type' => '',
+            'status' => '',
+            'stage' => '',
+            'sort' => 'newest',
+        ];
+
+        return $this->myTasksQuery($request, $filters)
+            ->limit($limit)
+            ->get()
+            ->map(fn (Document $document): array => $this->approvalRow(
+                $document,
+                $this->taskApproval($document, $request->user()),
+                $request->user()->isAdmin() || $request->user()->canAssignDocument($document),
+                $request->user(),
+            ))
+            ->values();
+    }
+
+    /**
      * @return array{search: string, type: string, status: string, stage: string, sort: string}
      */
     private function filters(Request $request): array
