@@ -233,6 +233,41 @@ class ImportedExistingDocumentTest extends TestCase
         $this->assertFalse(ImportedExistingDocument::query()->where('nama_dokumen', 'Existing Master Format Revisi Salah')->exists());
     }
 
+    public function test_imported_existing_master_ignores_attachment_uploads(): void
+    {
+        Storage::fake('local');
+
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.master.imports.store-level',
+            'documents.master.imports.create-level',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('documents.master.imports.store.level', 'level-2'), [
+                'm_document_level_id' => $level->id,
+                'm_document_types_id' => $documentType->id,
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'nama_dokumen' => 'Existing Master Tanpa Lampiran',
+                'nomor_dokumen' => 'PS-SMR-122',
+                'nomor_revisi' => '00.00',
+                'existing_document' => UploadedFile::fake()->create('existing-master.pdf', 100, 'application/pdf'),
+                'attachments' => [
+                    UploadedFile::fake()->create('lampiran-master.pdf', 100, 'application/pdf'),
+                ],
+            ])
+            ->assertRedirect();
+
+        $document = ImportedExistingDocument::query()
+            ->where('nama_dokumen', 'Existing Master Tanpa Lampiran')
+            ->firstOrFail();
+
+        $this->assertSame(1, $document->files()->count());
+        $this->assertTrue($document->files()->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)->exists());
+        $this->assertFalse($document->files()->where('type_file', ImportedExistingDocumentFile::ATTACHMENT)->exists());
+    }
+
     public function test_imported_existing_obsolete_current_rule_can_be_stored_per_level(): void
     {
         Storage::fake('local');

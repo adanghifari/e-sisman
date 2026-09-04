@@ -336,13 +336,15 @@ class ImportedExistingDocumentController extends Controller
                 $request->user()->id,
             );
 
-            foreach ($request->file('attachments', []) as $attachment) {
-                $this->storeImportedExistingFile(
-                    $document,
-                    $attachment,
-                    ImportedExistingDocumentFile::ATTACHMENT,
-                    $request->user()->id,
-                );
+            if ($document->document_state === ImportedExistingDocument::STATE_OBSOLETE) {
+                foreach ($request->file('attachments', []) as $attachment) {
+                    $this->storeImportedExistingFile(
+                        $document,
+                        $attachment,
+                        ImportedExistingDocumentFile::ATTACHMENT,
+                        $request->user()->id,
+                    );
+                }
             }
 
             if ($replacementRelation = $this->replacementRelationAttributes($validated['replacement_reference'] ?? null)) {

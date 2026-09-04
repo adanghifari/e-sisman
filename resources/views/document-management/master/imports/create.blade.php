@@ -20,7 +20,7 @@
         ? route('documents.obsolete.imports.store.level', $level)
         : route('documents.master.imports.store.level', $level);
     $mainFileName = $isObsoleteImport ? 'obsolete_document' : 'existing_document';
-    $mainFileLabel = $isObsoleteImport ? 'File Dokumen Obsolete' : 'File Dokumen Utama';
+    $mainFileLabel = $isObsoleteImport ? 'File Dokumen Obsolete' : 'Dokumen Master Import';
 @endphp
 
 <x-layouts::app :title="__($pageTitle)">
@@ -188,18 +188,20 @@
                             <span class="-mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
                         @enderror
 
-                        <x-ui.file-upload
-                            label="Lampiran"
-                            name="attachments[]"
-                            accept=".pdf,.doc,.docx,.xls,.xlsx"
-                            hint="Opsional. Bisa lebih dari satu file."
-                            multiple
-                            :max-files="10"
-                            :max-file-size-kb="10240"
-                        />
-                        @error('attachments')
-                            <span class="-mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                        @enderror
+                        @if ($isObsoleteImport)
+                            <x-ui.file-upload
+                                label="Lampiran"
+                                name="attachments[]"
+                                accept=".pdf,.doc,.docx,.xls,.xlsx"
+                                hint="Opsional. Bisa lebih dari satu file."
+                                multiple
+                                :max-files="10"
+                                :max-file-size-kb="10240"
+                            />
+                            @error('attachments')
+                                <span class="-mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                            @enderror
+                        @endif
                     </div>
                 </x-documents.form-section>
 

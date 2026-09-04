@@ -224,6 +224,10 @@ class DocumentMasterController extends Controller
 
         $importedExistingDocument->setRelation('approvals', collect());
         $importedExistingDocument->setAttribute('formatted_revision', $this->formatImportedRevision($importedExistingDocument));
+        $contentFiles = $importedExistingDocument->files
+            ->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)
+            ->values();
+        $primaryContentFile = $contentFiles->first();
 
         return view('document-management.master.imported-show', [
             'document' => $importedExistingDocument,
@@ -232,12 +236,13 @@ class DocumentMasterController extends Controller
             'canRequestRevision' => $request->user()?->hasPermission('documents.existing.imports.revision') ?? false,
             'canRequestObsolete' => $this->canRequestImportedObsolete($request, $importedExistingDocument),
             'approvalFlowStages' => collect(),
-            'contentFiles' => $importedExistingDocument->files
-                ->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)
-                ->values(),
+            'contentFiles' => $contentFiles,
             'attachmentFiles' => $importedExistingDocument->files
                 ->where('type_file', ImportedExistingDocumentFile::ATTACHMENT)
                 ->values(),
+            'downloadPrintoutUrl' => $primaryContentFile
+                ? route('documents.existing.imports.files.show', [$importedExistingDocument, $primaryContentFile])
+                : null,
             'relatedObsoleteDocuments' => $this->relatedImportedObsoleteForImportedMaster($importedExistingDocument),
             'importNote' => $this->importedMasterNote($importedExistingDocument),
             'users' => User::query()->orderBy('name')->get(),

@@ -15,7 +15,10 @@
     'generatedPrintout' => null,
     'showGeneratedPrintout' => false,
     'canPreviewGeneratedPrintout' => false,
+    'downloadPrintoutUrl' => null,
     'showSourceFiles' => true,
+    'showFileOpenButton' => true,
+    'showAttachmentsSection' => true,
     'documentHistory' => collect(),
     'relatedObsoleteDocuments' => collect(),
     'showOwnerSection' => true,
@@ -192,16 +195,18 @@
                                             <p class="truncate text-sm font-bold text-slate-900">{{ $file->original_file_name }}</p>
                                             <p class="text-xs font-medium text-slate-500">{{ $fileTypeLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
                                         </div>
-                                        <a href="{{ route($fileRoutePrefix.'.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                            Buka
-                                        </a>
+                                        @if ($showFileOpenButton)
+                                            <a href="{{ route($fileRoutePrefix.'.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                                Buka
+                                            </a>
+                                        @endif
                                     </div>
 
                                     @if (\Illuminate\Support\Str::of($file->original_file_name)->lower()->endsWith('.pdf'))
                                         <x-documents.lazy-pdf-preview :src="route($fileRoutePrefix.'.files.preview', [$document, $file]).'#toolbar=0&view=FitH&navpanes=0'" />
                                     @else
                                         <div class="px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                            Preview hanya tersedia untuk PDF. Gunakan tombol Buka untuk melihat file ini.
+                                            Preview hanya tersedia untuk PDF.
                                         </div>
                                     @endif
                                 </section>
@@ -213,25 +218,27 @@
                         </div>
                     </x-documents.form-section>
 
-                    <x-documents.form-section title="Lampiran" icon="paper-clip">
-                        <div class="space-y-3 px-6 py-6">
-                            @forelse ($attachmentFiles as $file)
-                                <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
-                                    <div class="min-w-0">
-                                        <p class="truncate text-sm font-bold text-slate-900">{{ $file->attachment_title ?: $file->original_file_name }}</p>
-                                        <p class="text-xs font-medium text-slate-500">{{ $file->original_file_name }} - {{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
+                    @if ($showAttachmentsSection)
+                        <x-documents.form-section title="Lampiran" icon="paper-clip">
+                            <div class="space-y-3 px-6 py-6">
+                                @forelse ($attachmentFiles as $file)
+                                    <div class="flex items-center justify-between gap-3 rounded-lg border border-slate-200 bg-white px-4 py-3">
+                                        <div class="min-w-0">
+                                            <p class="truncate text-sm font-bold text-slate-900">{{ $file->attachment_title ?: $file->original_file_name }}</p>
+                                            <p class="text-xs font-medium text-slate-500">{{ $file->original_file_name }} - {{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</p>
+                                        </div>
+                                        <a href="{{ route($fileRoutePrefix.'.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
+                                            Buka
+                                        </a>
                                     </div>
-                                    <a href="{{ route($fileRoutePrefix.'.files.show', [$document, $file]) }}" target="_blank" class="inline-flex h-9 items-center justify-center rounded-md border border-slate-200 bg-white px-3 text-xs font-semibold text-slate-700 transition hover:bg-slate-50">
-                                        Buka
-                                    </a>
-                                </div>
-                            @empty
-                                <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                    Tidak ada lampiran.
-                                </p>
-                            @endforelse
-                        </div>
-                    </x-documents.form-section>
+                                @empty
+                                    <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                        Tidak ada lampiran.
+                                    </p>
+                                @endforelse
+                            </div>
+                        </x-documents.form-section>
+                    @endif
                 @endif
 
                 @if ($relatedObsoleteDocuments->isNotEmpty())
@@ -298,10 +305,10 @@
                         </div>
                     </div>
 
-                    @if ($showGeneratedPrintout && $canPreviewGeneratedPrintout)
+                    @if (($showGeneratedPrintout && $canPreviewGeneratedPrintout) || filled($downloadPrintoutUrl))
                         <div class="border-t border-dashed border-slate-200 px-6 py-5">
                             <a
-                                href="{{ route($fileRoutePrefix.'.generated.show', [$document, 'download' => 1]) }}"
+                                href="{{ $downloadPrintoutUrl ?: route($fileRoutePrefix.'.generated.show', [$document, 'download' => 1]) }}"
                                 target="_blank"
                                 class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg bg-sky-600 px-4 text-sm font-semibold text-white shadow-sm transition hover:bg-sky-700"
                             >

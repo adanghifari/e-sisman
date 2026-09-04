@@ -137,6 +137,14 @@ class DocumentMasterTest extends TestCase
             'stored_file_name' => 'master-detail.pdf',
             'file_size' => 16,
         ]);
+        $importedMaster->files()->create([
+            'type_file' => ImportedExistingDocumentFile::ATTACHMENT,
+            'path_file' => 'documents/imported-existing/master-detail.pdf',
+            'uploaded_by' => $user->id,
+            'original_file_name' => 'lampiran-master-detail.pdf',
+            'stored_file_name' => 'lampiran-master-detail.pdf',
+            'file_size' => 16,
+        ]);
 
         $this->actingAs($user)
             ->get(route('documents.master.imported.show', $importedMaster))
@@ -150,7 +158,8 @@ class DocumentMasterTest extends TestCase
             ->assertDontSee('Dokumen ini berasal dari imported existing master sebelum go-live')
             ->assertSee(route('documents.existing.imports.files.show', [$importedMaster, $file]), false)
             ->assertSee(route('documents.existing.imports.files.preview', [$importedMaster, $file]), false)
-            ->assertSee('Lihat Dokumen')
+            ->assertSee('Download Printout PDF')
+            ->assertDontSee('lampiran-master-detail.pdf')
             ->assertSee('Ajukan Revisi')
             ->assertSee('data-imported-revision-modal', false);
 
