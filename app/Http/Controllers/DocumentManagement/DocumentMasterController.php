@@ -238,6 +238,7 @@ class DocumentMasterController extends Controller
                 ->where('type_file', ImportedExistingDocumentFile::ATTACHMENT)
                 ->values(),
             'relatedObsoleteDocuments' => $this->relatedImportedObsoleteForImportedMaster($importedExistingDocument),
+            'importNotice' => $this->importedMasterNotice($importedExistingDocument),
             'users' => User::query()->orderBy('name')->get(),
         ]);
     }
@@ -757,5 +758,16 @@ class DocumentMasterController extends Controller
     private function formatImportedRevision(ImportedExistingDocument $document): string
     {
         return filled($document->nomor_revisi) ? (string) $document->nomor_revisi : '-';
+    }
+
+    private function importedMasterNotice(ImportedExistingDocument $document): string
+    {
+        $notice = 'Dokumen ini berasal dari imported existing master sebelum go-live, sehingga riwayat approval V2 belum tersedia untuk versi awal ini.';
+
+        if (filled($document->catatan)) {
+            return $notice.' Catatan import: '.$document->catatan;
+        }
+
+        return $notice;
     }
 }

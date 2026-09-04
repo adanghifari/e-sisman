@@ -126,6 +126,7 @@ class DocumentMasterTest extends TestCase
             'm_proses_fungsi_id' => $businessFunction->id,
             'nama_dokumen' => 'Imported Master Detail',
             'nomor_dokumen' => 'PS-SMR-IMD',
+            'catatan' => 'Dokumen hasil import arsip sebelum go-live.',
         ]);
         Storage::disk('local')->put('documents/imported-existing/master-detail.pdf', "%PDF-1.4\nfixture");
         $file = $importedMaster->files()->create([
@@ -144,10 +145,12 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Imported Master Detail')
             ->assertSee('PS-SMR-IMD')
             ->assertSee('Dokumen ini berasal dari imported existing master sebelum go-live')
+            ->assertSee('Catatan import: Dokumen hasil import arsip sebelum go-live.')
             ->assertSee(route('documents.existing.imports.files.show', [$importedMaster, $file]), false)
             ->assertSee(route('documents.existing.imports.files.preview', [$importedMaster, $file]), false)
             ->assertSee('Lihat Dokumen')
-            ->assertSee('Revisi');
+            ->assertSee('Ajukan Revisi')
+            ->assertSee('data-imported-revision-modal', false);
 
         $this->actingAs($user)
             ->get(route('documents.existing.imports.files.preview', [$importedMaster, $file]))
