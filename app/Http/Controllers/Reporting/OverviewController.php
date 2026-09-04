@@ -37,8 +37,9 @@ class OverviewController extends Controller
 
         $procedures = $this->procedureQuery($filters, $procedureLevelId, $instructionLevelId)
             ->with(['businessFunction', 'departments'])
-            ->orderBy('nama_dokumen')
             ->orderBy('nomor_dokumen')
+            ->orderByDesc('nomor_revisi')
+            ->orderBy('nama_dokumen')
             ->paginate(10)
             ->withQueryString();
         $overviewLevelIds = [$manualLevelId, $procedureLevelId, $instructionLevelId];
@@ -70,8 +71,9 @@ class OverviewController extends Controller
         $instructionLevelId = $this->documentLevelId('level-3');
         $procedures = $this->procedureQuery($filters, $procedureLevelId, $instructionLevelId)
             ->with(['businessFunction', 'departments', 'status'])
-            ->orderBy('nama_dokumen')
             ->orderBy('nomor_dokumen')
+            ->orderByDesc('nomor_revisi')
+            ->orderBy('nama_dokumen')
             ->get();
         $rows = $this->exportRows($procedures, $filters, $instructionLevelId);
         $filename = 'overview-dokumen-'.now()->format('Ymd-His').'.csv';
@@ -170,6 +172,8 @@ class OverviewController extends Controller
             ->where('m_document_level_id', $instructionLevelId)
             ->where($this->publishedDocumentScope())
             ->when($filters['instruction'] !== '', fn (Builder $query) => $query->where('nama_dokumen', 'like', '%'.$filters['instruction'].'%'))
+            ->orderBy('nomor_dokumen')
+            ->orderByDesc('nomor_revisi')
             ->orderBy('nama_dokumen')
             ->get()
             ->groupBy('reference');
@@ -193,6 +197,8 @@ class OverviewController extends Controller
             ->where('m_document_level_id', $instructionLevelId)
             ->where($this->publishedDocumentScope())
             ->when($filters['instruction'] !== '', fn (Builder $query) => $query->where('nama_dokumen', 'like', '%'.$filters['instruction'].'%'))
+            ->orderBy('nomor_dokumen')
+            ->orderByDesc('nomor_revisi')
             ->orderBy('nama_dokumen')
             ->get()
             ->groupBy('reference');
@@ -265,7 +271,7 @@ class OverviewController extends Controller
         $points = $items
             ->values()
             ->map(function (array $item, int $index) use ($items, $max): array {
-                $x = $items->count() <= 1 ? 420 : 40 + (($index / ($items->count() - 1)) * 800);
+                $x = $items->count() <= 1 ? 490 : 24 + (($index / ($items->count() - 1)) * 932);
                 $y = 230 - (($item['value'] / $max) * 170);
 
                 return $item + [

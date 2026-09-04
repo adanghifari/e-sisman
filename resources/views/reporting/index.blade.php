@@ -62,7 +62,7 @@
 
                 <div class="mt-5">
                     <div class="rounded-lg border border-slate-200 bg-white px-5 py-6">
-                        <svg viewBox="0 0 880 280" role="img" aria-label="Statistik dokumen" class="h-80 w-full overflow-visible">
+                        <svg viewBox="0 0 980 280" role="img" aria-label="Statistik dokumen" class="h-[360px] w-full overflow-visible">
                             <defs>
                                 <linearGradient id="overviewTrendArea" x1="0" x2="0" y1="0" y2="1">
                                     <stop offset="0%" stop-color="#38bdf8" stop-opacity="0.28" />
@@ -78,7 +78,7 @@
                             </defs>
 
                             @foreach ([60, 102.5, 145, 187.5, 230] as $lineY)
-                                <line x1="40" y1="{{ $lineY }}" x2="840" y2="{{ $lineY }}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="5 8" />
+                                <line x1="24" y1="{{ $lineY }}" x2="956" y2="{{ $lineY }}" stroke="#e2e8f0" stroke-width="1" stroke-dasharray="5 8" />
                             @endforeach
 
                             @foreach ($trendStatistics['items'] as $item)
@@ -108,11 +108,11 @@
             </x-ui.panel>
 
             <x-ui.panel title="Total Dokumen" class="h-full">
-                <div class="mt-5 grid h-full min-h-[330px] place-items-center">
-                    <div class="relative mx-auto grid size-52 place-items-center rounded-full" style="background: {{ $businessFunctionStatistics['chart'] }}">
-                        <div class="grid size-36 place-items-center rounded-full bg-white text-center shadow-inner">
+                <div class="mt-5 grid h-full min-h-[380px] place-items-center">
+                    <div class="relative mx-auto grid size-80 place-items-center rounded-full" style="background: {{ $businessFunctionStatistics['chart'] }}">
+                        <div class="grid size-52 place-items-center rounded-full bg-white text-center shadow-inner">
                             <div>
-                                <span class="block text-3xl font-bold text-slate-950">{{ $businessFunctionStatistics['total'] }}</span>
+                                <span class="block text-4xl font-bold text-slate-950">{{ $businessFunctionStatistics['total'] }}</span>
                                 <span class="block text-xs font-semibold text-slate-500">Dokumen</span>
                             </div>
                         </div>
