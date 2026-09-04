@@ -173,7 +173,7 @@
                         <div class="min-w-0">
                             <p class="text-sm leading-5 text-slate-700">
                                 {{ $activity['downloaded_by'] }} mengunduh
-                                <span class="font-semibold {{ $activity['is_obsolete'] ? 'text-red-600' : 'text-slate-700' }}">{{ $activity['number'] }}</span>
+                                <span class="font-semibold {{ $activity['is_obsolete'] ? 'text-red-600' : 'text-slate-700' }}">{{ $activity['display_number'] ?? $activity['number'] }}</span>
                                 - {{ $activity['name'] }}
                             </p>
                             <p class="mt-1 text-xs font-medium text-slate-400">{{ $activity['time'] }}</p>

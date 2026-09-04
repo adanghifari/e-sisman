@@ -35,10 +35,12 @@ class DocumentDownloadActivityQuery
             ->get()
             ->map(function ($activity): array {
                 $number = $activity->number ?: '-';
+                $revision = $this->formatRevision((int) $activity->revision);
 
                 return [
                     'downloaded_by' => $activity->downloaded_by ?: '-',
                     'number' => $number,
+                    'display_number' => trim($number.' '.$revision),
                     'name' => $activity->name,
                     'is_obsolete' => $activity->download_context === 'obsolete',
                     'time' => Carbon::parse($activity->downloaded_at)->format('d/m/Y H:i'),

@@ -6,10 +6,12 @@ use App\Models\Approval;
 use App\Models\ApprovalStatus;
 use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
+use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentDownloadLog;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
+use App\Models\ImportedExistingDocument;
 use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -92,6 +94,104 @@ class DashboardTest extends TestCase
             ->assertDontSee('KBS-PB-PR-001');
     }
 
+    public function test_level_statistics_count_published_masters_and_revision_forms(): void
+    {
+        $user = User::factory()->create([
+            'nik' => '000000',
+            'email' => 'developer@example.com',
+        ]);
+        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        $obsoleteStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::OBSOLETE]);
+        $levelTwo = DocumentLevel::query()->firstOrCreate(
+            ['kode' => 'level-2'],
+            ['nama_level' => 'Level II', 'nama_dokumen' => 'Dokumen Level II : Prosedur SKMBS', 'sort_order' => 2],
+        );
+        $levelFour = DocumentLevel::query()->firstOrCreate(
+            ['kode' => 'level-4'],
+            ['nama_level' => 'Level IV', 'nama_dokumen' => 'Dokumen Level IV : Form / Lembar Revisi', 'sort_order' => 4],
+        );
+        $type = DocumentType::query()->firstOrCreate(['nama_types' => 'Prosedur']);
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'STAT',
+            'nama_proses_bisnis' => 'Proses Statistik',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'STAT',
+            'nama_proses_fungsi' => 'Fungsi Statistik',
+        ]);
+
+        Document::create([
+            'm_document_level_id' => $levelTwo->id,
+            'm_status_document_id' => $obsoleteStatus->id,
+            'm_document_types_id' => $type->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Master Lama',
+            'nomor_dokumen' => 'PS-STAT-01',
+            'nomor_revisi' => 0,
+        ])->departments()->attach($department = Department::query()->create([
+            'kode_department' => 'STAT',
+            'nama_department' => 'Department Statistik',
+        ]));
+        Document::create([
+            'm_document_level_id' => $levelTwo->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $type->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Master Revisi',
+            'nomor_dokumen' => 'PS-STAT-01',
+            'nomor_lembar_revisi' => 'FMPS-STAT-01-01',
+            'nomor_revisi' => 1,
+            'request_type' => 'revision',
+        ])->departments()->attach($department);
+        Document::create([
+            'm_document_level_id' => $levelTwo->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $type->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Request Obsolete Manual',
+            'nomor_dokumen' => 'PS-STAT-01',
+            'nomor_revisi' => 1,
+            'request_type' => 'obsolete',
+        ]);
+        ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
+            'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
+            'm_document_level_id' => $levelTwo->id,
+            'm_document_types_id' => $type->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Terpetakan',
+            'nomor_dokumen' => 'PS-IMP-01',
+            'nomor_revisi' => '00.00',
+        ])->departments()->attach($department);
+        ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
+            'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Legacy Tanpa Mapping',
+            'nomor_dokumen' => 'LEGACY-001',
+            'nomor_revisi' => '00.00',
+        ]);
+
+        $response = $this->actingAs($user)->get(route('dashboard'));
+        $items = collect($response->viewData('levelStatistics')['items']);
+
+        $this->assertSame(3, $items->firstWhere('label', 'Level II Prosedur SKMBS')['value']);
+        $this->assertSame(1, $items->firstWhere('label', 'Level IV Form / Lembar Revisi')['value']);
+        $this->assertSame(4, $response->viewData('levelStatistics')['total']);
+        $this->assertSame(3, collect($response->viewData('businessFunctionStatistics')['items'])->firstWhere('label', 'Fungsi Statistik')['value']);
+        $this->assertSame(3, collect($response->viewData('businessProcessTotals')['items'])->firstWhere('label', 'Proses Statistik')['value']);
+        $this->assertSame(3, collect($response->viewData('departmentTotals')['items'])->firstWhere('label', 'Department Statistik')['value']);
+        $this->assertNotNull($levelFour->id);
+    }
+
     public function test_department_warning_popup_is_rendered_when_session_exists(): void
     {
         $user = User::factory()->create([
@@ -116,7 +216,7 @@ class DashboardTest extends TestCase
             ->assertSee('Akun Anda belum terdaftar di department manapun.');
     }
 
-    public function test_download_activity_keeps_revision_column_out_of_dashboard_text(): void
+    public function test_download_activity_dashboard_shows_document_number_with_revision(): void
     {
         $user = User::factory()->create([
             'nik' => '000000',
@@ -157,8 +257,8 @@ class DashboardTest extends TestCase
         $this->actingAs($user)
             ->get(route('dashboard'))
             ->assertOk()
-            ->assertSee('FMPS-SMR-SNAP-01')
-            ->assertDontSee('FMPS-SMR-SNAP-01 00.01');
+            ->assertSee('FMPS-SMR-SNAP-01 00.01')
+            ->assertDontSee('Rev. 00.01');
 
         $this->actingAs($user)
             ->get(route('activity-log.index'))

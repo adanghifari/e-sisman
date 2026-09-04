@@ -9,6 +9,7 @@ use App\Models\BusinessProcess;
 use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentLevel;
+use App\Models\ImportedExistingDocument;
 use App\Models\StatusDocument;
 use App\Queries\Log\DocumentDownloadActivityQuery;
 use Illuminate\Contracts\View\View;
@@ -62,10 +63,22 @@ class DashboardController extends Controller
 
     private function levelStatistics(): array
     {
-        $counts = $this->masterDocumentBaseQuery()
+        $counts = $this->publishedDocumentBaseQuery()
             ->selectRaw('m_document_level_id as item_id, count(*) as total')
             ->groupBy('m_document_level_id')
             ->pluck('total', 'item_id');
+        $counts = $this->mergeCounts($counts, $this->importedExistingDocumentCounts('m_document_level_id'));
+
+        $revisionFormLevelId = DocumentLevel::query()
+            ->where('kode', 'level-4')
+            ->value('id');
+
+        if ($revisionFormLevelId !== null) {
+            $counts[$revisionFormLevelId] = (int) ($counts[$revisionFormLevelId] ?? 0)
+                + $this->publishedDocumentBaseQuery()
+                    ->whereNotNull('nomor_lembar_revisi')
+                    ->count();
+        }
 
         $items = DocumentLevel::query()
             ->active()
@@ -86,6 +99,7 @@ class DashboardController extends Controller
             ->selectRaw('m_proses_fungsi_id as item_id, count(*) as total')
             ->groupBy('m_proses_fungsi_id')
             ->pluck('total', 'item_id');
+        $counts = $this->mergeCounts($counts, $this->importedExistingDocumentCounts('m_proses_fungsi_id'));
 
         $items = BusinessFunction::query()
             ->active()
@@ -106,6 +120,7 @@ class DashboardController extends Controller
             ->selectRaw('m_proses_bisnis_id as item_id, count(*) as total')
             ->groupBy('m_proses_bisnis_id')
             ->pluck('total', 'item_id');
+        $counts = $this->mergeCounts($counts, $this->importedExistingDocumentCounts('m_proses_bisnis_id'));
 
         return $this->totalDataset(
             BusinessProcess::query()
@@ -130,6 +145,7 @@ class DashboardController extends Controller
             ->selectRaw('document_departments.department_id as item_id, count(distinct t_document.id) as total')
             ->groupBy('document_departments.department_id')
             ->pluck('total', 'item_id');
+        $counts = $this->mergeCounts($counts, $this->importedExistingDepartmentCounts());
 
         return $this->totalDataset(
             Department::query()
@@ -146,6 +162,11 @@ class DashboardController extends Controller
 
     private function masterDocumentBaseQuery()
     {
+        return $this->publishedDocumentBaseQuery();
+    }
+
+    private function publishedDocumentBaseQuery()
+    {
         $documentStatusIds = StatusDocument::query()
             ->whereIn('nama_status', [
                 StatusDocument::APPROVED,
@@ -155,7 +176,54 @@ class DashboardController extends Controller
 
         return Document::query()
             ->whereIn('m_status_document_id', $documentStatusIds)
-            ->whereNull('request_type');
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('request_type')
+                    ->orWhere('request_type', '!=', 'obsolete');
+            });
+    }
+
+    private function importedExistingDocumentBaseQuery()
+    {
+        return ImportedExistingDocument::query()
+            ->whereIn('document_state', [
+                ImportedExistingDocument::STATE_MASTER,
+                ImportedExistingDocument::STATE_OBSOLETE,
+            ]);
+    }
+
+    private function importedExistingDocumentCounts(string $mappedColumn): Collection
+    {
+        return $this->importedExistingDocumentBaseQuery()
+            ->whereNotNull($mappedColumn)
+            ->selectRaw("{$mappedColumn} as item_id, count(*) as total")
+            ->groupBy($mappedColumn)
+            ->pluck('total', 'item_id');
+    }
+
+    private function importedExistingDepartmentCounts(): Collection
+    {
+        return $this->importedExistingDocumentBaseQuery()
+            ->join(
+                'imported_existing_document_departments',
+                'imported_existing_document_departments.imported_existing_document_id',
+                '=',
+                'imported_existing_documents.id',
+            )
+            ->selectRaw('imported_existing_document_departments.department_id as item_id, count(distinct imported_existing_documents.id) as total')
+            ->groupBy('imported_existing_document_departments.department_id')
+            ->pluck('total', 'item_id');
+    }
+
+    private function mergeCounts(Collection $counts, Collection $additionalCounts): Collection
+    {
+        $merged = $counts->map(fn ($value): int => (int) $value);
+
+        foreach ($additionalCounts as $itemId => $total) {
+            $merged[$itemId] = (int) ($merged[$itemId] ?? 0) + (int) $total;
+        }
+
+        return $merged;
     }
 
     private function chartDataset(Collection $items): array
