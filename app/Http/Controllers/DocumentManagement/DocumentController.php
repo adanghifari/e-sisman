@@ -793,6 +793,7 @@ class DocumentController extends Controller
 
         foreach ($allSourceAttachments as $sourceFile) {
             $replacement = $request->file("revised_attachments.{$sourceFile->id}");
+            /** @var DocumentFile|null $existing */
             $existing = $document->files()
                 ->where('type_file', 'attachment')
                 ->where('source_file_id', $sourceFile->id)
@@ -807,7 +808,7 @@ class DocumentController extends Controller
             }
 
             if ($existing !== null && $replacement === null) {
-                $existing->forceFill([
+                $existing->fill([
                     'document_number' => $sourceFile->document_number,
                     'attachment_title' => $sourceFile->attachment_title,
                     'attachment_order' => $sourceFile->attachment_order,
@@ -1364,9 +1365,7 @@ class DocumentController extends Controller
 
     protected function buildRevisionFormNumber(Document $source, int $revision): string
     {
-        $source->forceFill([
-            'nomor_dokumen' => $this->revisionSourceMasterNumber($source),
-        ]);
+        $source->nomor_dokumen = $this->revisionSourceMasterNumber($source);
 
         return (string) app(DocumentFileNumbering::class)->revisionFormNumber($source);
     }
