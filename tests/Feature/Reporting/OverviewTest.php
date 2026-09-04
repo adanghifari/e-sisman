@@ -42,11 +42,18 @@ class OverviewTest extends TestCase
         $this->assertSame('IK-OVR-01', $firstRow['instructions']->first()['number']);
         $this->assertSame('Department Overview', $firstRow['departments']->first());
         $this->assertSame('Fungsi Overview', $firstRow['business_function']);
+        $this->assertSame(0, collect($response->viewData('overviewSummary'))->firstWhere('label', 'Total Manual')['value']);
+        $this->assertSame(1, collect($response->viewData('overviewSummary'))->firstWhere('label', 'Total Prosedur')['value']);
+        $this->assertSame(1, collect($response->viewData('overviewSummary'))->firstWhere('label', 'Total Instruksi Kerja')['value']);
+        $this->assertSame(2, $response->viewData('trendStatistics')['total']);
+        $this->assertArrayHasKey(now()->year, $response->viewData('yearOptions'));
+        $this->assertSame(2, collect($response->viewData('businessFunctionStatistics')['items'])->firstWhere('label', 'Fungsi Overview')['value']);
         $this->assertEquals([
             'procedure' => 'PS-OVR',
             'instruction' => 'Bongkar',
             'department_id' => (string) $department->id,
             'business_function_id' => (string) $businessFunction->id,
+            'year' => now()->year,
         ], $response->viewData('overviewFilters'));
     }
 

@@ -17,9 +17,21 @@ use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OverviewController extends Controller
 {
+    private const CHART_COLORS = [
+        '#0284c7',
+        '#22c55e',
+        '#8b5cf6',
+        '#f59e0b',
+        '#ec4899',
+        '#14b8a6',
+        '#ef4444',
+        '#64748b',
+    ];
+
     public function __invoke(Request $request): View
     {
         $filters = $this->filters($request);
+        $manualLevelId = $this->documentLevelId('level-1');
         $procedureLevelId = $this->documentLevelId('level-2');
         $instructionLevelId = $this->documentLevelId('level-3');
 
@@ -29,10 +41,15 @@ class OverviewController extends Controller
             ->orderBy('nomor_dokumen')
             ->paginate(10)
             ->withQueryString();
+        $overviewLevelIds = [$manualLevelId, $procedureLevelId, $instructionLevelId];
 
         return view('reporting.index', [
             'overviewFilters' => $filters,
             'overviewRows' => $this->overviewRows($procedures, $filters, $instructionLevelId),
+            'overviewSummary' => $this->summary($manualLevelId, $procedureLevelId, $instructionLevelId),
+            'trendStatistics' => $this->trendStatistics($overviewLevelIds, $filters['year']),
+            'businessFunctionStatistics' => $this->businessFunctionStatistics($overviewLevelIds),
+            'yearOptions' => $this->yearOptions($overviewLevelIds),
             'departmentOptions' => ['' => 'Semua Department'] + Department::query()
                 ->active()
                 ->orderBy('nama_department')
@@ -87,20 +104,23 @@ class OverviewController extends Controller
     }
 
     /**
-     * @return array{procedure: string, instruction: string, department_id: string, business_function_id: string}
+     * @return array{procedure: string, instruction: string, department_id: string, business_function_id: string, year: int}
      */
     private function filters(Request $request): array
     {
+        $year = (int) $request->query('year', now()->year);
+
         return [
             'procedure' => trim((string) $request->query('procedure', '')),
             'instruction' => trim((string) $request->query('instruction', '')),
             'department_id' => trim((string) $request->query('department_id', '')),
             'business_function_id' => trim((string) $request->query('business_function_id', '')),
+            'year' => $year > 0 ? $year : now()->year,
         ];
     }
 
     /**
-     * @param  array{procedure: string, instruction: string, department_id: string, business_function_id: string}  $filters
+     * @param  array{procedure: string, instruction: string, department_id: string, business_function_id: string, year: int}  $filters
      */
     private function procedureQuery(array $filters, ?int $procedureLevelId, ?int $instructionLevelId): Builder
     {
@@ -139,7 +159,7 @@ class OverviewController extends Controller
     }
 
     /**
-     * @param  array{procedure: string, instruction: string, department_id: string, business_function_id: string}  $filters
+     * @param  array{procedure: string, instruction: string, department_id: string, business_function_id: string, year: int}  $filters
      */
     private function overviewRows(LengthAwarePaginator $procedures, array $filters, ?int $instructionLevelId): LengthAwarePaginator
     {
@@ -196,6 +216,161 @@ class OverviewController extends Controller
         })->values();
     }
 
+    private function summary(?int $manualLevelId, ?int $procedureLevelId, ?int $instructionLevelId): array
+    {
+        $documents = $this->publishedDocuments([$manualLevelId, $procedureLevelId, $instructionLevelId]);
+
+        return [
+            [
+                'label' => 'Total Manual',
+                'value' => $documents->where('m_document_level_id', $manualLevelId)->count(),
+                'hint' => 'Dokumen Level I',
+                'tone' => 'sky',
+            ],
+            [
+                'label' => 'Total Prosedur',
+                'value' => $documents->where('m_document_level_id', $procedureLevelId)->count(),
+                'hint' => 'Dokumen Level II',
+                'tone' => 'emerald',
+            ],
+            [
+                'label' => 'Total Instruksi Kerja',
+                'value' => $documents->where('m_document_level_id', $instructionLevelId)->count(),
+                'hint' => 'Dokumen Level III',
+                'tone' => 'violet',
+            ],
+        ];
+    }
+
+    private function trendStatistics(array $levelIds, int $year): array
+    {
+        $months = collect(range(1, 12))
+            ->map(fn (int $month) => now()->setYear($year)->setMonth($month)->startOfMonth());
+        $documents = $this->publishedDocuments($levelIds);
+        $items = $months->map(function ($month) use ($documents): array {
+            $value = $documents
+                ->filter(function (Document $document) use ($month): bool {
+                    $date = $document->tanggal_terbit ?? $document->approved_at;
+
+                    return $date !== null && $date->isSameMonth($month);
+                })
+                ->count();
+
+            return [
+                'label' => $month->translatedFormat('M'),
+                'value' => $value,
+            ];
+        });
+        $max = max(1, (int) $items->max('value'));
+        $points = $items
+            ->values()
+            ->map(function (array $item, int $index) use ($items, $max): array {
+                $x = $items->count() <= 1 ? 420 : 40 + (($index / ($items->count() - 1)) * 800);
+                $y = 230 - (($item['value'] / $max) * 170);
+
+                return $item + [
+                    'x' => round($x, 2),
+                    'y' => round($y, 2),
+                ];
+            });
+
+        return [
+            'items' => $points,
+            'total' => $items->sum('value'),
+            'path' => $points->map(fn (array $item, int $index): string => ($index === 0 ? 'M ' : 'L ').$item['x'].' '.$item['y'])->join(' '),
+            'smooth_path' => $this->smoothPath($points),
+            'area_path' => $this->areaPath($points),
+            'year' => $year,
+        ];
+    }
+
+    private function businessFunctionStatistics(array $levelIds): array
+    {
+        $counts = $this->publishedDocuments($levelIds)
+            ->groupBy('m_proses_fungsi_id')
+            ->map(fn (Collection $documents): int => $documents->count());
+        $items = BusinessFunction::query()
+            ->active()
+            ->orderBy('nama_proses_fungsi')
+            ->get()
+            ->map(fn (BusinessFunction $businessFunction): array => [
+                'label' => $businessFunction->nama_proses_fungsi,
+                'value' => (int) ($counts[$businessFunction->id] ?? 0),
+            ])
+            ->filter(fn (array $item): bool => $item['value'] > 0)
+            ->values();
+        $total = (int) $items->sum('value');
+        $cursor = 0;
+        $segments = [];
+
+        $items = $items->map(function (array $item, int $index) use ($total, &$cursor, &$segments): array {
+            $color = self::CHART_COLORS[$index % count(self::CHART_COLORS)];
+
+            if ($item['value'] > 0 && $total > 0) {
+                $size = ($item['value'] / $total) * 100;
+                $segments[] = sprintf('%s %.4f%% %.4f%%', $color, $cursor, $cursor + $size);
+                $cursor += $size;
+            }
+
+            return $item + [
+                'color' => $color,
+                'percentage' => $total > 0 ? round(($item['value'] / $total) * 100, 1) : 0,
+            ];
+        });
+
+        return [
+            'items' => $items,
+            'total' => $total,
+            'chart' => $segments === []
+                ? 'conic-gradient(#e2e8f0 0% 100%)'
+                : 'conic-gradient('.implode(', ', $segments).')',
+        ];
+    }
+
+    private function smoothPath(Collection $points): string
+    {
+        if ($points->isEmpty()) {
+            return '';
+        }
+
+        $path = 'M '.$points[0]['x'].' '.$points[0]['y'];
+
+        for ($index = 1; $index < $points->count(); $index++) {
+            $previous = $points[$index - 1];
+            $current = $points[$index];
+            $controlX = round(($previous['x'] + $current['x']) / 2, 2);
+
+            $path .= ' C '.$controlX.' '.$previous['y'].', '.$controlX.' '.$current['y'].', '.$current['x'].' '.$current['y'];
+        }
+
+        return $path;
+    }
+
+    private function areaPath(Collection $points): string
+    {
+        if ($points->isEmpty()) {
+            return '';
+        }
+
+        return $this->smoothPath($points).' L '.$points->last()['x'].' 230 L '.$points->first()['x'].' 230 Z';
+    }
+
+    private function yearOptions(array $levelIds): array
+    {
+        $years = $this->publishedDocuments($levelIds)
+            ->map(fn (Document $document) => $document->tanggal_terbit ?? $document->approved_at)
+            ->filter()
+            ->map(fn ($date): int => (int) $date->format('Y'))
+            ->push(now()->year)
+            ->unique()
+            ->sortDesc()
+            ->values();
+
+        return $years
+            ->mapWithKeys(fn (int $year): array => [$year => (string) $year])
+            ->all();
+    }
+
     private function formatProcedureRow(Document $procedure, Collection $instructions): array
     {
         return [
@@ -247,6 +422,15 @@ class OverviewController extends Controller
                     ->whereNull('request_type')
                     ->orWhere('request_type', '!=', 'obsolete');
             });
+    }
+
+    private function publishedDocuments(array $levelIds): Collection
+    {
+        return Document::query()
+            ->with(['businessFunction'])
+            ->whereIn('m_document_level_id', collect($levelIds)->filter()->values())
+            ->where($this->publishedDocumentScope())
+            ->get();
     }
 
     private function publishedStatusIds(): Collection
