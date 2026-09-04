@@ -36,6 +36,7 @@ class FinalPdfComposer
 
     public function __construct(
         private readonly PdfPageGeometry $geometry = new PdfPageGeometry,
+        private readonly DocumentWatermarkStamp $watermarkStamp = new DocumentWatermarkStamp,
     ) {}
 
     /**
@@ -58,6 +59,7 @@ class FinalPdfComposer
         }
 
         $tempFiles = [];
+        $pdf = null;
 
         try {
             $coverPath = $this->writeTempPdf($coverPdf, 'cover-', $tempFiles);
@@ -130,6 +132,9 @@ class FinalPdfComposer
         } catch (Throwable $exception) {
             throw new PdfCompositionException('PDF composition failed: '.$this->safeErrorMessage($exception), previous: $exception);
         } finally {
+            unset($pdf);
+            gc_collect_cycles();
+
             foreach ($tempFiles as $tempFile) {
                 if (is_file($tempFile)) {
                     @unlink($tempFile);
@@ -209,6 +214,8 @@ class FinalPdfComposer
                 default => $this->geometry->preserve($pageWidth, $pageHeight, $pageWidth, $pageHeight),
             };
 
+            $this->stampWatermark($pdf, $payload, $pageWidth, $pageHeight);
+
             $pdf->useImportedPage(
                 $template,
                 $placement->x,
@@ -263,6 +270,7 @@ class FinalPdfComposer
             $printedAttachmentTitles = [];
             $pdf->AddPage('P', [$pageWidth, $pageHeight]);
             $this->stampBodyHeaderFooter($pdf, $payload, $bodyPageNumber, $totalBodyPages, $pageWidth, $pageHeight);
+            $this->stampWatermark($pdf, $payload, $pageWidth, $pageHeight);
 
             $x = self::HORIZONTAL_MARGIN + 8;
             $y = self::BODY_CONTENT_TOP + 4;
@@ -415,6 +423,8 @@ class FinalPdfComposer
                     ),
                 );
 
+                $this->stampWatermark($pdf, $payload, $pageWidth, $pageHeight);
+
                 $pdf->useImportedPage(
                     $template,
                     $placement->x,
@@ -490,6 +500,7 @@ class FinalPdfComposer
                         $this->revisionApprovalSectionHeight($payload),
                         self::REVISION_APPROVAL_FALLBACK_TOP,
                     );
+                    $this->stampWatermark($pdf, $payload, $pageWidth, $pageHeight);
 
                     $pages[] = [
                         'source_page' => null,
@@ -579,6 +590,8 @@ class FinalPdfComposer
                 $this->revisionApprovalSectionHeight($payload),
             );
         }
+
+        $this->stampWatermark($pdf, $payload, $pageWidth, $pageHeight);
     }
 
     /**
@@ -1416,5 +1429,19 @@ class FinalPdfComposer
         } catch (Throwable) {
             return (string) $value;
         }
+    }
+
+    /**
+     * @param  array<string, mixed>  $payload
+     */
+    private function stampWatermark(Fpdi $pdf, array $payload, float $pageWidth, float $pageHeight): void
+    {
+        $stampConfig = $payload['watermark_stamp'] ?? null;
+
+        if (! is_array($stampConfig) || $stampConfig === []) {
+            return;
+        }
+
+        $this->watermarkStamp->render($pdf, $stampConfig, $pageWidth, $pageHeight);
     }
 }

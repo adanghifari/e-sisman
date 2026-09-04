@@ -323,7 +323,9 @@ class DocumentController extends Controller
                 if ($submittedAt !== null) {
                     $document->snapshotOfficialPreparer();
                     $this->claimTDocumentNumber($document, $request->user()->id);
-                    app(DocumentFileNumbering::class)->assignMissingNumbers($document);
+                    $numbering = app(DocumentFileNumbering::class);
+                    $numbering->assignMissingNumbers($document);
+                    $numbering->compactActiveAttachmentNumbers($document);
                     $this->recordOfficialPreparerApproval($document, $request->user()->id, $submittedAt);
                 }
 
@@ -747,7 +749,7 @@ class DocumentController extends Controller
             ->map(function (mixed $attachment, int $index) use ($titles, $orders): array {
                 return [
                     'file' => $attachment,
-                    'title' => trim((string) $titles->get($index, '')),
+                    'title' => trim((string) ($titles->get($index) ?? '')),
                     'order' => max(1, (int) ($orders->get($index) ?: ($index + 1))),
                     'index' => $index,
                 ];
