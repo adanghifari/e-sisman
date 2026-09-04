@@ -117,7 +117,7 @@ class DocumentAutosaveTest extends TestCase
         $this->assertSame('Draft Autosave Prosedur Updated', $draft->nama_dokumen);
     }
 
-    public function test_autosave_creates_new_draft_when_document_number_changes(): void
+    public function test_autosave_updates_same_draft_when_document_number_changes(): void
     {
         [$user, $businessProcess, $businessFunction, $department] = $this->autosaveFixture();
 
@@ -144,15 +144,54 @@ class DocumentAutosaveTest extends TestCase
             ])
             ->assertOk();
 
-        $this->assertNotSame($firstResponse->json('draft_id'), $secondResponse->json('draft_id'));
+        $this->assertSame($firstResponse->json('draft_id'), $secondResponse->json('draft_id'));
+        $this->assertSame(1, Document::query()->where('user_id', $user->id)->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::DRAFT))->count());
         $this->assertDatabaseHas('t_document', [
             'id' => $firstResponse->json('draft_id'),
-            'nomor_dokumen' => 'PS-OPS-81',
-        ]);
-        $this->assertDatabaseHas('t_document', [
-            'id' => $secondResponse->json('draft_id'),
+            'nama_dokumen' => 'Draft Nomor Kedua',
             'nomor_dokumen' => 'PS-OPS-82',
         ]);
+    }
+
+    public function test_autosave_works_for_level_4_revision_document(): void
+    {
+        [$user, $businessProcess, $businessFunction, $department] = $this->autosaveFixture();
+
+        $level2 = \App\Models\DocumentLevel::query()->firstOrCreate(['kode' => 'level-2'], ['nama_level' => 'Level II', 'nama_dokumen' => 'Prosedur', 'prefix' => 'PS']);
+        \App\Models\DocumentLevel::query()->firstOrCreate(['kode' => 'level-4'], ['nama_level' => 'Level IV', 'nama_dokumen' => 'Formulir', 'prefix' => 'FM']);
+        DocumentType::query()->firstOrCreate(['nama_types' => 'Form']);
+        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        $masterDoc = Document::create([
+            'm_document_level_id' => $level2->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => DocumentType::query()->where('nama_types', 'Prosedur')->value('id'),
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Master Prosedur',
+            'nomor_dokumen' => 'PS-OPS-01',
+            'nomor_revisi' => 0,
+        ]);
+
+        $user->forceFill(['m_department_id' => $department->id])->save();
+        $masterDoc->departments()->attach($department->id);
+
+        $response = $this->actingAs($user)
+            ->postJson(route('documents.autosave', 'level-4'), [
+                'revised_from' => $masterDoc->id,
+                'catatan_revisi' => 'Revisi tahap 1',
+            ])
+            ->assertOk()
+            ->assertJson(['saved' => true]);
+
+        $draftId = $response->json('draft_id');
+        $draft = Document::query()->findOrFail($draftId);
+
+        $this->assertSame(StatusDocument::DRAFT, $draft->status->nama_status);
+        $this->assertSame($masterDoc->id, $draft->revised_from);
+        $this->assertSame('revision', $draft->request_type);
+        $this->assertSame('PS-OPS-01', $draft->nomor_dokumen);
+        $this->assertSame('Revisi tahap 1', $draft->catatan_revisi);
     }
 
     private function autosaveFixture(): array

@@ -586,7 +586,7 @@ class DocumentController extends Controller
             'department_ids' => ['nullable', 'array'],
             'department_ids.*' => ['integer', Rule::exists('departments', 'id')],
             'official_preparer_id' => ['nullable', 'integer', Rule::exists('users', 'id')],
-            'nomor_dokumen_suffix' => $this->documentNumberSuffixRules(true),
+            'nomor_dokumen_suffix' => ['nullable', 'string', 'max:50'],
             'nomor_revisi' => ['nullable', 'string', 'max:20'],
             'tanggal_terbit' => ['nullable', 'date'],
             'catatan_revisi' => ['nullable', 'string', 'max:1000'],
@@ -665,8 +665,6 @@ class DocumentController extends Controller
         ?Document $revisionSource,
         ?string $documentNumber,
     ): ?Document {
-        $draft = null;
-
         if (filled($request->input('draft_id'))) {
             $draft = Document::query()
                 ->with('status')
@@ -682,15 +680,19 @@ class DocumentController extends Controller
             ->where('revised_from', $revisionSource?->id)
             ->where('request_type', $revisionSource !== null ? 'revision' : null);
 
-        if (! filled($documentNumber)) {
-            return $query
-                ->whereNull('nomor_dokumen')
+        if (filled($documentNumber)) {
+            $matchingNumberDraft = (clone $query)
+                ->where('nomor_dokumen', $documentNumber)
                 ->latest('id')
                 ->first();
+
+            if ($matchingNumberDraft !== null) {
+                return $matchingNumberDraft;
+            }
         }
 
-        return $query
-            ->where('nomor_dokumen', $documentNumber)
+        return (clone $query)
+            ->whereNull('nomor_dokumen')
             ->latest('id')
             ->first();
     }
