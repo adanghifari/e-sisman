@@ -19,6 +19,63 @@ class OverviewTest extends TestCase
 
     public function test_overview_returns_published_procedures_with_instruction_children(): void
     {
+        $data = $this->createOverviewDocuments();
+        $user = $data['user'];
+        $department = $data['department'];
+        $businessFunction = $data['businessFunction'];
+
+        $response = $this->actingAs($user)
+            ->get(route('reports.index', [
+                'procedure' => 'PS-OVR',
+                'instruction' => 'Bongkar',
+                'department_id' => $department->id,
+                'business_function_id' => $businessFunction->id,
+            ]));
+
+        $rows = $response->viewData('overviewRows');
+        $firstRow = $rows->getCollection()->first();
+
+        $response->assertOk();
+        $this->assertSame(10, $rows->perPage());
+        $this->assertSame('PS-OVR-01', $firstRow['number']);
+        $this->assertSame('00.01', $firstRow['revision']);
+        $this->assertSame('IK-OVR-01', $firstRow['instructions']->first()['number']);
+        $this->assertSame('Department Overview', $firstRow['departments']->first());
+        $this->assertSame('Fungsi Overview', $firstRow['business_function']);
+        $this->assertEquals([
+            'procedure' => 'PS-OVR',
+            'instruction' => 'Bongkar',
+            'department_id' => (string) $department->id,
+            'business_function_id' => (string) $businessFunction->id,
+        ], $response->viewData('overviewFilters'));
+    }
+
+    public function test_overview_export_downloads_flat_procedure_and_instruction_rows(): void
+    {
+        $data = $this->createOverviewDocuments();
+
+        $response = $this->actingAs($data['user'])
+            ->get(route('reports.export', [
+                'procedure' => 'PS-OVR',
+                'instruction' => 'Bongkar',
+                'department_id' => $data['department']->id,
+                'business_function_id' => $data['businessFunction']->id,
+            ]));
+
+        $response
+            ->assertOk()
+            ->assertHeader('content-type', 'text/csv; charset=UTF-8');
+
+        $content = $response->streamedContent();
+
+        $this->assertStringContainsString('No,Kategori,"Nama Dokumen","Nomor Dokumen",Revisi,"Induk Prosedur",Department,Proses/Fungsi,"Tanggal Terbit",Status', $content);
+        $this->assertStringContainsString('1,Prosedur,"Prosedur Bongkar Muat",PS-OVR-01,00.01,-,"Department Overview","Fungsi Overview"', $content);
+        $this->assertStringContainsString('2,"Instruksi Kerja","Instruksi Kerja Bongkar Curah",IK-OVR-01,00.00,"PS-OVR-01 - Prosedur Bongkar Muat","Department Overview","Fungsi Overview"', $content);
+        $this->assertStringNotContainsString('Request Obsolete Tidak Ditampilkan', $content);
+    }
+
+    private function createOverviewDocuments(): array
+    {
         $user = User::factory()->create([
             'nik' => '000000',
             'email' => 'developer@example.com',
@@ -91,29 +148,10 @@ class OverviewTest extends TestCase
             'request_type' => 'obsolete',
         ]);
 
-        $response = $this->actingAs($user)
-            ->get(route('reports.index', [
-                'procedure' => 'PS-OVR',
-                'instruction' => 'Bongkar',
-                'department_id' => $department->id,
-                'business_function_id' => $businessFunction->id,
-            ]));
-
-        $rows = $response->viewData('overviewRows');
-        $firstRow = $rows->getCollection()->first();
-
-        $response->assertOk();
-        $this->assertSame(10, $rows->perPage());
-        $this->assertSame('PS-OVR-01', $firstRow['number']);
-        $this->assertSame('00.01', $firstRow['revision']);
-        $this->assertSame('IK-OVR-01', $firstRow['instructions']->first()['number']);
-        $this->assertSame('Department Overview', $firstRow['departments']->first());
-        $this->assertSame('Fungsi Overview', $firstRow['business_function']);
-        $this->assertEquals([
-            'procedure' => 'PS-OVR',
-            'instruction' => 'Bongkar',
-            'department_id' => (string) $department->id,
-            'business_function_id' => (string) $businessFunction->id,
-        ], $response->viewData('overviewFilters'));
+        return [
+            'user' => $user,
+            'department' => $department,
+            'businessFunction' => $businessFunction,
+        ];
     }
 }

@@ -13,6 +13,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\Request;
 use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Symfony\Component\HttpFoundation\StreamedResponse;
 
 class OverviewController extends Controller
 {
@@ -32,8 +33,56 @@ class OverviewController extends Controller
         return view('reporting.index', [
             'overviewFilters' => $filters,
             'overviewRows' => $this->overviewRows($procedures, $filters, $instructionLevelId),
-            'departments' => Department::query()->active()->orderBy('nama_department')->get(),
-            'businessFunctions' => BusinessFunction::query()->active()->orderBy('nama_proses_fungsi')->get(),
+            'departmentOptions' => ['' => 'Semua Department'] + Department::query()
+                ->active()
+                ->orderBy('nama_department')
+                ->pluck('nama_department', 'id')
+                ->all(),
+            'businessFunctionOptions' => ['' => 'Semua Proses / Fungsi'] + BusinessFunction::query()
+                ->active()
+                ->orderBy('nama_proses_fungsi')
+                ->pluck('nama_proses_fungsi', 'id')
+                ->all(),
+        ]);
+    }
+
+    public function export(Request $request): StreamedResponse
+    {
+        $filters = $this->filters($request);
+        $procedureLevelId = $this->documentLevelId('level-2');
+        $instructionLevelId = $this->documentLevelId('level-3');
+        $procedures = $this->procedureQuery($filters, $procedureLevelId, $instructionLevelId)
+            ->with(['businessFunction', 'departments', 'status'])
+            ->orderBy('nama_dokumen')
+            ->orderBy('nomor_dokumen')
+            ->get();
+        $rows = $this->exportRows($procedures, $filters, $instructionLevelId);
+        $filename = 'overview-dokumen-'.now()->format('Ymd-His').'.csv';
+
+        return response()->streamDownload(function () use ($rows): void {
+            $output = fopen('php://output', 'w');
+
+            fwrite($output, "\xEF\xBB\xBF");
+            fputcsv($output, [
+                'No',
+                'Kategori',
+                'Nama Dokumen',
+                'Nomor Dokumen',
+                'Revisi',
+                'Induk Prosedur',
+                'Department',
+                'Proses/Fungsi',
+                'Tanggal Terbit',
+                'Status',
+            ]);
+
+            foreach ($rows as $row) {
+                fputcsv($output, $row);
+            }
+
+            fclose($output);
+        }, $filename, [
+            'Content-Type' => 'text/csv; charset=UTF-8',
         ]);
     }
 
@@ -115,6 +164,38 @@ class OverviewController extends Controller
         return $procedures;
     }
 
+    private function exportRows(Collection $procedures, array $filters, ?int $instructionLevelId): Collection
+    {
+        $procedureIds = $procedures->pluck('id');
+        $instructions = Document::query()
+            ->with(['businessFunction', 'departments', 'status'])
+            ->whereIn('reference', $procedureIds)
+            ->where('m_document_level_id', $instructionLevelId)
+            ->where($this->publishedDocumentScope())
+            ->when($filters['instruction'] !== '', fn (Builder $query) => $query->where('nama_dokumen', 'like', '%'.$filters['instruction'].'%'))
+            ->orderBy('nama_dokumen')
+            ->get()
+            ->groupBy('reference');
+        $counter = 1;
+
+        return $procedures->flatMap(function (Document $procedure) use ($instructions, &$counter): array {
+            $rows = [
+                $this->formatExportRow($counter++, 'Prosedur', $procedure),
+            ];
+
+            foreach ($instructions->get($procedure->id, collect()) as $instruction) {
+                $rows[] = $this->formatExportRow(
+                    $counter++,
+                    'Instruksi Kerja',
+                    $instruction,
+                    trim(($procedure->nomor_dokumen ?: '-').' - '.$procedure->nama_dokumen),
+                );
+            }
+
+            return $rows;
+        })->values();
+    }
+
     private function formatProcedureRow(Document $procedure, Collection $instructions): array
     {
         return [
@@ -136,6 +217,22 @@ class OverviewController extends Controller
                     'business_function' => $instruction->businessFunction?->nama_proses_fungsi ?? '-',
                     'published_at' => $instruction->tanggal_terbit?->format('d M Y') ?? '-',
                 ]),
+        ];
+    }
+
+    private function formatExportRow(int $number, string $category, Document $document, string $parentProcedure = '-'): array
+    {
+        return [
+            $number,
+            $category,
+            $document->nama_dokumen,
+            $document->nomor_dokumen ?: '-',
+            Document::formatRevisionNumber((int) $document->nomor_revisi),
+            $parentProcedure,
+            $document->departments->pluck('nama_department')->join(', ') ?: '-',
+            $document->businessFunction?->nama_proses_fungsi ?? '-',
+            $document->tanggal_terbit?->format('d/m/Y') ?? '-',
+            $document->status?->nama_status ?? '-',
         ];
     }
 

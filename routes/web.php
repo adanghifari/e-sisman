@@ -100,6 +100,7 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::get('documents/master/{document}/files/{file}/preview', [DocumentMasterController::class, 'preview'])->name('documents.master.files.preview');
     Route::get('documents/master/{document}/generated', [DocumentMasterController::class, 'generatedFile'])->name('documents.master.generated.show');
     Route::get('reports', OverviewController::class)->name('reports.index');
+    Route::get('reports/export', [OverviewController::class, 'export'])->name('reports.export');
     Route::livewire('users', UserIndex::class)->name('users.index');
     Route::livewire('access-groups', AccessGroupIndex::class)->name('access-groups.index');
     Route::livewire('access-menus', AccessMenuIndex::class)->name('access-menus.index');
