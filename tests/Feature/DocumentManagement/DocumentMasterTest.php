@@ -394,6 +394,73 @@ class DocumentMasterTest extends TestCase
         $this->assertSame('PS-SMR-OBS-PRINT', $log->document_number_snapshot);
     }
 
+    public function test_obsolete_generated_preview_applies_obsolete_stamp_and_download_applies_copy_stamp(): void
+    {
+        $user = $this->userWithPermission('documents.obsolete.detail');
+        $downloadPermission = Permission::query()->firstOrCreate(
+            ['code' => 'documents.obsolete.download'],
+            [
+                'name' => 'documents.obsolete.download',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.obsolete.files.show',
+                'action' => 'download',
+            ],
+        );
+        $user->roles()->firstOrFail()->permissions()->syncWithoutDetaching([$downloadPermission->id]);
+
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        $obsoleteStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::OBSOLETE]);
+        $document = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Obsolete Dengan Watermark',
+            'nomor_dokumen' => 'IK-OPS-01-01',
+            'nomor_revisi' => 1,
+            'obsolete_at' => '2026-01-15',
+            'request_type' => 'revision',
+        ]);
+
+        $capturedStamps = [];
+        $this->mock(DynamicFinalDocumentRenderer::class, function ($mock) use (&$capturedStamps): void {
+            $mock->shouldReceive('canRender')->andReturn(true);
+            $mock->shouldReceive('render')
+                ->andReturnUsing(function ($doc, $context, $mode = null, $watermarkStamp = null) use (&$capturedStamps) {
+                    $capturedStamps[] = $watermarkStamp;
+
+                    return "%PDF-1.4\nfixture";
+                });
+            $mock->shouldReceive('fileName')->andReturn('final-document.pdf');
+        });
+
+        // 1. Preview inline -> OBSOLETE stamp
+        $this->actingAs($user)
+            ->get(route('documents.obsolete.generated.show', $document))
+            ->assertOk();
+
+        $this->assertCount(1, $capturedStamps);
+        $obsoleteStamp = $capturedStamps[0];
+        $this->assertIsArray($obsoleteStamp);
+        $this->assertSame('OBSOLETE', $obsoleteStamp['title']);
+        $this->assertSame('ESISMAN PT KBS', $obsoleteStamp['banner_text']);
+        $this->assertEquals([
+            ['label' => 'Nomor Dokumen', 'value' => 'IK-OPS-01-01'],
+            ['label' => 'Revisi Ke', 'value' => '00.01'],
+            ['label' => 'Tanggal Obsolete', 'value' => '15-01-2026'],
+        ], $obsoleteStamp['rows']);
+
+        // 2. Download -> COPY stamp
+        $this->actingAs($user)
+            ->get(route('documents.obsolete.generated.show', [$document, 'download' => 1]))
+            ->assertOk();
+
+        $this->assertCount(2, $capturedStamps);
+        $copyStamp = $capturedStamps[1];
+        $this->assertIsArray($copyStamp);
+        $this->assertSame('COPY', $copyStamp['title']);
+        $this->assertSame('ESISMAN PT KBS', $copyStamp['banner_text']);
+        $this->assertSame('Diunduh Oleh', $copyStamp['rows'][0]['label']);
+        $this->assertSame('Waktu Unduh', $copyStamp['rows'][1]['label']);
+        $this->assertSame('Unduhan Ke', $copyStamp['rows'][2]['label']);
+    }
+
     public function test_master_page_does_not_show_approved_obsolete_request_transaction(): void
     {
         $user = $this->userWithPermission('documents.master.view');

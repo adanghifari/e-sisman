@@ -306,6 +306,12 @@ class DocumentObsoleteController extends Controller
                 downloadTime: now(),
                 downloadCount: max(1, $downloadCount),
             );
+        } else {
+            $watermarkStamp = DocumentWatermarkStamp::forObsolete(
+                documentNumber: $this->masterDisplayNumber($document),
+                revision: $document->formatted_revision,
+                obsoleteAt: $document->obsolete_at ?? $document->updated_at,
+            );
         }
 
         $pdf = $renderer->render($document, $context, watermarkStamp: $watermarkStamp);
