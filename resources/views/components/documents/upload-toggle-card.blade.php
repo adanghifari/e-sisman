@@ -1,20 +1,20 @@
 @props([
     'title',
-    'buttonLabel',
+    'buttonLabel' => null,
     'tone' => 'slate',
     'badge' => null,
 ])
 
 @php
-    $cardClasses = [
+    $cardClasses = match ($tone ?? 'slate') {
         'sky' => 'border-sky-100 bg-sky-50/40',
-        'slate' => 'border-slate-200 bg-white',
-    ][$tone] ?? 'border-slate-200 bg-white';
+        default => 'border-slate-200 bg-white',
+    };
 
-    $buttonClasses = [
+    $buttonClasses = match ($tone ?? 'slate') {
         'sky' => 'border-sky-200 bg-white text-sky-700 hover:border-sky-300 hover:bg-sky-50 focus:ring-sky-200',
-        'slate' => 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-200',
-    ][$tone] ?? 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-200';
+        default => 'border-slate-300 bg-white text-slate-600 hover:bg-slate-50 focus:ring-slate-200',
+    };
 @endphp
 
 <div class="rounded-lg border px-4 py-4 {{ $cardClasses }}" data-document-upload>
@@ -29,17 +29,19 @@
             @endif
         </span>
 
-        <button
-            type="button"
-            class="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border px-4 text-sm font-semibold shadow-sm transition focus:outline-none focus:ring-2 {{ $buttonClasses }}"
-            data-document-upload-trigger
-            aria-expanded="false"
-        >
-            {{ $buttonLabel }}
-        </button>
+        @if ($buttonLabel)
+            <button
+                type="button"
+                class="inline-flex h-10 shrink-0 items-center justify-center rounded-lg border px-4 text-sm font-semibold shadow-sm transition focus:outline-none focus:ring-2 {{ $buttonClasses }}"
+                data-document-upload-trigger
+                aria-expanded="true"
+            >
+                {{ $buttonLabel }}
+            </button>
+        @endif
     </div>
 
-    <div class="mt-4 hidden" data-document-upload-panel>
+    <div class="mt-4" data-document-upload-panel>
         {{ $slot }}
     </div>
 </div>
