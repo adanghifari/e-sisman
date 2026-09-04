@@ -144,8 +144,10 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Detail Dokumen Master')
             ->assertSee('Imported Master Detail')
             ->assertSee('PS-SMR-IMD')
-            ->assertSee('Dokumen ini berasal dari imported existing master sebelum go-live')
-            ->assertSee('Catatan import: Dokumen hasil import arsip sebelum go-live.')
+            ->assertSee('Imported')
+            ->assertSee('Catatan Import')
+            ->assertSee('Dokumen hasil import arsip sebelum go-live.')
+            ->assertDontSee('Dokumen ini berasal dari imported existing master sebelum go-live')
             ->assertSee(route('documents.existing.imports.files.show', [$importedMaster, $file]), false)
             ->assertSee(route('documents.existing.imports.files.preview', [$importedMaster, $file]), false)
             ->assertSee('Lihat Dokumen')
@@ -156,6 +158,71 @@ class DocumentMasterTest extends TestCase
             ->get(route('documents.existing.imports.files.preview', [$importedMaster, $file]))
             ->assertOk()
             ->assertHeader('content-type', 'application/pdf');
+    }
+
+    public function test_imported_existing_master_can_be_obsoleted_from_master_detail(): void
+    {
+        Storage::fake('local');
+
+        $user = $this->userWithPermission('documents.master.imported.detail');
+        $importedMaster = $this->createImportedExistingMaster($user, [
+            'nama_dokumen' => 'Imported Master Untuk Obsolete',
+            'nomor_dokumen' => 'PS-SMR-OBS',
+            'catatan' => 'Catatan import awal.',
+        ]);
+        Storage::disk('local')->put('documents/imported-existing/imported-master.pdf', "%PDF-1.4\nfixture");
+        $file = $importedMaster->files()->create([
+            'type_file' => ImportedExistingDocumentFile::EXISTING_DOCUMENT,
+            'path_file' => 'documents/imported-existing/imported-master.pdf',
+            'uploaded_by' => $user->id,
+            'original_file_name' => 'imported-master.pdf',
+            'stored_file_name' => 'imported-master.pdf',
+            'file_size' => 16,
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.imported.show', $importedMaster))
+            ->assertOk()
+            ->assertSee('Obsolete');
+
+        $this->actingAs($user)
+            ->post(route('documents.master.imported.obsolete', $importedMaster), [
+                'catatan_obsolete' => 'Diganti oleh dokumen versi baru.',
+            ])
+            ->assertRedirect(route('documents.existing.imports.show', $importedMaster));
+
+        $this->assertDatabaseCount('imported_existing_documents', 1);
+        $this->assertDatabaseHas('imported_existing_documents', [
+            'id' => $importedMaster->id,
+            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
+            'catatan' => "Catatan import awal.\n\nAlasan obsolete: Diganti oleh dokumen versi baru.",
+        ]);
+        $this->assertNotNull($importedMaster->refresh()->tanggal_obsolete);
+        $this->assertSame(ImportedExistingDocumentFile::OBSOLETE_DOCUMENT, $file->refresh()->type_file);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.imported.show', $importedMaster))
+            ->assertNotFound();
+
+        $this->actingAs($user)
+            ->get(route('documents.existing.imports.show', $importedMaster))
+            ->assertOk()
+            ->assertSee('Alasan obsolete: Diganti oleh dokumen versi baru.')
+            ->assertSee('File Dokumen');
+    }
+
+    public function test_imported_existing_master_obsolete_action_accepts_existing_import_obsolete_permission(): void
+    {
+        $user = $this->userWithPermission('documents.obsolete.imports.create');
+        $importedMaster = $this->createImportedExistingMaster($user, [
+            'nama_dokumen' => 'Imported Master Dengan Permission Existing',
+            'nomor_dokumen' => 'PS-SMR-PER',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.imported.show', $importedMaster))
+            ->assertOk()
+            ->assertSee('Obsolete');
     }
 
     public function test_imported_obsolete_related_to_master_appears_once(): void
@@ -1428,6 +1495,8 @@ class DocumentMasterTest extends TestCase
         if ($permissionCode === 'documents.master.imported.detail') {
             foreach ([
                 ['documents.existing.imports.revision', 'documents.existing.imports.revisions.store', 'create'],
+                ['documents.master.imported.obsolete', 'documents.master.imported.obsolete', 'create'],
+                ['documents.existing.imports.detail', 'documents.existing.imports.show', 'view'],
                 ['documents.existing.imports.download', 'documents.existing.imports.files.show', 'download'],
                 ['documents.existing.imports.preview', 'documents.existing.imports.files.preview', 'preview'],
             ] as [$code, $route, $action]) {

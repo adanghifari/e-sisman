@@ -230,6 +230,7 @@ class DocumentMasterController extends Controller
             'masterDisplayNumber' => $importedExistingDocument->nomor_dokumen ?: '-',
             'revisionRequestDisplayNumber' => null,
             'canRequestRevision' => $request->user()?->hasPermission('documents.existing.imports.revision') ?? false,
+            'canRequestObsolete' => $this->canRequestImportedObsolete($request, $importedExistingDocument),
             'approvalFlowStages' => collect(),
             'contentFiles' => $importedExistingDocument->files
                 ->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)
@@ -238,9 +239,40 @@ class DocumentMasterController extends Controller
                 ->where('type_file', ImportedExistingDocumentFile::ATTACHMENT)
                 ->values(),
             'relatedObsoleteDocuments' => $this->relatedImportedObsoleteForImportedMaster($importedExistingDocument),
-            'importNotice' => $this->importedMasterNotice($importedExistingDocument),
+            'importNote' => $this->importedMasterNote($importedExistingDocument),
             'users' => User::query()->orderBy('name')->get(),
         ]);
+    }
+
+    public function obsoleteImported(Request $request, ImportedExistingDocument $importedExistingDocument): RedirectResponse
+    {
+        $importedExistingDocument->loadMissing('files');
+
+        abort_unless($importedExistingDocument->document_state === ImportedExistingDocument::STATE_MASTER, 404);
+        abort_unless($this->canRequestImportedObsolete($request, $importedExistingDocument), 403);
+
+        $validated = $request->validate([
+            'catatan_obsolete' => ['required', 'string', 'max:2000'],
+        ]);
+
+        DB::transaction(function () use ($importedExistingDocument, $validated): void {
+            $importedExistingDocument->update([
+                'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
+                'tanggal_obsolete' => now(),
+                'catatan' => $this->appendImportedObsoleteNote(
+                    $importedExistingDocument->catatan,
+                    $validated['catatan_obsolete'],
+                ),
+            ]);
+
+            $importedExistingDocument->files()
+                ->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)
+                ->update(['type_file' => ImportedExistingDocumentFile::OBSOLETE_DOCUMENT]);
+        });
+
+        return redirect()
+            ->route('documents.existing.imports.show', $importedExistingDocument)
+            ->with('status', 'Imported existing master berhasil diobsolete.');
     }
 
     public function obsolete(Request $request, Document $document): RedirectResponse
@@ -477,6 +509,27 @@ class DocumentMasterController extends Controller
     private function canRequestObsolete(Request $request, Document $document): bool
     {
         return $this->canRequestRevision($request, $document);
+    }
+
+    private function canRequestImportedObsolete(Request $request, ImportedExistingDocument $document): bool
+    {
+        if ($document->document_state !== ImportedExistingDocument::STATE_MASTER) {
+            return false;
+        }
+
+        return $request->user()?->hasAnyPermission([
+            'documents.master.imported.obsolete',
+            'documents.obsolete.imports.create',
+        ]) ?? false;
+    }
+
+    private function appendImportedObsoleteNote(?string $existingNote, string $obsoleteNote): string
+    {
+        $obsoleteNote = 'Alasan obsolete: '.$obsoleteNote;
+
+        return collect([$existingNote, $obsoleteNote])
+            ->filter(fn (?string $note): bool => filled($note))
+            ->implode("\n\n");
     }
 
     private function restoreBlockedMessage(Document $document, Document $activeMaster): string
@@ -760,14 +813,10 @@ class DocumentMasterController extends Controller
         return filled($document->nomor_revisi) ? (string) $document->nomor_revisi : '-';
     }
 
-    private function importedMasterNotice(ImportedExistingDocument $document): string
+    private function importedMasterNote(ImportedExistingDocument $document): string
     {
-        $notice = 'Dokumen ini berasal dari imported existing master sebelum go-live, sehingga riwayat approval V2 belum tersedia untuk versi awal ini.';
-
-        if (filled($document->catatan)) {
-            return $notice.' Catatan import: '.$document->catatan;
-        }
-
-        return $notice;
+        return filled($document->catatan)
+            ? (string) $document->catatan
+            : 'Tidak ada catatan import.';
     }
 }

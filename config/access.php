@@ -279,6 +279,13 @@ return [
             'action' => 'create',
         ],
         [
+            'code' => 'documents.master.imported.obsolete',
+            'name' => 'Obsolete Imported Existing Master',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.master.imported.obsolete',
+            'action' => 'create',
+        ],
+        [
             'code' => 'documents.existing.imports.download',
             'name' => 'Download File Arsip Dokumen Existing',
             'module' => 'Manajemen Dokumen',

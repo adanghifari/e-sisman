@@ -22,6 +22,10 @@
     'showApprovalHistory' => true,
     'originNotice' => null,
     'actionsNotice' => null,
+    'documentHistoryTitle' => 'Riwayat Dokumen',
+    'documentHistoryNotice' => null,
+    'documentNameBadge' => null,
+    'documentNameBadgeTone' => 'sky',
 ])
 
 @php
@@ -65,7 +69,12 @@
         <div class="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
             <div>
                 <h1 class="text-3xl font-bold tracking-normal text-slate-950 md:text-4xl">{{ $heading }}</h1>
-                <p class="mt-2 text-base font-medium text-slate-500">{{ $document->nama_dokumen }}</p>
+                <div class="mt-2 flex flex-wrap items-center gap-2">
+                    <p class="text-base font-medium text-slate-500">{{ $document->nama_dokumen }}</p>
+                    @if (filled($documentNameBadge))
+                        <x-ui.status-badge :label="$documentNameBadge" :tone="$documentNameBadgeTone" />
+                    @endif
+                </div>
             </div>
 
             <x-ui.status-badge :label="$stampLabel" :tone="$stampTone" class="mt-1" />
@@ -375,7 +384,11 @@
                     </section>
                 @endif
 
-                <x-documents.history-section :document-history="$documentHistory" />
+                <x-documents.history-section
+                    :document-history="$documentHistory"
+                    :title="$documentHistoryTitle"
+                    :notice="$documentHistoryNotice"
+                />
             </aside>
         </div>
     </div>
