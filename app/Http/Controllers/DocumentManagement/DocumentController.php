@@ -323,7 +323,9 @@ class DocumentController extends Controller
                 if ($submittedAt !== null) {
                     $document->snapshotOfficialPreparer();
                     $this->claimTDocumentNumber($document, $request->user()->id);
-                    app(DocumentFileNumbering::class)->assignMissingNumbers($document);
+                    $numbering = app(DocumentFileNumbering::class);
+                    $numbering->assignMissingNumbers($document);
+                    $numbering->compactActiveAttachmentNumbers($document);
                     $this->recordOfficialPreparerApproval($document, $request->user()->id, $submittedAt);
                 }
 

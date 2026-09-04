@@ -247,6 +247,43 @@ class DocumentAssignmentAccessTest extends TestCase
         $this->assertStringEndsWith('-02', $secondAttachment->refresh()->document_number);
     }
 
+    public function test_submitted_middle_attachment_delete_closes_number_gap(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill(['nomor_dokumen' => 'PS-QA-01'])->save();
+        $firstAttachment = $this->attachmentFile($document, 'lampiran-1.pdf', 'PS-QA-01-02', 1);
+        $middleAttachment = $this->attachmentFile($document, 'lampiran-2.pdf', 'PS-QA-01-03', 2);
+        $lastAttachment = $this->attachmentFile($document, 'lampiran-3.pdf', 'PS-QA-01-04', 3);
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'remove_existing_files' => [$middleAttachment->id],
+                'existing_attachment_titles' => [
+                    $firstAttachment->id => 'Lampiran 1',
+                    $lastAttachment->id => 'Lampiran 3',
+                ],
+                'existing_attachment_orders' => [
+                    $firstAttachment->id => 1,
+                    $lastAttachment->id => 2,
+                ],
+            ]);
+
+        $response->assertRedirect(route('documents.approval.show', $document));
+        $this->assertDatabaseMissing('t_document_files', ['id' => $middleAttachment->id]);
+        $this->assertSame('FMPS-QA-01-02', $firstAttachment->refresh()->document_number);
+        $this->assertSame('FMPS-QA-01-03', $lastAttachment->refresh()->document_number);
+    }
+
     public function test_submitted_attachment_update_compacts_active_attachment_numbers(): void
     {
         Storage::fake('local');

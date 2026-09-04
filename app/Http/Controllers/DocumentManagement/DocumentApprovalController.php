@@ -1133,17 +1133,7 @@ class DocumentApprovalController extends Controller
 
         $document->unsetRelation('files');
         $numbering->assignMissingNumbers($document);
-
-        $document->files()
-            ->where('type_file', 'attachment')
-            ->orderBy('id')
-            ->get()
-            ->sortBy(fn (DocumentFile $file): string => $file->attachmentSortKey())
-            ->values()
-            ->each(fn (DocumentFile $file, int $index) => $file->forceFill([
-                'document_number' => $numbering->attachmentNumberForPosition($document, $index + 1),
-                'updated_at' => now(),
-            ])->save());
+        $numbering->compactActiveAttachmentNumbers($document);
     }
 
     private function clearApprovalPreviewArtifacts(Document $document): void

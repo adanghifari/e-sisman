@@ -85,6 +85,24 @@ class DocumentFileNumbering
         return $this->fileFamilyPrefix($document).'-'.str_pad((string) $suffix, 2, '0', STR_PAD_LEFT);
     }
 
+    public function compactActiveAttachmentNumbers(Document $document): void
+    {
+        $document->files()
+            ->where('type_file', 'attachment')
+            ->orderBy('id')
+            ->get()
+            ->sortBy(fn (DocumentFile $file): string => sprintf(
+                '%010d-%010d',
+                $file->attachment_order ?? PHP_INT_MAX,
+                $file->id,
+            ))
+            ->values()
+            ->each(fn (DocumentFile $file, int $index) => $file->forceFill([
+                'document_number' => $this->attachmentNumberForPosition($document, $index + 1),
+                'updated_at' => now(),
+            ])->save());
+    }
+
     public function assignMissingNumbers(Document $document): void
     {
         $document->loadMissing('files');
@@ -153,9 +171,14 @@ class DocumentFileNumbering
     private function fileFamilyPrefix(Document $document): string
     {
         $document->loadMissing('documentLevel', 'revisedFrom.documentLevel');
-        $level = $document->documentLevel?->kode === 'level-4' && $document->revisedFrom !== null
-            ? $document->revisedFrom->documentLevel
-            : $document->documentLevel;
+        $levelSource = $document;
+
+        while ($levelSource->documentLevel?->kode === 'level-4' && $levelSource->revisedFrom !== null) {
+            $levelSource = $levelSource->revisedFrom;
+            $levelSource->loadMissing('documentLevel', 'revisedFrom.documentLevel');
+        }
+
+        $level = $levelSource->documentLevel;
 
         $prefix = match ($level?->kode) {
             'level-1' => 'FMSM',
