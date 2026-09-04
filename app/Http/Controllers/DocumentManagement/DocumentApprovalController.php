@@ -1021,7 +1021,7 @@ class DocumentApprovalController extends Controller
         $orders = collect($request->input('attachment_orders', []))->values();
 
         foreach (array_values($request->file('attachments', [])) as $index => $uploadedFile) {
-            $title = trim((string) $titles->get($index, ''));
+            $title = trim((string) ($titles->get($index) ?? ''));
             $order = max(1, (int) ($orders->get($index) ?: ($index + 1)));
 
             $this->storeSubmittedFile($document, $uploadedFile, 'attachment', $request->user()->id, $title ?: null, $order);
