@@ -1474,10 +1474,9 @@ class CreateDocumentTest extends TestCase
             ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
             ->assertOk()
             ->assertSee('Dokumen Level IV: Form Instruksi Kerja')
-            ->assertSee('FMIK')
-            ->assertSee('MRI')
-            ->assertSee('01')
-            ->assertSee('04');
+            ->assertSeeInOrder(['FMIK', 'MRI', '01', '04', '01'])
+            ->assertSee('name="nomor_dokumen_suffix"', false)
+            ->assertSee('readonly', false);
 
         $this->actingAs($submitter)
             ->post(route('documents.store', 'level-4'), [

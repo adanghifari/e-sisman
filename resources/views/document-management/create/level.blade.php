@@ -207,6 +207,12 @@
         $documentNumberSuffixDefault = $draft?->nomor_dokumen
             ? \Illuminate\Support\Str::afterLast($draft->nomor_dokumen, '-')
             : $revisionDocumentSuffix;
+        $revisionFormDisplayNumber = $revisionSource
+            ? ($draft?->nomor_lembar_revisi ?: app(\App\Support\DocumentFiles\DocumentFileNumbering::class)->revisionFormNumber($revisionSource))
+            : null;
+        $revisionFormDisplaySegments = $revisionFormDisplayNumber
+            ? collect(explode('-', $revisionFormDisplayNumber))->filter()->values()
+            : collect();
         $selectedBusinessProcessId = old('m_proses_bisnis_id', $draft?->m_proses_bisnis_id ?? $revisionSource?->m_proses_bisnis_id);
         $selectedBusinessFunctionId = old('m_proses_fungsi_id', $draft?->m_proses_fungsi_id ?? $revisionSource?->m_proses_fungsi_id);
         $selectedReferenceId = old('reference', $draft?->reference ?? $revisionSource?->reference);
@@ -238,9 +244,15 @@
                 ['value' => $selectedProcedureNumberSegments->get(0, 'XXX'), 'target' => 'procedure-reference-0'],
                 ['value' => $selectedProcedureNumberSegments->get(1, 'YY'), 'target' => 'procedure-reference-1'],
             ],
-            'level-4' => $revisionDocumentNumberSegments,
+            'level-4' => $revisionFormDisplaySegments->slice(1, -1)->values()->all() ?: $revisionDocumentNumberSegments,
             default => [],
         };
+        $documentNumberPrefix = $levelKey === 'level-4' && $revisionFormDisplaySegments->isNotEmpty()
+            ? $revisionFormDisplaySegments->first()
+            : $documentNumberPrefix;
+        $documentNumberSuffixDefault = $levelKey === 'level-4' && $revisionFormDisplaySegments->isNotEmpty()
+            ? $revisionFormDisplaySegments->last()
+            : $documentNumberSuffixDefault;
         $assignableUsers = \App\Models\User::query()
             ->with('department')
             ->whereKeyNot(auth()->id())
@@ -785,6 +797,7 @@
                                 :prefix="$documentNumberPrefix"
                                 :segments="$documentNumberSegments"
                                 :default-value="$documentNumberSuffixDefault"
+                                :readonly-suffix="(bool) $revisionSource"
                             />
 
                             <label class="block">
@@ -1218,7 +1231,7 @@
                         return;
                     }
 
-                    if (suffixInput.dataset.userEdited === 'true') {
+                    if (suffixInput.readOnly || suffixInput.dataset.userEdited === 'true') {
                         return;
                     }
 
@@ -1239,7 +1252,7 @@
                 document.addEventListener('input', (event) => {
                     const suffixInput = event.target.closest('input[name="nomor_dokumen_suffix"]');
 
-                    if (suffixInput) {
+                    if (suffixInput && !suffixInput.readOnly) {
                         suffixInput.dataset.userEdited = 'true';
                     }
                 });
