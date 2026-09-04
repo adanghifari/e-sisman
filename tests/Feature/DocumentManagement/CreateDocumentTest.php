@@ -1444,6 +1444,93 @@ class CreateDocumentTest extends TestCase
         $this->assertSame(2, Document::query()->where('revised_from', $source->id)->where('request_type', 'revision')->count());
     }
 
+    public function test_revision_submit_with_new_attachment_compacts_active_attachment_numbers(): void
+    {
+        Storage::fake('local');
+
+        [$source, $submitter, $officialPreparer] = $this->revisionCreationFixture();
+        $approvedStatus = StatusDocument::query()->where('nama_status', StatusDocument::APPROVED)->firstOrFail();
+        $formLevel = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $formType = DocumentType::query()->where('nama_types', 'Form')->firstOrFail();
+
+        foreach ([
+            ['Lampiran BAPP', 'FMPS-SMR-010-02', 1],
+            ['Lampiran Sketsa', 'FMPS-SMR-010-03', 2],
+        ] as [$title, $number, $order]) {
+            $source->files()->create([
+                'type_file' => 'attachment',
+                'document_number' => $number,
+                'attachment_title' => $title,
+                'attachment_order' => $order,
+                'path_file' => "documents/{$source->id}/{$number}.pdf",
+                'uploaded_by' => $source->user_id,
+                'updated_at' => now(),
+                'original_file_name' => "{$title}.pdf",
+                'stored_file_name' => "{$title}.pdf",
+                'file_size' => 24,
+            ]);
+            Storage::disk('local')->put("documents/{$source->id}/{$number}.pdf", 'PDF test content');
+        }
+
+        $approvedRevision = Document::create([
+            'm_document_level_id' => $formLevel->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $formType->id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $officialPreparer->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Revisi Lama Approved',
+            'nomor_dokumen' => 'PS-SMR-010',
+            'nomor_lembar_revisi' => 'FMPS-SMR-010-01',
+            'nomor_revisi' => 1,
+            'approved_at' => now()->subDay(),
+        ]);
+        $approvedRevision->files()->create([
+            'type_file' => 'attachment',
+            'document_number' => 'FMPS-SMR-010-04',
+            'attachment_title' => 'Lampiran Approved Lama',
+            'attachment_order' => 3,
+            'path_file' => "documents/{$approvedRevision->id}/approved-lama.pdf",
+            'uploaded_by' => $submitter->id,
+            'updated_at' => now()->subDay(),
+            'original_file_name' => 'approved-lama.pdf',
+            'stored_file_name' => 'approved-lama.pdf',
+            'file_size' => 24,
+        ]);
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-4'), $this->revisionSubmitPayload($source, $officialPreparer, [
+                'nama_dokumen' => 'Revisi Baru Dengan Lampiran',
+                'included_attachment_ids' => $source->files()->where('type_file', 'attachment')->pluck('id')->all(),
+                'attachment_titles' => ['Tambah Dari Pengajuan Revisi'],
+                'attachment_orders' => [3],
+                'attachments' => [
+                    UploadedFile::fake()->create('tambah-dari-pengajuan.pdf', 24, 'application/pdf'),
+                ],
+            ]))
+            ->assertRedirect(route('documents.create'));
+
+        $revision = Document::query()
+            ->where('nama_dokumen', 'Revisi Baru Dengan Lampiran')
+            ->firstOrFail();
+
+        $this->assertSame([
+            ['number' => 1, 'title' => 'Lembar Revisi', 'document_number' => 'FMPS-SMR-010-01'],
+            ['number' => 2, 'title' => 'Lampiran BAPP', 'document_number' => 'FMPS-SMR-010-02'],
+            ['number' => 3, 'title' => 'Lampiran Sketsa', 'document_number' => 'FMPS-SMR-010-03'],
+            ['number' => 4, 'title' => 'Tambah Dari Pengajuan Revisi', 'document_number' => 'FMPS-SMR-010-04'],
+        ], collect(app(FinalArtifactGenerator::class)->collectAttachments($revision))->map(
+            fn (array $attachment): array => [
+                'number' => $attachment['number'],
+                'title' => $attachment['title'],
+                'document_number' => $attachment['document_number'],
+            ],
+        )->all());
+    }
+
     public function test_level_four_revision_from_work_instruction_uses_fmik_document_number(): void
     {
         $submitter = User::factory()->create();

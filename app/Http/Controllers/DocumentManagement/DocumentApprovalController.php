@@ -68,6 +68,9 @@ class DocumentApprovalController extends Controller
             'revisedFrom.files.uploader',
         ]);
 
+        $this->normalizeSubmittedSourceAttachmentLineage($document);
+        $document->load('files.uploader');
+
         $obsoleteSourceContentFiles = $document->request_type === 'obsolete'
             ? $document->revisedFrom?->files
                 ->whereIn('type_file', ['filled_template', 'imported_document', 'revision_content'])
@@ -339,7 +342,7 @@ class DocumentApprovalController extends Controller
 
         DB::transaction(function () use ($request, $document, $validated): void {
             $document = Document::query()
-                ->with(['status', 'documentLevel', 'revisedFrom.documentLevel', 'files'])
+                ->with(['status', 'documentLevel', 'revisedFrom.documentLevel', 'revisedFrom.files', 'files'])
                 ->whereKey($document->id)
                 ->lockForUpdate()
                 ->firstOrFail();
@@ -384,7 +387,16 @@ class DocumentApprovalController extends Controller
                 }
             }
 
+            $this->normalizeSubmittedSourceAttachmentLineage($document);
+            $document->load('files');
+
+            $includedSourceAttachmentIds = isset($validated['sync_existing_attachment_inclusion'])
+                ? ($validated['included_existing_attachment_ids'] ?? [])
+                : null;
+            $reservedAttachmentNumbers = $this->excludedSubmittedSourceAttachmentNumbers($document, $includedSourceAttachmentIds);
+
             $this->removeSubmittedFiles($document, $validated['remove_existing_files'] ?? []);
+            $this->syncSubmittedSourceAttachmentInclusion($document, $includedSourceAttachmentIds);
             $this->updateSubmittedAttachments($document, $validated['existing_attachment_titles'] ?? [], $validated['existing_attachment_orders'] ?? []);
             $this->replaceSubmittedContentFiles($request, $document);
             $this->replaceSubmittedAttachments($request, $document);
@@ -394,7 +406,7 @@ class DocumentApprovalController extends Controller
                 $this->syncDocumentNumberRegistry($document, $oldDocumentNumber, $request->user()->id);
             }
 
-            $this->renumberSubmittedFiles($document);
+            $this->renumberSubmittedFiles($document, $reservedAttachmentNumbers);
 
             $this->clearApprovalPreviewArtifacts($document);
 
@@ -753,6 +765,9 @@ class DocumentApprovalController extends Controller
             'attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:50'],
             'remove_existing_files' => ['nullable', 'array'],
             'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
+            'sync_existing_attachment_inclusion' => ['nullable', 'boolean'],
+            'included_existing_attachment_ids' => ['nullable', 'array'],
+            'included_existing_attachment_ids.*' => ['integer', Rule::exists('t_document_files', 'id')],
             'existing_attachment_titles' => ['nullable', 'array'],
             'existing_attachment_titles.*' => ['nullable', 'string', 'max:255'],
             'existing_attachment_orders' => ['nullable', 'array'],
@@ -1011,7 +1026,7 @@ class DocumentApprovalController extends Controller
         $orders = collect($request->input('attachment_orders', []))->values();
 
         foreach (array_values($request->file('attachments', [])) as $index => $uploadedFile) {
-            $title = trim((string) $titles->get($index, ''));
+            $title = trim((string) ($titles->get($index) ?? ''));
             $order = max(1, (int) ($orders->get($index) ?: ($index + 1)));
 
             $this->storeSubmittedFile($document, $uploadedFile, 'attachment', $request->user()->id, $title ?: null, $order);
@@ -1081,14 +1096,25 @@ class DocumentApprovalController extends Controller
             ->unique();
 
         foreach ($fileIds as $fileId) {
-            $document->files()
+            $file = $document->files()
                 ->whereKey($fileId)
                 ->where('type_file', 'attachment')
-                ->update([
-                    'attachment_title' => filled($titles[$fileId] ?? null) ? trim((string) $titles[$fileId]) : null,
-                    'attachment_order' => filled($orders[$fileId] ?? null) ? max(1, (int) $orders[$fileId]) : null,
-                    'updated_at' => now(),
-                ]);
+                ->first();
+
+            if ($file === null) {
+                continue;
+            }
+
+            $attributes = [
+                'attachment_title' => filled($titles[$fileId] ?? null) ? trim((string) $titles[$fileId]) : null,
+                'updated_at' => now(),
+            ];
+
+            if (array_key_exists($fileId, $orders) && $file->source_file_id === null) {
+                $attributes['attachment_order'] = filled($orders[$fileId] ?? null) ? max(1, (int) $orders[$fileId]) : null;
+            }
+
+            $file->forceFill($attributes)->save();
         }
     }
 
@@ -1101,8 +1127,126 @@ class DocumentApprovalController extends Controller
         $document->files()
             ->whereIn('id', $fileIds)
             ->where('type_file', 'attachment')
+            ->whereNull('source_file_id')
             ->get()
             ->each(fn (DocumentFile $file) => $this->deleteDocumentFile($file));
+    }
+
+    /**
+     * @return array<int, string|null>
+     */
+    private function excludedSubmittedSourceAttachmentNumbers(Document $document, ?array $includedFileIds): array
+    {
+        if ($includedFileIds === null) {
+            return [];
+        }
+
+        $includedFileIds = collect($includedFileIds)
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        return $document->files()
+            ->where('type_file', 'attachment')
+            ->whereNotNull('source_file_id')
+            ->whereNotIn('id', $includedFileIds)
+            ->pluck('document_number')
+            ->all();
+    }
+
+    private function syncSubmittedSourceAttachmentInclusion(Document $document, ?array $includedFileIds): void
+    {
+        if ($includedFileIds === null) {
+            return;
+        }
+
+        $includedFileIds = collect($includedFileIds)
+            ->map(fn (mixed $id): int => (int) $id)
+            ->all();
+
+        $document->files()
+            ->where('type_file', 'attachment')
+            ->whereNotNull('source_file_id')
+            ->whereNotIn('id', $includedFileIds)
+            ->get()
+            ->each(fn (DocumentFile $file) => $this->deleteDocumentFile($file));
+    }
+
+    private function normalizeSubmittedSourceAttachmentLineage(Document $document): void
+    {
+        if ($document->request_type !== 'revision' || $document->revised_from === null) {
+            return;
+        }
+
+        $sourceDocument = $document->revisedFrom;
+
+        if ($sourceDocument === null) {
+            return;
+        }
+
+        $sourceAttachments = $sourceDocument
+            ->availableRevisionSourceAttachments()
+            ->filter(fn (DocumentFile $file): bool => filled($file->document_number))
+            ->keyBy('document_number');
+
+        if ($sourceAttachments->isEmpty()) {
+            return;
+        }
+
+        $currentAttachments = $document->files()
+            ->where('type_file', 'attachment')
+            ->whereNull('source_file_id')
+            ->whereNotNull('document_number')
+            ->orderBy('id')
+            ->get()
+            ->groupBy('document_number');
+
+        foreach ($currentAttachments as $documentNumber => $candidates) {
+            $source = $sourceAttachments->get($documentNumber);
+
+            if ($source === null) {
+                continue;
+            }
+
+            $bestCandidate = $candidates
+                ->sortByDesc(fn (DocumentFile $candidate): int => $this->sourceAttachmentMatchScore($candidate, $source))
+                ->first();
+
+            if ($bestCandidate === null || $this->sourceAttachmentMatchScore($bestCandidate, $source) <= 0) {
+                continue;
+            }
+
+            $bestCandidate->forceFill([
+                'source_file_id' => $source->id,
+                'attachment_order' => $source->attachment_order,
+                'attachment_title' => filled($bestCandidate->attachment_title)
+                    ? $bestCandidate->attachment_title
+                    : $source->attachment_title,
+                'updated_at' => now(),
+            ])->save();
+        }
+
+        $document->unsetRelation('files');
+    }
+
+    private function sourceAttachmentMatchScore(DocumentFile $candidate, DocumentFile $source): int
+    {
+        $score = 0;
+
+        if (filled($candidate->attachment_title) && filled($source->attachment_title)
+            && Str::lower(trim($candidate->attachment_title)) === Str::lower(trim($source->attachment_title))) {
+            $score += 3;
+        }
+
+        if (filled($candidate->original_file_name) && filled($source->original_file_name)
+            && Str::lower(trim($candidate->original_file_name)) === Str::lower(trim($source->original_file_name))) {
+            $score += 2;
+        }
+
+        if ($candidate->attachment_order !== null && $candidate->attachment_order === $source->attachment_order) {
+            $score += 1;
+        }
+
+        return $score;
     }
 
     private function deleteDocumentFile(DocumentFile $file): void
@@ -1111,7 +1255,10 @@ class DocumentApprovalController extends Controller
         $file->delete();
     }
 
-    private function renumberSubmittedFiles(Document $document): void
+    /**
+     * @param  array<int, string|null>  $reservedAttachmentNumbers
+     */
+    private function renumberSubmittedFiles(Document $document, array $reservedAttachmentNumbers = []): void
     {
         $numbering = app(DocumentFileNumbering::class);
 
@@ -1131,6 +1278,7 @@ class DocumentApprovalController extends Controller
 
         $document->files()
             ->where('type_file', 'attachment')
+            ->whereNull('source_file_id')
             ->update([
                 'document_number' => null,
                 'updated_at' => now(),
@@ -1138,6 +1286,7 @@ class DocumentApprovalController extends Controller
 
         $document->unsetRelation('files');
         $numbering->assignMissingNumbers($document);
+        $numbering->compactActiveAttachmentNumbers($document, $reservedAttachmentNumbers);
     }
 
     private function clearApprovalPreviewArtifacts(Document $document): void

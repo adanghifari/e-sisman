@@ -14,6 +14,7 @@ use App\Models\DocumentLevel;
 use App\Models\DocumentType;
 use App\Models\StatusDocument;
 use App\Models\User;
+use App\Support\FinalDocuments\DocumentWatermarkStamp;
 use App\Support\FinalDocuments\FinalDocumentArtifactGenerator;
 use App\Support\FinalDocuments\FinalPdfComposer;
 use App\Support\FinalDocuments\PdfCompositionException;
@@ -67,6 +68,32 @@ class PdfCompositionTest extends TestCase
         $this->assertSame(1.0, $result->bodyPages[0]['placement']['scale']);
         $this->assertSame($sourceChecksum, hash_file('sha256', $body));
         $this->assertSame(6, $this->pdfPageCount($result->pdf));
+    }
+
+    public function test_compose_with_download_watermark_stamp_renders_properly(): void
+    {
+        $composer = app(FinalPdfComposer::class);
+        $body = $this->storeBodyPdf($this->tcpdfBinary([
+            ['orientation' => 'P', 'size' => [210, 297], 'text' => 'Body Page Content'],
+        ]));
+
+        $payload = $this->payload();
+        $payload['watermark_stamp'] = DocumentWatermarkStamp::forDownload(
+            userName: 'ACHMAD FAUZI',
+            downloadTime: '2026-09-04 11.30',
+            downloadCount: 5,
+        );
+
+        $result = $composer->compose(
+            $payload,
+            $this->tcpdfBinary([['text' => 'Cover']]),
+            $this->tcpdfBinary([['text' => 'Approval']]),
+            $body,
+            PdfCompositionMode::FIT_WIDTH_TO_SAFE_TOP,
+        );
+
+        $this->assertStringStartsWith('%PDF-', $result->pdf);
+        $this->assertSame(3, $result->totalPages());
     }
 
     public function test_fit_to_safe_area_geometry_shrinks_without_crop_or_stretch(): void

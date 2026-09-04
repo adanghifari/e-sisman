@@ -74,6 +74,56 @@ class DocumentFileNumbering
         return $this->fileFamilyPrefix($document).'-'.str_pad((string) $suffix, 2, '0', STR_PAD_LEFT);
     }
 
+    public function attachmentNumberForPosition(Document $document, int $position): ?string
+    {
+        if (! filled($document->nomor_dokumen)) {
+            return null;
+        }
+
+        $suffix = self::FIRST_ATTACHMENT_SUFFIX + max(0, $position - 1);
+
+        return $this->fileFamilyPrefix($document).'-'.str_pad((string) $suffix, 2, '0', STR_PAD_LEFT);
+    }
+
+    /**
+     * @param  array<int, string|null>  $reservedDocumentNumbers
+     */
+    public function compactActiveAttachmentNumbers(Document $document, array $reservedDocumentNumbers = []): void
+    {
+        $attachments = $document->files()
+            ->where('type_file', 'attachment')
+            ->orderBy('id')
+            ->get();
+        $reservedSuffixes = $attachments
+            ->filter(fn (DocumentFile $file): bool => $file->source_file_id !== null)
+            ->pluck('document_number')
+            ->merge($reservedDocumentNumbers)
+            ->map(fn (?string $number): ?int => $number ? $this->suffixFromDocumentNumber($number) : null)
+            ->filter(fn (?int $suffix): bool => $suffix !== null)
+            ->unique()
+            ->values();
+        $nextSuffix = $reservedSuffixes->isNotEmpty()
+            ? max(self::FIRST_ATTACHMENT_SUFFIX, ((int) $reservedSuffixes->max()) + 1)
+            : self::FIRST_ATTACHMENT_SUFFIX;
+
+        $attachments
+            ->filter(fn (DocumentFile $file): bool => $file->source_file_id === null)
+            ->sortBy(fn (DocumentFile $file): string => sprintf(
+                '%010d-%010d',
+                $file->attachment_order ?? PHP_INT_MAX,
+                $file->id,
+            ))
+            ->values()
+            ->each(function (DocumentFile $file) use ($document, $reservedSuffixes, &$nextSuffix): void {
+                $file->forceFill([
+                    'document_number' => $this->attachmentNumberForSuffix($document, $nextSuffix),
+                    'updated_at' => now(),
+                ])->save();
+
+                $nextSuffix++;
+            });
+    }
+
     public function assignMissingNumbers(Document $document): void
     {
         $document->loadMissing('files');
@@ -142,9 +192,14 @@ class DocumentFileNumbering
     private function fileFamilyPrefix(Document $document): string
     {
         $document->loadMissing('documentLevel', 'revisedFrom.documentLevel');
-        $level = $document->documentLevel?->kode === 'level-4' && $document->revisedFrom !== null
-            ? $document->revisedFrom->documentLevel
-            : $document->documentLevel;
+        $levelSource = $document;
+
+        while ($levelSource->documentLevel?->kode === 'level-4' && $levelSource->revisedFrom !== null) {
+            $levelSource = $levelSource->revisedFrom;
+            $levelSource->loadMissing('documentLevel', 'revisedFrom.documentLevel');
+        }
+
+        $level = $levelSource->documentLevel;
 
         $prefix = match ($level?->kode) {
             'level-1' => 'FMSM',
@@ -165,6 +220,15 @@ class DocumentFileNumbering
             ->merge($segments)
             ->filter()
             ->implode('-');
+    }
+
+    private function attachmentNumberForSuffix(Document $document, int $suffix): ?string
+    {
+        if (! filled($document->nomor_dokumen)) {
+            return null;
+        }
+
+        return $this->fileFamilyPrefix($document).'-'.str_pad((string) $suffix, 2, '0', STR_PAD_LEFT);
     }
 
     /**
