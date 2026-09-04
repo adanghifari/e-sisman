@@ -28,28 +28,23 @@
                 overflow: hidden;
             }
 
-            .landing-bg,
-            .landing-bg-next {
+            .landing-bg-layer {
                 position: absolute;
                 inset: 0;
                 z-index: -4;
                 background-position: center;
                 background-size: cover;
-                transform: scale(1.025);
-                transition: opacity 1200ms ease, transform 9000ms ease;
-            }
-
-            .landing-bg-next {
+                background-repeat: no-repeat;
                 opacity: 0;
+                transform: scale(1.02);
+                transition: opacity 1000ms ease-in-out, transform 5000ms cubic-bezier(0.25, 1, 0.5, 1);
+                will-change: opacity, transform;
+                backface-visibility: hidden;
             }
 
-            .landing-bg.is-zooming,
-            .landing-bg-next.is-zooming {
-                transform: scale(1.08);
-            }
-
-            .landing-bg-next.is-visible {
+            .landing-bg-layer.is-active {
                 opacity: 1;
+                transform: scale(1.06);
             }
 
             .landing-shell::before {
@@ -58,21 +53,8 @@
                 inset: 0;
                 z-index: -3;
                 background:
-                    linear-gradient(100deg, rgba(2, 15, 25, .88) 0%, rgba(5, 33, 48, .58) 44%, rgba(5, 18, 27, .48) 100%),
-                    linear-gradient(0deg, rgba(5, 12, 18, .78) 0%, rgba(5, 12, 18, .18) 48%, rgba(5, 12, 18, .54) 100%);
-            }
-
-            .landing-shell::after {
-                content: "";
-                position: absolute;
-                inset: 0;
-                z-index: -2;
-                pointer-events: none;
-                background-image:
-                    linear-gradient(rgba(255,255,255,.055) 1px, transparent 1px),
-                    linear-gradient(90deg, rgba(255,255,255,.045) 1px, transparent 1px);
-                background-size: 72px 72px;
-                mask-image: linear-gradient(180deg, rgba(0,0,0,.55), transparent 72%);
+                    linear-gradient(100deg, rgba(2, 15, 25, .80) 0%, rgba(5, 33, 48, .50) 44%, rgba(5, 18, 27, .40) 100%),
+                    linear-gradient(0deg, rgba(5, 12, 18, .70) 0%, rgba(5, 12, 18, .14) 48%, rgba(5, 12, 18, .48) 100%);
             }
 
             .topbar {
@@ -99,6 +81,12 @@
                 border-radius: 8px;
                 background: rgba(255,255,255,.94);
                 box-shadow: 0 18px 40px rgba(0,0,0,.18);
+            }
+
+            .brand-mark img {
+                width: 30px;
+                height: 30px;
+                object-fit: contain;
             }
 
             .brand-copy {
@@ -357,9 +345,11 @@
                 box-shadow: none;
             }
 
+            .login-form-brand .brand-mark img,
             .login-form-brand .brand-mark svg {
-                width: 52px;
-                height: 52px;
+                width: 42px;
+                height: 42px;
+                object-fit: contain;
             }
 
             .login-form-brand .brand-copy span {
@@ -652,21 +642,17 @@
     </head>
     <body>
         @php
-            $shouldOpenLogin = $errors->any() || session('status');
+            $shouldOpenLogin = $errors->any() || session('status') || request()->routeIs('login');
         @endphp
 
         <main class="landing-shell {{ $shouldOpenLogin ? 'is-login-open' : '' }}" data-landing data-login-open="{{ $shouldOpenLogin ? 'true' : 'false' }}">
-            <div class="landing-bg" data-bg-current></div>
-            <div class="landing-bg-next" data-bg-next></div>
+            <div class="landing-bg-layer is-active" data-bg-layer="0"></div>
+            <div class="landing-bg-layer" data-bg-layer="1"></div>
 
             <header class="topbar">
                 <a class="brand" href="{{ route('home') }}" aria-label="Krakatau International Port">
                     <span class="brand-mark" aria-hidden="true">
-                        <svg width="30" height="30" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-                            <path d="M4 4h15.8L4 21.2V4Z" fill="#00A6D6"/>
-                            <path d="M23.5 4H40L21 22.7 40 40H23.1L8.6 25.8 23.5 4Z" fill="#0086BF"/>
-                            <path d="M4 25.4 18.7 40H4V25.4Z" fill="#00A6D6"/>
-                        </svg>
+                        <img src="{{ asset('image/krakatau_logo.png') }}" alt="Krakatau International Port">
                     </span>
                     <span class="brand-copy">
                         <strong>Krakatau</strong>
@@ -718,11 +704,7 @@
                                         <div class="login-form-brand">
                                             <span class="brand" aria-label="Krakatau International Port">
                                                 <span class="brand-mark" aria-hidden="true">
-                                                    <svg width="30" height="30" viewBox="0 0 44 44" fill="none" xmlns="http://www.w3.org/2000/svg">
-                                                        <path d="M4 4h15.8L4 21.2V4Z" fill="#00A6D6"/>
-                                                        <path d="M23.5 4H40L21 22.7 40 40H23.1L8.6 25.8 23.5 4Z" fill="#0086BF"/>
-                                                        <path d="M4 25.4 18.7 40H4V25.4Z" fill="#00A6D6"/>
-                                                    </svg>
+                                                    <img src="{{ asset('image/krakatau_logo.png') }}" alt="Krakatau International Port">
                                                 </span>
                                                 <span class="brand-copy">
                                                     <strong>Krakatau</strong>
@@ -783,14 +765,6 @@
                                             @enderror
                                         </div>
 
-                                        <div class="login-row">
-                                            <label class="remember">
-                                                <input name="remember" type="checkbox" @checked(old('remember'))>
-                                                <span>Ingat saya</span>
-                                            </label>
-
-                                        </div>
-
                                         <button class="submit-button" type="submit">Masuk</button>
 
                                         <p class="auth-note">
@@ -824,47 +798,74 @@
                 if (!root) return;
 
                 const slides = [
-                    'https://cm.ptksi.id/storage/project/Fsr38Fwrgw3J53MLwQazlJcFbyiQlicrJloZbRBM.jpg',
-                    'https://asset.kompas.com/crops/83UYbTElJ8DVGJ4LusvMBQZGdHQ%3D/0x0%3A1600x1067/750x500/data/photo/2023/12/30/658f94245ada7.jpeg',
-                    'https://cm.ptksi.id/storage/kik/services/BQbdEOTeZfzbC0rmvmk2ssvNLsgUKyDiJYt7DhIO.jpg',
+                    "{{ asset('image/landingpage1.webp') }}",
+                    "{{ asset('image/landingpage2.webp') }}",
+                    "{{ asset('image/landingpage3.webp') }}",
+                    "{{ asset('image/landingpage4.webp') }}",
+                    "{{ asset('image/landingpage5.webp') }}",
+                    "{{ asset('image/landingpage6.webp') }}",
+                    "{{ asset('image/landingpage7.webp') }}",
                 ];
 
-                const current = root.querySelector('[data-bg-current]');
-                const next = root.querySelector('[data-bg-next]');
+                // Preload all images immediately so transitions never stutter
+                slides.forEach((src) => {
+                    const img = new Image();
+                    img.src = src;
+                });
+
+                const layers = [
+                    root.querySelector('[data-bg-layer="0"]'),
+                    root.querySelector('[data-bg-layer="1"]'),
+                ];
                 const dotsWrap = root.querySelector('[data-slide-dots]');
                 const loginPanel = root.querySelector('[data-login-panel]');
                 const loginToggle = root.querySelector('[data-login-toggle]');
-                let active = 0;
 
-                current.style.backgroundImage = `url("${slides[0]}")`;
-                current.classList.add('is-zooming');
+                let currentSlide = 0;
+                let activeLayerIndex = 0;
+
+                if (layers[0]) {
+                    layers[0].style.backgroundImage = `url("${slides[0]}")`;
+                    layers[0].classList.add('is-active');
+                }
 
                 slides.forEach((_, index) => {
                     const dot = document.createElement('span');
                     dot.className = `slide-dot${index === 0 ? ' is-active' : ''}`;
-                    dotsWrap.appendChild(dot);
+                    dotsWrap?.appendChild(dot);
                 });
 
-                const dots = [...dotsWrap.children];
+                const dots = dotsWrap ? [...dotsWrap.children] : [];
                 const setActiveDot = (index) => {
                     dots.forEach((dot, dotIndex) => dot.classList.toggle('is-active', dotIndex === index));
                 };
 
-                const showSlide = (index) => {
-                    next.style.backgroundImage = `url("${slides[index]}")`;
-                    next.classList.add('is-visible', 'is-zooming');
-                    setActiveDot(index);
+                const showSlide = (nextSlideIndex) => {
+                    const nextLayerIndex = 1 - activeLayerIndex;
+                    const currentLayer = layers[activeLayerIndex];
+                    const nextLayer = layers[nextLayerIndex];
 
-                    window.setTimeout(() => {
-                        current.style.backgroundImage = next.style.backgroundImage;
-                        next.classList.remove('is-visible');
-                        active = index;
-                    }, 1250);
+                    if (!currentLayer || !nextLayer) return;
+
+                    // Set the next image while hidden and reset its transform
+                    nextLayer.style.transition = 'none';
+                    nextLayer.classList.remove('is-active');
+                    nextLayer.style.backgroundImage = `url("${slides[nextSlideIndex]}")`;
+                    void nextLayer.offsetWidth; // force browser layout reflow
+
+                    // Restore transition and animate in
+                    nextLayer.style.transition = '';
+                    nextLayer.classList.add('is-active');
+                    currentLayer.classList.remove('is-active');
+
+                    activeLayerIndex = nextLayerIndex;
+                    currentSlide = nextSlideIndex;
+                    setActiveDot(currentSlide);
                 };
 
                 window.setInterval(() => {
-                    showSlide((active + 1) % slides.length);
-                }, 6800);
+                    showSlide((currentSlide + 1) % slides.length);
+                }, 3800);
 
                 if (loginToggle && loginPanel) {
                     const openFromServer = root.dataset.loginOpen === 'true';
