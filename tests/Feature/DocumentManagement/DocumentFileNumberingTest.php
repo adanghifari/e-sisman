@@ -54,6 +54,29 @@ class DocumentFileNumberingTest extends TestCase
         $this->assertSame('FMIK-KMS-01-02-01', $numbering->revisionFormNumber($secondRevision));
     }
 
+    public function test_attachment_numbers_do_not_use_revision_form_suffix_when_revision_form_is_missing(): void
+    {
+        $document = $this->document('IK-KMS-01-02');
+        $firstAttachment = $this->file($document, 'attachment', 'Lampiran A', 1);
+        $secondAttachment = $this->file($document, 'attachment', 'Lampiran B', 2);
+
+        $numbering = app(DocumentFileNumbering::class);
+
+        $numbering->assignMissingNumbers($document);
+        $numbering->compactActiveAttachmentNumbers($document);
+
+        $this->assertSame('FMIK-KMS-01-02-02', $firstAttachment->refresh()->document_number);
+        $this->assertSame('FMIK-KMS-01-02-03', $secondAttachment->refresh()->document_number);
+
+        $firstAttachment->update(['attachment_order' => 2]);
+        $secondAttachment->update(['attachment_order' => 1]);
+
+        $numbering->compactActiveAttachmentNumbers($document);
+
+        $this->assertSame('FMIK-KMS-01-02-03', $firstAttachment->refresh()->document_number);
+        $this->assertSame('FMIK-KMS-01-02-02', $secondAttachment->refresh()->document_number);
+    }
+
     private function document(string $number, int $revision = 0, ?Document $source = null): Document
     {
         $level = DocumentLevel::query()->firstOrCreate(

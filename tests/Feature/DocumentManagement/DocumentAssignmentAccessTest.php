@@ -284,6 +284,225 @@ class DocumentAssignmentAccessTest extends TestCase
         $this->assertSame('FMPS-QA-01-03', $lastAttachment->refresh()->document_number);
     }
 
+    public function test_submitted_attachment_reorder_updates_attachment_numbers(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill(['nomor_dokumen' => 'PS-QA-01'])->save();
+        $firstAttachment = $this->attachmentFile($document, 'lampiran-1.pdf', 'FMPS-QA-01-02', 1);
+        $secondAttachment = $this->attachmentFile($document, 'lampiran-2.pdf', 'FMPS-QA-01-03', 2);
+        $thirdAttachment = $this->attachmentFile($document, 'lampiran-3.pdf', 'FMPS-QA-01-04', 3);
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'existing_attachment_titles' => [
+                    $firstAttachment->id => 'Lampiran 1',
+                    $secondAttachment->id => 'Lampiran 2',
+                    $thirdAttachment->id => 'Lampiran 3',
+                ],
+                'existing_attachment_orders' => [
+                    $firstAttachment->id => 3,
+                    $secondAttachment->id => 2,
+                    $thirdAttachment->id => 1,
+                ],
+            ]);
+
+        $response->assertRedirect(route('documents.approval.show', $document));
+        $this->assertSame('FMPS-QA-01-04', $firstAttachment->refresh()->document_number);
+        $this->assertSame('FMPS-QA-01-03', $secondAttachment->refresh()->document_number);
+        $this->assertSame('FMPS-QA-01-02', $thirdAttachment->refresh()->document_number);
+    }
+
+    public function test_submitted_new_attachment_from_edit_is_appended_after_existing_attachments(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill(['nomor_dokumen' => 'PS-QA-01'])->save();
+        $firstAttachment = $this->attachmentFile($document, 'lampiran-1.pdf', 'FMPS-QA-01-02', 1);
+        $secondAttachment = $this->attachmentFile($document, 'lampiran-2.pdf', 'FMPS-QA-01-03', 2);
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'existing_attachment_titles' => [
+                    $firstAttachment->id => 'Lampiran 1',
+                    $secondAttachment->id => 'Lampiran 2',
+                ],
+                'existing_attachment_orders' => [
+                    $firstAttachment->id => 1,
+                    $secondAttachment->id => 2,
+                ],
+                'attachment_titles' => ['Lampiran Baru Dari Edit'],
+                'attachment_orders' => [3],
+                'attachments' => [
+                    UploadedFile::fake()->create('lampiran-baru.pdf', 20, 'application/pdf'),
+                ],
+            ]);
+
+        $response->assertRedirect(route('documents.approval.show', $document));
+        $newAttachment = $document->refresh()->files()
+            ->where('type_file', 'attachment')
+            ->where('attachment_title', 'Lampiran Baru Dari Edit')
+            ->firstOrFail();
+
+        $this->assertSame('FMPS-QA-01-02', $firstAttachment->refresh()->document_number);
+        $this->assertSame('FMPS-QA-01-03', $secondAttachment->refresh()->document_number);
+        $this->assertSame('FMPS-QA-01-04', $newAttachment->document_number);
+    }
+
+    public function test_source_attachment_uncheck_reserves_its_number_for_new_revision_attachment(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $sourceDocument = $this->proposedDocumentForDepartments([$department]);
+        $sourceDocument->forceFill(['nomor_dokumen' => 'PS-QA-01'])->save();
+        $sourceFile = $this->attachmentFile($sourceDocument, 'daftar-hadir-master.pdf', 'FMPS-QA-01-03', 2);
+
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill(['nomor_dokumen' => 'PS-QA-01', 'request_type' => 'revision'])->save();
+        $sourceAttachment = $this->attachmentFile($document, 'daftar-hadir.pdf', 'FMPS-QA-01-03', 2);
+        $sourceAttachment->forceFill(['source_file_id' => $sourceFile->id])->save();
+        $newAttachment = $this->attachmentFile($document, 'nambah-dari-revisi.pdf', 'FMPS-QA-01-03', 3);
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'sync_existing_attachment_inclusion' => '1',
+                'included_existing_attachment_ids' => [],
+                'existing_attachment_titles' => [
+                    $sourceAttachment->id => 'Daftar Hadir',
+                    $newAttachment->id => 'nambah dari pengajuan revisi',
+                ],
+                'existing_attachment_orders' => [
+                    $newAttachment->id => 1,
+                ],
+            ]);
+
+        $response->assertRedirect(route('documents.approval.show', $document));
+        $this->assertDatabaseMissing('t_document_files', ['id' => $sourceAttachment->id]);
+        $this->assertSame('FMPS-QA-01-04', $newAttachment->refresh()->document_number);
+    }
+
+    public function test_source_attachment_cannot_be_deleted_or_reordered_from_submitted_edit(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $sourceDocument = $this->proposedDocumentForDepartments([$department]);
+        $sourceDocument->forceFill(['nomor_dokumen' => 'PS-QA-01'])->save();
+        $sourceFile = $this->attachmentFile($sourceDocument, 'lampiran-master.pdf', 'FMPS-QA-01-03', 2);
+
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill(['nomor_dokumen' => 'PS-QA-01', 'request_type' => 'revision'])->save();
+        $sourceAttachment = $this->attachmentFile($document, 'lampiran-master.pdf', 'FMPS-QA-01-03', 2);
+        $sourceAttachment->forceFill(['source_file_id' => $sourceFile->id])->save();
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'sync_existing_attachment_inclusion' => '1',
+                'included_existing_attachment_ids' => [$sourceAttachment->id],
+                'remove_existing_files' => [$sourceAttachment->id],
+                'existing_attachment_titles' => [
+                    $sourceAttachment->id => 'Lampiran Master Updated',
+                ],
+                'existing_attachment_orders' => [
+                    $sourceAttachment->id => 1,
+                ],
+            ]);
+
+        $response->assertRedirect(route('documents.approval.show', $document));
+        $sourceAttachment->refresh();
+
+        $this->assertSame('Lampiran Master Updated', $sourceAttachment->attachment_title);
+        $this->assertSame(2, $sourceAttachment->attachment_order);
+        $this->assertSame('FMPS-QA-01-03', $sourceAttachment->document_number);
+    }
+
+    public function test_legacy_source_attachment_duplicate_number_is_reserved_before_renumbering_new_attachment(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+
+        $sourceDocument = $this->proposedDocumentForDepartments([$department]);
+        $sourceDocument->forceFill([
+            'nomor_dokumen' => 'PS-QA-01',
+            'm_status_document_id' => $approvedStatus->id,
+        ])->save();
+        $sourceFile = $this->attachmentFile($sourceDocument, 'daftar-hadir.pdf', 'FMPS-QA-01-03', 2);
+        $sourceFile->forceFill(['attachment_title' => 'Daftar Hadir'])->save();
+
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill([
+            'nomor_dokumen' => 'PS-QA-01',
+            'request_type' => 'revision',
+            'revised_from' => $sourceDocument->id,
+            'nomor_revisi' => 1,
+        ])->save();
+
+        $legacySourceAttachment = $this->attachmentFile($document, 'daftar-hadir.pdf', 'FMPS-QA-01-03', 2);
+        $legacySourceAttachment->forceFill(['attachment_title' => 'Daftar Hadir'])->save();
+        $newAttachment = $this->attachmentFile($document, 'nambah-dari-revisi.pdf', 'FMPS-QA-01-03', 3);
+        $newAttachment->forceFill(['attachment_title' => 'nambah dari pengajuan revisi'])->save();
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'existing_attachment_titles' => [
+                    $legacySourceAttachment->id => 'Daftar Hadir',
+                    $newAttachment->id => 'nambah dari pengajuan revisi',
+                ],
+                'existing_attachment_orders' => [
+                    $legacySourceAttachment->id => 2,
+                    $newAttachment->id => 1,
+                ],
+            ]);
+
+        $response->assertRedirect(route('documents.approval.show', $document));
+
+        $this->assertSame($sourceFile->id, $legacySourceAttachment->refresh()->source_file_id);
+        $this->assertSame('FMPS-QA-01-03', $legacySourceAttachment->document_number);
+        $this->assertSame('FMPS-QA-01-04', $newAttachment->refresh()->document_number);
+    }
+
     public function test_submitted_attachment_update_compacts_active_attachment_numbers(): void
     {
         Storage::fake('local');

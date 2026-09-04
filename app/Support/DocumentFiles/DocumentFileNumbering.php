@@ -85,22 +85,43 @@ class DocumentFileNumbering
         return $this->fileFamilyPrefix($document).'-'.str_pad((string) $suffix, 2, '0', STR_PAD_LEFT);
     }
 
-    public function compactActiveAttachmentNumbers(Document $document): void
+    /**
+     * @param  array<int, string|null>  $reservedDocumentNumbers
+     */
+    public function compactActiveAttachmentNumbers(Document $document, array $reservedDocumentNumbers = []): void
     {
-        $document->files()
+        $attachments = $document->files()
             ->where('type_file', 'attachment')
             ->orderBy('id')
-            ->get()
+            ->get();
+        $reservedSuffixes = $attachments
+            ->filter(fn (DocumentFile $file): bool => $file->source_file_id !== null)
+            ->pluck('document_number')
+            ->merge($reservedDocumentNumbers)
+            ->map(fn (?string $number): ?int => $number ? $this->suffixFromDocumentNumber($number) : null)
+            ->filter(fn (?int $suffix): bool => $suffix !== null)
+            ->unique()
+            ->values();
+        $nextSuffix = $reservedSuffixes->isNotEmpty()
+            ? max(self::FIRST_ATTACHMENT_SUFFIX, ((int) $reservedSuffixes->max()) + 1)
+            : self::FIRST_ATTACHMENT_SUFFIX;
+
+        $attachments
+            ->filter(fn (DocumentFile $file): bool => $file->source_file_id === null)
             ->sortBy(fn (DocumentFile $file): string => sprintf(
                 '%010d-%010d',
                 $file->attachment_order ?? PHP_INT_MAX,
                 $file->id,
             ))
             ->values()
-            ->each(fn (DocumentFile $file, int $index) => $file->forceFill([
-                'document_number' => $this->attachmentNumberForPosition($document, $index + 1),
-                'updated_at' => now(),
-            ])->save());
+            ->each(function (DocumentFile $file) use ($document, $reservedSuffixes, &$nextSuffix): void {
+                $file->forceFill([
+                    'document_number' => $this->attachmentNumberForSuffix($document, $nextSuffix),
+                    'updated_at' => now(),
+                ])->save();
+
+                $nextSuffix++;
+            });
     }
 
     public function assignMissingNumbers(Document $document): void
@@ -199,6 +220,15 @@ class DocumentFileNumbering
             ->merge($segments)
             ->filter()
             ->implode('-');
+    }
+
+    private function attachmentNumberForSuffix(Document $document, int $suffix): ?string
+    {
+        if (! filled($document->nomor_dokumen)) {
+            return null;
+        }
+
+        return $this->fileFamilyPrefix($document).'-'.str_pad((string) $suffix, 2, '0', STR_PAD_LEFT);
     }
 
     /**
