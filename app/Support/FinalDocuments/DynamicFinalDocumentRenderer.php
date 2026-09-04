@@ -4,7 +4,6 @@ namespace App\Support\FinalDocuments;
 
 use App\Models\Document;
 use App\Models\DocumentFinalArtifact;
-use App\Models\User;
 use Illuminate\Support\Facades\Storage;
 
 class DynamicFinalDocumentRenderer
@@ -20,6 +19,7 @@ class DynamicFinalDocumentRenderer
         Document $document,
         PdfDocumentContext $context,
         PdfCompositionMode $mode = PdfCompositionMode::FIT_WIDTH_TO_SAFE_TOP,
+        ?array $watermarkStamp = null,
     ): string {
         $this->assertEligible($document, $context);
 
@@ -31,6 +31,10 @@ class DynamicFinalDocumentRenderer
         if ($context === PdfDocumentContext::APPROVAL_PREVIEW) {
             $payload['document']['published_at'] = null;
             $payload['document']['approved_at'] = null;
+        }
+
+        if ($watermarkStamp !== null) {
+            $payload['watermark_stamp'] = $watermarkStamp;
         }
 
         return $this->finalPdfComposer->compose(

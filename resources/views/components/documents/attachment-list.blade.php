@@ -135,9 +135,22 @@
                 icon.textContent = 'PDF';
             };
 
+            const orderOffsetFor = (root) => {
+                const form = root?.closest('[data-submitted-attachment-form]');
+                const submittedItems = form?.querySelector('[data-submitted-attachment-items]');
+
+                if (!submittedItems || submittedItems.contains(root)) {
+                    return 0;
+                }
+
+                return submittedItems.querySelectorAll('[data-existing-attachment-row]').length;
+            };
+
             const renumberRows = (root) => {
+                const offset = orderOffsetFor(root);
+
                 root?.querySelectorAll('[data-attachment-order-input]').forEach((input, index) => {
-                    input.value = index + 1;
+                    input.value = offset + index + 1;
                 });
             };
 
@@ -210,6 +223,7 @@
 
             window.handleAttachmentListClick = handleAttachmentListClick;
             window.handleAttachmentListChange = handleAttachmentListChange;
+            window.renumberAttachmentRows = renumberRows;
             window.initAttachmentLists = initAttachmentLists;
 
             document.addEventListener('click', window.handleAttachmentListClick);

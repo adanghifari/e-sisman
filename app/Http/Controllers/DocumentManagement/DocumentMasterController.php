@@ -6,6 +6,7 @@ use App\Actions\Log\RecordDocumentDownload;
 use App\Http\Controllers\Controller;
 use App\Models\BusinessProcess;
 use App\Models\Document;
+use App\Models\DocumentDownloadLog;
 use App\Models\DocumentFile;
 use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
@@ -15,6 +16,7 @@ use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentHistory;
+use App\Support\FinalDocuments\DocumentWatermarkStamp;
 use App\Support\FinalDocuments\DynamicFinalDocumentRenderer;
 use App\Support\FinalDocuments\PdfDocumentContext;
 use Illuminate\Contracts\View\View;
@@ -377,7 +379,7 @@ class DocumentMasterController extends Controller
         $this->authorizeMasterGeneratedPreviewAccess($document);
 
         $context = PdfDocumentContext::FINAL_DOCUMENT;
-        $pdf = $renderer->render($document, $context);
+        $watermarkStamp = null;
 
         if ($request->boolean('download')) {
             $recordDocumentDownload->handle($request, $document, null, [
@@ -386,11 +388,29 @@ class DocumentMasterController extends Controller
                 'revision' => $document->nomor_revisi,
                 'context' => 'master',
             ]);
+
+            $downloadCount = DocumentDownloadLog::query()
+                ->where('t_document_id', $document->id)
+                ->count();
+
+            $watermarkStamp = DocumentWatermarkStamp::forDownload(
+                userName: $request->user()?->name ?? 'PENGGUNA',
+                downloadTime: now(),
+                downloadCount: max(1, $downloadCount),
+            );
+        } else {
+            $watermarkStamp = DocumentWatermarkStamp::forMaster(
+                documentNumber: $this->masterDisplayNumber($document),
+                revision: $document->formatted_revision,
+                publishedAt: $document->tanggal_terbit ?? $document->approved_at,
+            );
         }
+
+        $pdf = $renderer->render($document, $context, watermarkStamp: $watermarkStamp);
 
         return response($pdf, 200, [
             'Content-Type' => 'application/pdf',
-            'Content-Disposition' => 'inline; filename="'.$renderer->fileName($document, $context).'"',
+            'Content-Disposition' => ($request->boolean('download') ? 'attachment' : 'inline').'; filename="'.$renderer->fileName($document, $context).'"',
             'Cache-Control' => 'no-store, no-cache, must-revalidate, max-age=0',
             'Pragma' => 'no-cache',
             'Expires' => '0',

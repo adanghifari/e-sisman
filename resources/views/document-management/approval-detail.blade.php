@@ -517,39 +517,71 @@
                                 <form method="POST" action="{{ route('documents.approval.update-submitted', $document) }}" enctype="multipart/form-data" class="space-y-4" data-submitted-attachment-form>
                                     @csrf
                                     <input type="hidden" name="_update_scope" value="files">
+                                    <input type="hidden" name="sync_existing_attachment_inclusion" value="1">
 
-                                    <div class="space-y-3">
-                                        @foreach ($attachmentFiles as $file)
-                                            <div class="grid gap-3 rounded-lg border border-slate-200 bg-white p-4 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.7fr)_auto]" data-existing-attachment-row>
-                                                <input type="hidden" name="existing_attachment_orders[{{ $file->id }}]" value="{{ $file->attachment_order ?? $loop->iteration }}" data-attachment-order-input>
-                                                <label class="block min-w-0">
-                                                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nama Dokumen/Lampiran</span>
-                                                    <input type="text" name="existing_attachment_titles[{{ $file->id }}]" value="{{ $file->attachment_title ?: $file->original_file_name }}" readonly class="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" data-attachment-title-input>
-                                                </label>
+                                    @php
+                                        $submittedSourceAttachmentFiles = $attachmentFiles
+                                            ->filter(fn ($file) => filled($file->source_file_id))
+                                            ->values();
+                                        $submittedNewAttachmentFiles = $attachmentFiles
+                                            ->reject(fn ($file) => filled($file->source_file_id))
+                                            ->values();
+                                    @endphp
 
-                                                <div class="min-w-0">
-                                                    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">File</span>
-                                                    <div class="flex min-h-11 items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
-                                                        <span class="grid size-9 shrink-0 place-items-center rounded-md border border-red-100 bg-red-50 text-[10px] font-bold text-red-600">PDF</span>
-                                                        <span class="min-w-0">
-                                                            <span class="block truncate text-sm font-semibold text-slate-800" data-selected-file-name data-original-file-name="{{ $file->original_file_name }}">{{ $file->original_file_name }}</span>
-                                                            <span class="block text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</span>
+                                    <div class="space-y-3" data-submitted-attachment-items>
+                                        @foreach ($submittedSourceAttachmentFiles->merge($submittedNewAttachmentFiles) as $file)
+                                            @php
+                                                $isSourceAttachment = filled($file->source_file_id);
+                                            @endphp
+
+                                            <div class="flex gap-3 rounded-lg border border-slate-200 bg-white p-4 transition" data-existing-attachment-row @if ($isSourceAttachment) data-source-attachment-row @endif draggable="false">
+                                                @if ($isSourceAttachment)
+                                                    <label class="mt-5 hidden w-36 shrink-0 cursor-pointer place-items-center gap-2" data-attachment-edit-control>
+                                                        <span class="grid h-5 w-full place-items-center">
+                                                            <input type="checkbox" name="included_existing_attachment_ids[]" value="{{ $file->id }}" checked class="size-5 rounded border-slate-300 text-sky-600 focus:ring-sky-200" data-source-attachment-include>
                                                         </span>
-                                                    </div>
-                                                    <input type="file" name="replacement_attachments[{{ $file->id }}]" accept=".pdf,application/pdf" class="sr-only" data-file-picker-input>
-                                                </div>
+                                                        <span class="inline-flex w-32 justify-center whitespace-nowrap rounded-full bg-emerald-50 px-3 py-1 text-center text-[11px] font-bold text-emerald-700 ring-1 ring-emerald-100" data-source-attachment-state>Dicantumkan</span>
+                                                    </label>
+                                                @else
+                                                    <button type="button" class="mt-5 hidden size-11 shrink-0 cursor-grab items-center justify-center rounded-lg border border-slate-200 bg-slate-50 text-slate-500 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700 active:cursor-grabbing" data-attachment-drag-handle data-attachment-edit-control draggable="true" aria-label="Geser urutan lampiran">
+                                                        <flux:icon name="bars-3" class="size-5" />
+                                                    </button>
+                                                @endif
+                                                <div class="grid min-w-0 flex-1 gap-3 md:grid-cols-[minmax(0,1fr)_minmax(220px,0.7fr)_auto]">
+                                                    @unless ($isSourceAttachment)
+                                                        <input type="hidden" name="existing_attachment_orders[{{ $file->id }}]" value="{{ $file->attachment_order ?? $loop->iteration }}" data-attachment-order-input>
+                                                    @endunless
+                                                    <label class="block min-w-0">
+                                                        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">Nama Dokumen/Lampiran</span>
+                                                        <input type="text" name="existing_attachment_titles[{{ $file->id }}]" value="{{ $file->attachment_title ?: $file->original_file_name }}" readonly class="h-11 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100" data-attachment-title-input>
+                                                    </label>
 
-                                                <div class="mt-5 hidden flex-wrap gap-2" data-file-edit-control>
-                                                    <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700">
-                                                        Download
-                                                    </a>
-                                                    <button type="button" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>
-                                                        Perbarui
-                                                    </button>
-                                                    <button type="button" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-submitted-attachment-remove>
-                                                        <input type="hidden" value="{{ $file->id }}" data-existing-attachment-id>
-                                                        Hapus
-                                                    </button>
+                                                    <div class="min-w-0">
+                                                        <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">File</span>
+                                                        <div class="flex min-h-11 items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 px-3 py-2">
+                                                            <span class="grid size-9 shrink-0 place-items-center rounded-md border border-red-100 bg-red-50 text-[10px] font-bold text-red-600">PDF</span>
+                                                            <span class="min-w-0">
+                                                                <span class="block truncate text-sm font-semibold text-slate-800" data-selected-file-name data-original-file-name="{{ $file->original_file_name }}">{{ $file->original_file_name }}</span>
+                                                                <span class="block text-xs font-medium text-slate-500">{{ number_format(($file->file_size ?? 0) / 1024, 1) }} KB</span>
+                                                            </span>
+                                                        </div>
+                                                        <input type="file" name="replacement_attachments[{{ $file->id }}]" accept=".pdf,application/pdf" class="sr-only" data-file-picker-input>
+                                                    </div>
+
+                                                    <div class="mt-5 hidden flex-wrap gap-2" data-file-edit-control>
+                                                        <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700">
+                                                            Download
+                                                        </a>
+                                                        <button type="button" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-sky-200 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>
+                                                            Perbarui
+                                                        </button>
+                                                        @unless ($isSourceAttachment)
+                                                            <button type="button" class="inline-flex h-11 items-center justify-center rounded-lg border border-slate-200 bg-white px-4 text-sm font-bold text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600" data-submitted-attachment-remove>
+                                                                <input type="hidden" value="{{ $file->id }}" data-existing-attachment-id>
+                                                                Hapus
+                                                            </button>
+                                                        @endunless
+                                                    </div>
                                                 </div>
                                             </div>
                                         @endforeach
@@ -1127,6 +1159,39 @@
                 });
             }
 
+            const renumberSubmittedAttachmentRows = (form) => {
+                form?.querySelectorAll('[data-existing-attachment-row] [data-attachment-order-input]').forEach((input, index) => {
+                    input.value = index + 1;
+                });
+                form?.querySelectorAll('[data-attachment-list]').forEach((list) => {
+                    window.renumberAttachmentRows?.(list);
+                });
+            };
+
+            const setSubmittedAttachmentDragState = (attachmentEditor, enabled) => {
+                attachmentEditor?.querySelectorAll('[data-existing-attachment-row]').forEach((row) => {
+                    const canDrag = enabled && !row.hasAttribute('data-source-attachment-row');
+
+                    row.draggable = canDrag;
+                    row.classList.toggle('cursor-grab', canDrag);
+                });
+            };
+
+            const rowAfterPointer = (list, y) => {
+                const rows = [...list.querySelectorAll('[data-existing-attachment-row]:not([data-source-attachment-row]):not([data-attachment-dragging])')];
+
+                return rows.reduce((closest, row) => {
+                    const box = row.getBoundingClientRect();
+                    const offset = y - box.top - (box.height / 2);
+
+                    if (offset < 0 && offset > closest.offset) {
+                        return { offset, row };
+                    }
+
+                    return closest;
+                }, { offset: Number.NEGATIVE_INFINITY, row: null }).row;
+            };
+
             document.addEventListener('click', (event) => {
                 const attachmentEditButton = event.target.closest('[data-attachment-edit-open]');
 
@@ -1161,7 +1226,9 @@
                         attachmentEditor?.querySelectorAll('[data-attachment-edit-control]').forEach((element) => {
                             element.classList.add('hidden');
                             element.classList.remove('inline-flex');
+                            element.classList.remove('grid');
                         });
+                        setSubmittedAttachmentDragState(attachmentEditor, false);
                     } else {
                         attachmentEditButton.dataset.editing = 'true';
                         label.textContent = 'Cancel';
@@ -1182,8 +1249,11 @@
 
                             if (element.matches('button')) {
                                 element.classList.add('inline-flex');
+                            } else if (element.matches('label')) {
+                                element.classList.add('grid');
                             }
                         });
+                        setSubmittedAttachmentDragState(attachmentEditor, true);
                     }
 
                     return;
@@ -1212,6 +1282,8 @@
 
                         if (element.matches('button')) {
                             element.classList.add('inline-flex');
+                        } else if (element.matches('label')) {
+                            element.classList.add('grid');
                         }
                     });
 
@@ -1255,6 +1327,7 @@
                         attachmentForm.querySelectorAll('[data-attachment-edit-control]').forEach((element) => {
                             element.classList.add('hidden');
                             element.classList.remove('inline-flex');
+                            element.classList.remove('grid');
                         });
                     }
 
@@ -1277,9 +1350,7 @@
                     }
 
                     row?.remove();
-                    form?.querySelectorAll('[data-existing-attachment-row] [data-attachment-order-input]').forEach((input, index) => {
-                        input.value = index + 1;
-                    });
+                    renumberSubmittedAttachmentRows(form);
 
                     return;
                 }
@@ -1292,6 +1363,58 @@
 
                 const container = button.closest('form, [data-existing-attachment-row]');
                 container?.querySelector('[data-file-picker-input]')?.click();
+            });
+
+            document.addEventListener('dragstart', (event) => {
+                const row = event.target.closest('[data-existing-attachment-row]');
+                const handle = event.target.closest('[data-attachment-drag-handle]');
+
+                if (!row) {
+                    return;
+                }
+
+                if (row.hasAttribute('data-source-attachment-row') || !handle || row.draggable !== true) {
+                    event.preventDefault();
+
+                    return;
+                }
+
+                event.dataTransfer.effectAllowed = 'move';
+                event.dataTransfer.setData('text/plain', '');
+                row.dataset.attachmentDragging = 'true';
+                row.classList.add('opacity-60', 'ring-2', 'ring-sky-100');
+            });
+
+            document.addEventListener('dragover', (event) => {
+                const list = event.target.closest('[data-submitted-attachment-items]');
+                const draggingRow = document.querySelector('[data-attachment-dragging]');
+
+                if (!list || !draggingRow) {
+                    return;
+                }
+
+                event.preventDefault();
+                const afterRow = rowAfterPointer(list, event.clientY);
+
+                if (afterRow === null) {
+                    list.appendChild(draggingRow);
+                } else {
+                    list.insertBefore(draggingRow, afterRow);
+                }
+            });
+
+            document.addEventListener('dragend', () => {
+                const row = document.querySelector('[data-attachment-dragging]');
+
+                if (!row) {
+                    return;
+                }
+
+                const form = row.closest('[data-submitted-attachment-form]');
+
+                row.classList.remove('opacity-60', 'ring-2', 'ring-sky-100');
+                delete row.dataset.attachmentDragging;
+                renumberSubmittedAttachmentRows(form);
             });
 
             document.addEventListener('change', (event) => {
@@ -1307,6 +1430,26 @@
 
                 if (name) {
                     name.textContent = file.name;
+                }
+            });
+
+            document.addEventListener('change', (event) => {
+                const checkbox = event.target.closest('[data-source-attachment-include]');
+
+                if (!checkbox) {
+                    return;
+                }
+
+                const state = checkbox.closest('label')?.querySelector('[data-source-attachment-state]');
+
+                if (state) {
+                    state.textContent = checkbox.checked ? 'Dicantumkan' : 'Tidak Dicantumkan';
+                    state.classList.toggle('bg-emerald-50', checkbox.checked);
+                    state.classList.toggle('text-emerald-700', checkbox.checked);
+                    state.classList.toggle('ring-emerald-100', checkbox.checked);
+                    state.classList.toggle('bg-red-50', !checkbox.checked);
+                    state.classList.toggle('text-red-600', !checkbox.checked);
+                    state.classList.toggle('ring-red-100', !checkbox.checked);
                 }
             });
         })();
