@@ -207,6 +207,12 @@
         $documentNumberSuffixDefault = $draft?->nomor_dokumen
             ? \Illuminate\Support\Str::afterLast($draft->nomor_dokumen, '-')
             : $revisionDocumentSuffix;
+        $revisionFormDisplayNumber = $revisionSource
+            ? ($draft?->nomor_lembar_revisi ?: app(\App\Support\DocumentFiles\DocumentFileNumbering::class)->revisionFormNumber($revisionSource))
+            : null;
+        $revisionFormDisplaySegments = $revisionFormDisplayNumber
+            ? collect(explode('-', $revisionFormDisplayNumber))->filter()->values()
+            : collect();
         $selectedBusinessProcessId = old('m_proses_bisnis_id', $draft?->m_proses_bisnis_id ?? $revisionSource?->m_proses_bisnis_id);
         $selectedBusinessFunctionId = old('m_proses_fungsi_id', $draft?->m_proses_fungsi_id ?? $revisionSource?->m_proses_fungsi_id);
         $selectedReferenceId = old('reference', $draft?->reference ?? $revisionSource?->reference);
@@ -238,9 +244,15 @@
                 ['value' => $selectedProcedureNumberSegments->get(0, 'XXX'), 'target' => 'procedure-reference-0'],
                 ['value' => $selectedProcedureNumberSegments->get(1, 'YY'), 'target' => 'procedure-reference-1'],
             ],
-            'level-4' => $revisionDocumentNumberSegments,
+            'level-4' => $revisionFormDisplaySegments->slice(1, -1)->values()->all() ?: $revisionDocumentNumberSegments,
             default => [],
         };
+        $documentNumberPrefix = $levelKey === 'level-4' && $revisionFormDisplaySegments->isNotEmpty()
+            ? $revisionFormDisplaySegments->first()
+            : $documentNumberPrefix;
+        $documentNumberSuffixDefault = $levelKey === 'level-4' && $revisionFormDisplaySegments->isNotEmpty()
+            ? $revisionFormDisplaySegments->last()
+            : $documentNumberSuffixDefault;
         $assignableUsers = \App\Models\User::query()
             ->with('department')
             ->whereKeyNot(auth()->id())
@@ -785,6 +797,7 @@
                                 :prefix="$documentNumberPrefix"
                                 :segments="$documentNumberSegments"
                                 :default-value="$documentNumberSuffixDefault"
+                                :readonly-suffix="(bool) $revisionSource"
                             />
 
                             <label class="block">
@@ -873,102 +886,142 @@
                     }) || Array.from(form.querySelectorAll('input[type="file"]')).some((input) => (input.files || []).length > 0);
                 };
 
-                const autosavePayload = (form, includeFiles = false) => {
-                    const formData = new FormData();
+                autosaveForms.forEach((form) => {
+                    let autosaveTimer = null;
+                    let isAutosaving = false;
+                    let pendingAutosave = false;
+                    let pendingIncludeFiles = false;
+                    let activeDraftId = form.querySelector('[data-autosave-draft-id]')?.value || null;
 
-                    Array.from(form.elements).forEach((field) => {
-                        if (!field.name || field.disabled) {
-                            return;
-                        }
+                    const autosavePayload = (includeFiles = false) => {
+                        const formData = new FormData();
 
-                        if (field.type === 'submit' || field.type === 'button') {
-                            return;
-                        }
-
-                        if (field.type === 'file') {
-                            if (!includeFiles) {
+                        Array.from(form.elements).forEach((field) => {
+                            if (!field.name || field.disabled) {
                                 return;
                             }
 
-                            Array.from(field.files || []).forEach((file) => {
-                                formData.append(field.name, file);
-                            });
+                            if (field.type === 'submit' || field.type === 'button') {
+                                return;
+                            }
 
-                            return;
-                        }
+                            if (field.type === 'file') {
+                                if (!includeFiles) {
+                                    return;
+                                }
 
-                        if ((field.type === 'checkbox' || field.type === 'radio') && !field.checked) {
-                            return;
-                        }
+                                Array.from(field.files || []).forEach((file) => {
+                                    formData.append(field.name, file);
+                                });
 
-                        formData.append(field.name, field.value);
-                    });
+                                return;
+                            }
 
-                    formData.set('submit_action', 'draft');
+                            if ((field.type === 'checkbox' || field.type === 'radio') && !field.checked) {
+                                return;
+                            }
 
-                    return formData;
-                };
-
-                const applyAutosaveResponse = async (form, response) => {
-                    if (!response.ok) {
-                        setStatus(form, 'Autosave gagal. Draft manual masih tersedia.', 'error');
-                        return;
-                    }
-
-                    const payload = await response.json();
-
-                    if (!payload.saved) {
-                        return;
-                    }
-
-                    const draftInput = form.querySelector('[data-autosave-draft-id]');
-
-                    if (draftInput && payload.draft_id) {
-                        draftInput.value = payload.draft_id;
-                    }
-
-                    setStatus(form, `Draft tersimpan otomatis ${payload.saved_at || ''}`.trim(), 'success');
-                };
-
-                const autosave = async (form, includeFiles = false) => {
-                    if (form.dataset.autosaveSubmitting === 'true' || !hasMeaningfulPayload(form)) {
-                        return;
-                    }
-
-                    setStatus(form, 'Menyimpan draft otomatis...', 'muted');
-
-                    try {
-                        const response = await fetch(form.dataset.autosaveUrl, {
-                            method: 'POST',
-                            body: autosavePayload(form, includeFiles),
-                            credentials: 'same-origin',
-                            headers: {
-                                'X-Requested-With': 'XMLHttpRequest',
-                                'Accept': 'application/json',
-                            },
-                            keepalive: !includeFiles,
+                            formData.append(field.name, field.value);
                         });
 
-                        await applyAutosaveResponse(form, response);
-                    } catch (error) {
-                        setStatus(form, 'Autosave belum berhasil. Perubahan berikutnya akan dicoba lagi.', 'error');
-                    }
-                };
+                        formData.set('submit_action', 'draft');
 
-                const autosaveWithBeacon = (form) => {
-                    if (!navigator.sendBeacon || !hasMeaningfulPayload(form)) {
-                        return;
-                    }
+                        if (activeDraftId) {
+                            formData.set('draft_id', activeDraftId);
+                        }
 
-                    navigator.sendBeacon(form.dataset.autosaveUrl, autosavePayload(form, false));
-                };
+                        return formData;
+                    };
 
-                autosaveForms.forEach((form) => {
-                    let autosaveTimer = null;
+                    const applyAutosaveResponse = async (response) => {
+                        if (!response.ok) {
+                            if (response.status === 419) {
+                                setStatus(form, 'Sesi form kedaluwarsa. Silakan muat ulang halaman.', 'error');
+                                return;
+                            }
+
+                            if (response.status === 422) {
+                                const errorData = await response.json().catch(() => ({}));
+                                const firstError = Object.values(errorData.errors || {})[0]?.[0] || errorData.message || 'Data form belum valid untuk draft.';
+                                setStatus(form, `Autosave ditunda: ${firstError}`, 'error');
+                                return;
+                            }
+
+                            setStatus(form, 'Autosave belum berhasil. Draft manual masih tersedia.', 'error');
+                            return;
+                        }
+
+                        const payload = await response.json();
+
+                        if (!payload.saved) {
+                            return;
+                        }
+
+                        if (payload.draft_id) {
+                            activeDraftId = String(payload.draft_id);
+                            const draftInput = form.querySelector('[data-autosave-draft-id]');
+                            if (draftInput) {
+                                draftInput.value = activeDraftId;
+                            }
+                        }
+
+                        setStatus(form, `Draft tersimpan otomatis ${payload.saved_at || ''}`.trim(), 'success');
+                    };
+
+                    const autosave = async (includeFiles = false) => {
+                        if (form.dataset.autosaveSubmitting === 'true' || !hasMeaningfulPayload(form)) {
+                            return;
+                        }
+
+                        if (isAutosaving) {
+                            pendingAutosave = true;
+                            if (includeFiles) {
+                                pendingIncludeFiles = true;
+                            }
+                            return;
+                        }
+
+                        isAutosaving = true;
+                        setStatus(form, includeFiles ? 'Mengunggah file & menyimpan draft...' : 'Menyimpan draft otomatis...', 'muted');
+
+                        try {
+                            const response = await fetch(form.dataset.autosaveUrl, {
+                                method: 'POST',
+                                body: autosavePayload(includeFiles),
+                                credentials: 'same-origin',
+                                headers: {
+                                    'X-Requested-With': 'XMLHttpRequest',
+                                    'Accept': 'application/json',
+                                },
+                                keepalive: !includeFiles,
+                            });
+
+                            await applyAutosaveResponse(response);
+                        } catch (error) {
+                            setStatus(form, 'Autosave belum berhasil terhubung. Perubahan berikutnya akan dicoba lagi.', 'error');
+                        } finally {
+                            isAutosaving = false;
+
+                            if (pendingAutosave) {
+                                pendingAutosave = false;
+                                const filesToInclude = pendingIncludeFiles;
+                                pendingIncludeFiles = false;
+                                autosave(filesToInclude);
+                            }
+                        }
+                    };
+
+                    const autosaveWithBeacon = () => {
+                        if (!navigator.sendBeacon || !hasMeaningfulPayload(form)) {
+                            return;
+                        }
+
+                        navigator.sendBeacon(form.dataset.autosaveUrl, autosavePayload(false));
+                    };
 
                     const scheduleAutosave = () => {
                         window.clearTimeout(autosaveTimer);
-                        autosaveTimer = window.setTimeout(() => autosave(form), AUTOSAVE_DELAY);
+                        autosaveTimer = window.setTimeout(() => autosave(false), AUTOSAVE_DELAY);
                     };
 
                     form.addEventListener('input', (event) => {
@@ -981,7 +1034,8 @@
 
                     form.addEventListener('change', (event) => {
                         if (event.target.closest('input[type="file"]')) {
-                            autosave(form, true);
+                            window.clearTimeout(autosaveTimer);
+                            autosave(true);
                             return;
                         }
 
@@ -994,19 +1048,19 @@
 
                     document.addEventListener('visibilitychange', () => {
                         if (document.visibilityState === 'hidden') {
-                            autosaveWithBeacon(form);
+                            autosaveWithBeacon();
                         }
                     });
 
                     window.addEventListener('beforeunload', () => {
-                        autosaveWithBeacon(form);
+                        autosaveWithBeacon();
                     });
 
                     document.addEventListener('click', (event) => {
                         const link = event.target.closest('a[href]');
 
                         if (link && !link.href.includes('#')) {
-                            autosaveWithBeacon(form);
+                            autosaveWithBeacon();
                         }
                     }, { capture: true });
                 });
@@ -1177,7 +1231,7 @@
                         return;
                     }
 
-                    if (suffixInput.dataset.userEdited === 'true') {
+                    if (suffixInput.readOnly || suffixInput.dataset.userEdited === 'true') {
                         return;
                     }
 
@@ -1198,7 +1252,7 @@
                 document.addEventListener('input', (event) => {
                     const suffixInput = event.target.closest('input[name="nomor_dokumen_suffix"]');
 
-                    if (suffixInput) {
+                    if (suffixInput && !suffixInput.readOnly) {
                         suffixInput.dataset.userEdited = 'true';
                     }
                 });
