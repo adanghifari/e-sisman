@@ -255,17 +255,15 @@ class DocumentInboxController extends Controller
                 ->where($assignedApprovalScope),
         );
 
-        if (! $user->isDeveloper()) {
-            $relevantDocumentIds->union(
-                Document::query()
-                    ->select('id')
-                    ->where(function ($query) use ($user): void {
-                        $query
-                            ->where('user_id', $user->id)
-                            ->orWhere('official_preparer_id', $user->id);
-                    }),
-            );
-        }
+        $relevantDocumentIds->union(
+            Document::query()
+                ->select('id')
+                ->where(function ($query) use ($user): void {
+                    $query
+                        ->where('user_id', $user->id)
+                        ->orWhere('official_preparer_id', $user->id);
+                }),
+        );
 
         $query = Document::query()
             ->select('t_document.*')

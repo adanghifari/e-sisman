@@ -663,6 +663,13 @@
                                 <span class="ml-auto text-slate-500">{{ $document->tanggal_terbit?->translatedFormat('d M Y') ?? '-' }}</span>
                             </div>
                         </div>
+
+                        @if ($canResubmitRejectedDocument)
+                            <a href="{{ route('documents.rejected.resubmit', $document) }}" class="inline-flex min-h-12 w-full items-center justify-center gap-2 rounded-lg bg-orange-500 px-4 py-2.5 text-sm font-bold leading-5 text-white shadow-sm transition hover:bg-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-200" wire:navigate>
+                                <flux:icon name="arrow-uturn-left" class="size-5 shrink-0" />
+                                <span>{{ $document->request_type === 'revision' || $document->revised_from !== null ? 'Ajukan Ulang Revisi' : 'Ajukan Ulang Dokumen' }}</span>
+                            </a>
+                        @endif
                     </div>
                 </section>
 

@@ -7,7 +7,6 @@ use App\Models\ApprovalStatus;
 use App\Models\BusinessFunction;
 use App\Models\Document;
 use App\Models\DocumentFile;
-use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
 use App\Models\DocumentNumberingSetup;
 use App\Models\DocumentNumberRegistry;
@@ -50,16 +49,32 @@ class DocumentController extends Controller
 
     public function create(Request $request, string $level): View
     {
-        $revisionSource = $this->revisionSourceForRequest($request, $level);
+        $resubmissionSource = $this->resubmissionSourceForRequest($request, $level);
+        $revisionSource = $resubmissionSource?->revisedFrom ?: $this->revisionSourceForRequest($request, $level);
 
         abort_if($level === 'level-4' && $revisionSource === null, 404);
 
         return view('document-management.create.level', [
             'levelKey' => $level,
             'revisionSource' => $revisionSource,
+            'resubmissionSource' => $resubmissionSource,
             'procedureReferences' => $level === 'level-3'
                 ? $this->activeProcedureReferences()
                 : collect(),
+        ]);
+    }
+
+    public function resubmitRejected(Request $request, Document $document): RedirectResponse
+    {
+        $document->loadMissing(['status', 'documentLevel', 'revisedFrom.status', 'revisedFrom.documentLevel']);
+        $this->authorizeRejectedResubmissionAccess($request, $document);
+
+        $level = $document->documentLevel?->kode;
+        abort_unless(filled($level) && array_key_exists($level, config('document-levels')), 404);
+
+        return redirect()->route('documents.create.level', [
+            'level' => $level,
+            'resubmitted_from' => $document->id,
         ]);
     }
 
@@ -70,7 +85,7 @@ class DocumentController extends Controller
             : Document::query()->findOrFail($document);
 
         $this->authorizeDraftAccess($request, $document);
-        $document->loadMissing(['status', 'documentLevel', 'departments', 'files', 'officialPreparer', 'outgoingRelations', 'revisedFrom.status', 'revisedFrom.documentLevel', 'revisedFrom.businessProcess', 'revisedFrom.businessFunction', 'revisedFrom.departments', 'revisedFrom.outgoingRelations']);
+        $document->loadMissing(['status', 'documentLevel', 'departments', 'files', 'officialPreparer', 'outgoingRelations', 'resubmittedFrom.files', 'resubmittedFrom.status', 'revisedFrom.status', 'revisedFrom.documentLevel', 'revisedFrom.businessProcess', 'revisedFrom.businessFunction', 'revisedFrom.departments', 'revisedFrom.outgoingRelations']);
 
         $level = $document->documentLevel?->kode;
         abort_unless(filled($level) && array_key_exists($level, config('document-levels')), 404);
@@ -113,6 +128,7 @@ class DocumentController extends Controller
     public function store(Request $request, string $level): RedirectResponse
     {
         $draft = $this->draftForRequest($request);
+        $resubmissionSource = $draft?->resubmittedFrom ?: $this->resubmissionSourceForRequest($request, $level);
         $documentLevel = DocumentLevel::query()
             ->where('kode', $level)
             ->firstOrFail();
@@ -129,8 +145,8 @@ class DocumentController extends Controller
             )
             ->firstOrFail();
 
-        $validated = $request->validate($this->validationRulesForLevel($level, $draft));
-        $revisionSource = $draft?->revisedFrom ?: $this->revisionSourceForRequest($request, $level);
+        $validated = $request->validate($this->validationRulesForLevel($level, $draft, $resubmissionSource));
+        $revisionSource = $draft?->revisedFrom ?: $resubmissionSource?->revisedFrom ?: $this->revisionSourceForRequest($request, $level);
 
         abort_if($level === 'level-4' && $revisionSource === null, 404);
         abort_if($draft !== null && $draft->documentLevel?->kode !== $level, 404);
@@ -152,10 +168,12 @@ class DocumentController extends Controller
 
         $documentRevision = $revisionSource !== null
             ? null
-            : $this->normalizeRevision($validated['nomor_revisi'] ?? null);
+            : ($resubmissionSource !== null
+                ? (int) $resubmissionSource->nomor_revisi
+                : $this->normalizeRevision($validated['nomor_revisi'] ?? null));
         $documentNumber = $revisionSource !== null
             ? null
-            : $this->buildDocumentNumber($documentLevel, $validated);
+            : ($resubmissionSource?->nomor_dokumen ?: $this->buildDocumentNumber($documentLevel, $validated));
         $revisionFormNumber = null;
 
         $status = StatusDocument::findByName(
@@ -168,14 +186,13 @@ class DocumentController extends Controller
         $documentNumberLockAcquired = false;
 
         try {
-            DB::transaction(function () use ($request, $validated, $documentNumber, $revisionFormNumber, $documentRevision, $documentLevel, $documentType, $status, $level, $revisionSource, $draft, &$savedDocument, &$documentNumberLockAcquired): void {
+            DB::transaction(function () use ($request, $validated, $documentNumber, $revisionFormNumber, $documentRevision, $documentLevel, $documentType, $status, $level, $revisionSource, $resubmissionSource, $draft, &$savedDocument, &$documentNumberLockAcquired): void {
                 $lockedRevisionSource = null;
                 $documentAttributes = $validated;
                 $currentDocumentNumber = $documentNumber;
                 $currentRevisionFormNumber = $revisionFormNumber;
                 $currentDocumentRevision = $documentRevision;
-                $resubmittedFromId = null;
-                $rewriteRejectedRevision = false;
+                $resubmittedFromId = $resubmissionSource?->id;
 
                 if ($revisionSource !== null) {
                     $lockedRevisionSource = Document::query()
@@ -209,18 +226,14 @@ class DocumentController extends Controller
                         ]);
                     }
 
-                    $rejectedRevisionAttempt = $draft === null
-                        ? $this->latestRejectedRevisionAttempt($lockedRevisionSource)
-                        : null;
-                    $rewriteRejectedRevision = $rejectedRevisionAttempt !== null;
                     $currentDocumentRevision = match (true) {
                         $draft !== null && $draft->revised_from !== null => (int) $draft->nomor_revisi,
-                        $rejectedRevisionAttempt !== null => (int) $rejectedRevisionAttempt->nomor_revisi,
+                        $resubmissionSource !== null && $resubmissionSource->revised_from !== null => (int) $resubmissionSource->nomor_revisi,
                         default => $this->nextRevisionNumber($lockedRevisionSource),
                     };
                     $currentDocumentNumber = $this->revisionSourceMasterNumber($lockedRevisionSource);
                     $currentRevisionFormNumber = $draft?->nomor_lembar_revisi
-                        ?: $rejectedRevisionAttempt?->nomor_lembar_revisi
+                        ?: $resubmissionSource?->nomor_lembar_revisi
                         ?: $this->buildRevisionFormNumber($lockedRevisionSource, (int) $currentDocumentRevision);
 
                     $documentAttributes['m_proses_bisnis_id'] = $lockedRevisionSource->m_proses_bisnis_id;
@@ -235,7 +248,8 @@ class DocumentController extends Controller
 
                     $documentNumberLockAcquired = $this->acquireDocumentNumberLock($currentDocumentNumber);
                     $sameNumberDocuments = $this->lockedDocumentsForNumber($currentDocumentNumber);
-                    $resubmittedFromId = $this->resubmittedFromIdForReusableNumber($sameNumberDocuments, $draft);
+                    $resubmittedFromId = $resubmissionSource?->id
+                        ?: $this->resubmittedFromIdForReusableNumber($sameNumberDocuments, $draft);
                 }
 
                 $submittedAt = $documentAttributes['submit_action'] === 'submit' ? now() : null;
@@ -262,17 +276,13 @@ class DocumentController extends Controller
                     'cancelled_at' => null,
                 ];
 
-                $document = $draft ?: ($rewriteRejectedRevision ? $rejectedRevisionAttempt : null);
+                $document = $draft;
 
                 if ($document === null) {
                     $attributes['created_at'] = now();
                     $document = Document::create($attributes);
                 } else {
                     $document->update($attributes);
-
-                    if ($rewriteRejectedRevision) {
-                        $this->purgeRejectedRevisionAttemptPayload($document);
-                    }
                 }
 
                 $document->unsetRelation('status');
@@ -280,6 +290,17 @@ class DocumentController extends Controller
 
                 $document->departments()->sync($documentAttributes['department_ids'] ?? []);
                 $this->syncProcedureReference($document, $level, $documentAttributes['reference'] ?? null, $request->user()->id);
+
+                if ($resubmissionSource !== null) {
+                    $this->copyResubmissionSourceFiles(
+                        $resubmissionSource,
+                        $document,
+                        $documentAttributes['remove_existing_files'] ?? [],
+                        $documentAttributes['existing_attachment_titles'] ?? [],
+                        $documentAttributes['existing_attachment_orders'] ?? [],
+                    );
+                    DocumentRelation::copyReferenceToDocumentSource($document, $resubmissionSource, $request->user()->id);
+                }
 
                 $this->removeExistingDocumentFiles($document, $documentAttributes['remove_existing_files'] ?? []);
                 $this->updateExistingAttachments(
@@ -384,7 +405,8 @@ class DocumentController extends Controller
             )
             ->firstOrFail();
         $validated = $request->validate($this->autosaveValidationRulesForLevel($level));
-        $revisionSource = $this->autosaveRevisionSourceForRequest($request, $level);
+        $resubmissionSource = $this->resubmissionSourceForRequest($request, $level);
+        $revisionSource = $resubmissionSource?->revisedFrom ?: $this->autosaveRevisionSourceForRequest($request, $level);
 
         if (! $this->hasAutosavePayload($request, $validated)) {
             return response()->json([
@@ -408,18 +430,22 @@ class DocumentController extends Controller
 
         $documentNumber = $revisionSource !== null
             ? $this->revisionSourceMasterNumber($revisionSource)
-            : $this->buildDocumentNumber($documentLevel, $validated);
-        $draft = $this->autosaveDraftForRequest($request, $documentLevel, $revisionSource, $documentNumber);
+            : ($resubmissionSource?->nomor_dokumen ?: $this->buildDocumentNumber($documentLevel, $validated));
+        $draft = $this->autosaveDraftForRequest($request, $documentLevel, $revisionSource, $documentNumber, $resubmissionSource);
         $documentRevision = $revisionSource !== null
-            ? $this->autosaveRevisionNumber($draft, $revisionSource)
-            : $this->normalizeRevision($validated['nomor_revisi'] ?? null);
+            ? ($resubmissionSource !== null
+                ? (int) $resubmissionSource->nomor_revisi
+                : $this->autosaveRevisionNumber($draft, $revisionSource))
+            : ($resubmissionSource !== null
+                ? (int) $resubmissionSource->nomor_revisi
+                : $this->normalizeRevision($validated['nomor_revisi'] ?? null));
         $revisionFormNumber = $revisionSource !== null
             ? ($draft?->nomor_lembar_revisi ?: $this->buildRevisionFormNumber($revisionSource, (int) $documentRevision))
             : null;
         $status = StatusDocument::findByName(StatusDocument::DRAFT);
         $savedDocument = null;
 
-        DB::transaction(function () use ($request, $validated, $documentLevel, $documentType, $status, $revisionSource, $draft, $documentNumber, $documentRevision, $revisionFormNumber, &$savedDocument): void {
+        DB::transaction(function () use ($request, $validated, $documentLevel, $documentType, $status, $revisionSource, $resubmissionSource, $draft, $documentNumber, $documentRevision, $revisionFormNumber, &$savedDocument): void {
             $attributes = [
                 'm_document_level_id' => $documentLevel->id,
                 'm_status_document_id' => $status->id,
@@ -429,6 +455,7 @@ class DocumentController extends Controller
                 'user_id' => $request->user()->id,
                 'official_preparer_id' => $validated['official_preparer_id'] ?? null,
                 'revised_from' => $revisionSource?->id,
+                'resubmitted_from' => $draft?->resubmitted_from ?: $resubmissionSource?->id,
                 'request_type' => $revisionSource !== null ? 'revision' : null,
                 'nama_dokumen' => $validated['nama_dokumen'],
                 'nomor_dokumen' => $documentNumber,
@@ -453,6 +480,16 @@ class DocumentController extends Controller
 
             $document->departments()->sync($validated['department_ids'] ?? []);
             $this->syncProcedureReference($document, $documentLevel->kode, $validated['reference'] ?? null, $request->user()->id);
+            if ($resubmissionSource !== null) {
+                $this->copyResubmissionSourceFiles(
+                    $resubmissionSource,
+                    $document,
+                    $validated['remove_existing_files'] ?? [],
+                    $validated['existing_attachment_titles'] ?? [],
+                    $validated['existing_attachment_orders'] ?? [],
+                );
+                DocumentRelation::copyReferenceToDocumentSource($document, $resubmissionSource, $request->user()->id);
+            }
             $this->storeAutosaveFiles($request, $document);
 
             $savedDocument = $document;
@@ -484,11 +521,12 @@ class DocumentController extends Controller
         ][$level] ?? ['IK', 'Instruksi Kerja'];
     }
 
-    protected function validationRulesForLevel(string $level, ?Document $draft = null): array
+    protected function validationRulesForLevel(string $level, ?Document $draft = null, ?Document $resubmissionSource = null): array
     {
         $submitAction = request('submit_action', null);
         $requiresSubmittedFile = $submitAction !== 'draft';
         $isDraftAction = $submitAction === 'draft';
+        $removedExistingFileIds = request('remove_existing_files', []);
 
         if ($level === 'level-1') {
             return [
@@ -498,9 +536,10 @@ class DocumentController extends Controller
                 'tanggal_terbit' => [$isDraftAction ? 'nullable' : 'required', 'date'],
                 'catatan_revisi' => ['nullable', 'string', 'max:1000'],
                 'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
-                'imported_document' => [$isDraftAction || $draft?->files()->where('type_file', 'imported_document')->exists() ? 'nullable' : 'required', 'file', 'mimes:pdf', 'max:10240'],
+                'imported_document' => [$isDraftAction || $this->documentHasReusableFile($draft, $resubmissionSource, 'imported_document', $removedExistingFileIds) ? 'nullable' : 'required', 'file', 'mimes:pdf', 'max:10240'],
                 'submit_action' => ['required', Rule::in(['draft', 'submit'])],
                 'revised_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+                'resubmitted_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'remove_existing_files' => ['nullable', 'array'],
                 'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
@@ -522,8 +561,8 @@ class DocumentController extends Controller
                 'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
                 'nomor_dokumen_suffix' => $this->documentNumberSuffixRules(false),
                 'tanggal_terbit' => ['nullable', 'date'],
-                'revision_content' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'revision_content')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
-                'revision_form' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'revision_form')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
+                'revision_content' => [$requiresSubmittedFile && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'revision_content', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
+                'revision_form' => [$requiresSubmittedFile && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'revision_form', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
                 'attachments' => ['nullable', 'array', 'max:10'],
                 'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
                 'attachment_titles' => ['nullable', 'array', 'max:10'],
@@ -536,6 +575,7 @@ class DocumentController extends Controller
                 'revised_attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
                 'submit_action' => ['required', Rule::in(['draft', 'submit'])],
                 'revised_from' => ['required', 'integer', Rule::exists('t_document', 'id')],
+                'resubmitted_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'remove_existing_files' => ['nullable', 'array'],
                 'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
@@ -556,7 +596,7 @@ class DocumentController extends Controller
             'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
             'nomor_dokumen_suffix' => $this->documentNumberSuffixRules($isDraftAction),
             'tanggal_terbit' => ['nullable', 'date'],
-            'filled_template' => [$requiresSubmittedFile && ! $draft?->files()->where('type_file', 'filled_template')->exists() ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
+            'filled_template' => [$requiresSubmittedFile && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'filled_template', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
             'attachments' => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
             'attachment_titles' => ['nullable', 'array', 'max:10'],
@@ -565,6 +605,7 @@ class DocumentController extends Controller
             'attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
             'submit_action' => ['required', Rule::in(['draft', 'submit'])],
             'revised_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+            'resubmitted_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'remove_existing_files' => ['nullable', 'array'],
             'remove_existing_files.*' => ['integer', Rule::exists('t_document_files', 'id')],
@@ -593,6 +634,7 @@ class DocumentController extends Controller
             'tanggal_terbit' => ['nullable', 'date'],
             'catatan_revisi' => ['nullable', 'string', 'max:1000'],
             'revised_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+            'resubmitted_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'imported_document' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
             'filled_template' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
@@ -666,6 +708,7 @@ class DocumentController extends Controller
         DocumentLevel $documentLevel,
         ?Document $revisionSource,
         ?string $documentNumber,
+        ?Document $resubmissionSource,
     ): ?Document {
         if (filled($request->input('draft_id'))) {
             $draft = Document::query()
@@ -680,6 +723,7 @@ class DocumentController extends Controller
         $query = $this->draftQuery($request)
             ->where('m_document_level_id', $documentLevel->id)
             ->where('revised_from', $revisionSource?->id)
+            ->where('resubmitted_from', $resubmissionSource?->id)
             ->where('request_type', $revisionSource !== null ? 'revision' : null);
 
         if (filled($documentNumber)) {
@@ -705,11 +749,7 @@ class DocumentController extends Controller
             return (int) $draft->nomor_revisi;
         }
 
-        $rejectedRevisionAttempt = $this->latestRejectedRevisionAttempt($revisionSource);
-
-        return $rejectedRevisionAttempt?->nomor_revisi
-            ? (int) $rejectedRevisionAttempt->nomor_revisi
-            : $this->nextRevisionNumber($revisionSource);
+        return $this->nextRevisionNumber($revisionSource);
     }
 
     private function storeAutosaveFiles(Request $request, Document $document): void
@@ -872,6 +912,66 @@ class DocumentController extends Controller
         return $targetPath;
     }
 
+    /**
+     * @param  array<int, int|string>  $excludedFileIds
+     * @param  array<int|string, string|null>  $attachmentTitles
+     * @param  array<int|string, int|string|null>  $attachmentOrders
+     */
+    private function copyResubmissionSourceFiles(
+        Document $source,
+        Document $target,
+        array $excludedFileIds = [],
+        array $attachmentTitles = [],
+        array $attachmentOrders = [],
+    ): void {
+        $excludedFileIds = collect($excludedFileIds)
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->all();
+
+        $source->loadMissing('files');
+
+        foreach ($source->files as $sourceFile) {
+            if (in_array((int) $sourceFile->id, $excludedFileIds, true)) {
+                continue;
+            }
+
+            if (! Storage::disk('local')->exists($sourceFile->path_file)) {
+                continue;
+            }
+
+            $alreadyCopied = $target->files()
+                ->where('source_file_id', $sourceFile->id)
+                ->exists();
+
+            if ($alreadyCopied) {
+                continue;
+            }
+
+            $path = $this->copyDocumentFileToDocument($sourceFile, $target);
+            $title = $sourceFile->type_file === 'attachment'
+                ? ($attachmentTitles[$sourceFile->id] ?? $sourceFile->attachment_title)
+                : $sourceFile->attachment_title;
+            $order = $sourceFile->type_file === 'attachment'
+                ? ($attachmentOrders[$sourceFile->id] ?? $sourceFile->attachment_order)
+                : $sourceFile->attachment_order;
+
+            $target->files()->create([
+                'type_file' => $sourceFile->type_file,
+                'document_number' => $sourceFile->document_number,
+                'attachment_title' => filled($title) ? trim((string) $title) : null,
+                'attachment_order' => filled($order) ? max(1, (int) $order) : null,
+                'path_file' => $path,
+                'uploaded_by' => $sourceFile->uploaded_by,
+                'updated_at' => now(),
+                'original_file_name' => $sourceFile->original_file_name,
+                'stored_file_name' => basename($path),
+                'source_file_id' => $sourceFile->id,
+                'file_size' => $sourceFile->file_size,
+            ]);
+        }
+    }
+
     private function updateMatchingAttachmentOrder(Document $document, mixed $file, ?string $title, int $order): void
     {
         $document->files()
@@ -958,12 +1058,49 @@ class DocumentController extends Controller
         }
 
         $draft = Document::query()
-            ->with(['status', 'documentLevel', 'files', 'departments', 'officialPreparer', 'revisedFrom.status', 'revisedFrom.documentLevel', 'revisedFrom.departments'])
+            ->with(['status', 'documentLevel', 'files', 'departments', 'officialPreparer', 'resubmittedFrom.files', 'resubmittedFrom.status', 'revisedFrom.status', 'revisedFrom.documentLevel', 'revisedFrom.departments'])
             ->findOrFail($request->integer('draft_id'));
 
         $this->authorizeDraftAccess($request, $draft);
 
         return $draft;
+    }
+
+    private function resubmissionSourceForRequest(Request $request, string $level): ?Document
+    {
+        $sourceId = $request->input('resubmitted_from') ?: $request->query('resubmitted_from');
+
+        if (! filled($sourceId)) {
+            return null;
+        }
+
+        $source = Document::query()
+            ->with([
+                'status',
+                'documentLevel',
+                'businessProcess',
+                'businessFunction',
+                'departments',
+                'files',
+                'officialPreparer',
+                'outgoingRelations',
+                'revisedFrom.status',
+                'revisedFrom.documentLevel',
+                'revisedFrom.businessProcess',
+                'revisedFrom.businessFunction',
+                'revisedFrom.departments',
+                'revisedFrom.outgoingRelations',
+            ])
+            ->findOrFail((int) $sourceId);
+
+        $this->authorizeRejectedResubmissionAccess($request, $source);
+        abort_unless($source->documentLevel?->kode === $level, 404);
+
+        if ($source->revised_from !== null) {
+            abort_unless($source->revisedFrom?->status?->nama_status === StatusDocument::APPROVED, 404);
+        }
+
+        return $source;
     }
 
     private function acquireDocumentNumberLock(string $documentNumber): bool
@@ -1142,6 +1279,32 @@ class DocumentController extends Controller
             && $document->request_type === null
             && $document->approved_at === null
             && $document->status?->nama_status === StatusDocument::REJECTED;
+    }
+
+    private function authorizeRejectedResubmissionAccess(Request $request, Document $document): void
+    {
+        abort_unless($document->status?->nama_status === StatusDocument::REJECTED, 404);
+        abort_unless(
+            in_array($request->user()->id, array_filter([
+                $document->user_id,
+                $document->official_preparer_id,
+            ]), true),
+            403,
+        );
+    }
+
+    private function documentHasReusableFile(?Document $draft, ?Document $resubmissionSource, string $type, array $excludedFileIds = []): bool
+    {
+        $excludedFileIds = collect($excludedFileIds)
+            ->map(fn (mixed $id): int => (int) $id)
+            ->filter()
+            ->all();
+
+        return $draft?->files()->where('type_file', $type)->exists()
+            || $resubmissionSource?->files()
+                ->where('type_file', $type)
+                ->when($excludedFileIds !== [], fn ($query) => $query->whereNotIn('id', $excludedFileIds))
+                ->exists();
     }
 
     private function authorizeDraftAccess(Request $request, Document $document): void
@@ -1431,21 +1594,6 @@ class DocumentController extends Controller
         return ((int) $source->revisionFamily()->max('nomor_revisi')) + 1;
     }
 
-    private function latestRejectedRevisionAttempt(Document $source): ?Document
-    {
-        return Document::query()
-            ->with('status')
-            ->where('revised_from', $source->id)
-            ->where('request_type', 'revision')
-            ->whereNull('approved_at')
-            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::REJECTED))
-            ->orderByDesc('nomor_revisi')
-            ->orderByDesc('rejected_at')
-            ->orderByDesc('id')
-            ->lockForUpdate()
-            ->first();
-    }
-
     private function hasActiveRevisionRequest(Document $source): bool
     {
         $terminalStatusNames = [
@@ -1562,25 +1710,6 @@ class DocumentController extends Controller
     {
         Storage::disk('local')->delete($file->path_file);
         $file->delete();
-    }
-
-    private function purgeRejectedRevisionAttemptPayload(Document $document): void
-    {
-        $document->files()
-            ->get()
-            ->each(fn (DocumentFile $file) => $this->deleteDocumentFile($file));
-
-        $document->approvals()->delete();
-
-        $document->finalArtifacts()
-            ->get()
-            ->each(function (DocumentFinalArtifact $artifact): void {
-                if (filled($artifact->path_file)) {
-                    Storage::disk('local')->delete($artifact->path_file);
-                }
-
-                $artifact->delete();
-            });
     }
 
     private function recordOfficialPreparerApproval(Document $document, int $assignedBy, mixed $respondedAt): void
