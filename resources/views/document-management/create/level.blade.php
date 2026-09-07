@@ -227,7 +227,7 @@
             ? ($levelKey === 'level-4' ? $levelFourPrefix : ($revisionPrefixes[$levelKey] ?? 'FM'.$documentPrefixes[$levelKey]))
             : $documentPrefixes[$levelKey];
         $latestRevisionNumber = $revisionSource
-            ? (int) $revisionSource->revisionFamily()->max('nomor_revisi')
+            ? $revisionSource->latestApprovedRevisionNumber()
             : null;
         $documentNumberSuffixDefault = $formSource?->nomor_dokumen
             ? \Illuminate\Support\Str::afterLast($formSource->nomor_dokumen, '-')

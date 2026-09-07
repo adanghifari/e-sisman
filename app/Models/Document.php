@@ -175,6 +175,24 @@ class Document extends Model
             ->get();
     }
 
+    public function latestApprovedRevisionNumber(): int
+    {
+        $eligibleStatusIds = StatusDocument::query()
+            ->whereIn('nama_status', [StatusDocument::APPROVED, StatusDocument::OBSOLETE])
+            ->pluck('id');
+
+        $family = $this->revisionFamily();
+
+        if ($eligibleStatusIds->isEmpty()) {
+            return (int) $family->max('nomor_revisi');
+        }
+
+        return (int) $family
+            ->filter(fn (self $document): bool => $eligibleStatusIds->contains($document->m_status_document_id))
+            ->filter(fn (self $document): bool => $document->request_type !== 'obsolete')
+            ->max('nomor_revisi');
+    }
+
     public function obsoleteRevisions(): HasMany
     {
         return $this->hasMany(self::class, 'revised_from')
