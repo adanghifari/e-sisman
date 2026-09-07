@@ -111,29 +111,39 @@
                 setTimeout(() => dialog.remove(), 180);
             };
 
-            document.querySelectorAll('[data-success-dialog]').forEach((dialog) => {
-                const panel = dialog.firstElementChild;
-                const closeButton = dialog.querySelector('[data-success-dialog-close]');
+            window.initSuccessDialogs = () => {
+                document.querySelectorAll('[data-success-dialog]:not([data-success-dialog-initialized])').forEach((dialog) => {
+                    dialog.dataset.successDialogInitialized = 'true';
 
-                requestAnimationFrame(() => {
-                    panel.dataset.ready = 'true';
-                    closeButton?.focus();
+                    const panel = dialog.firstElementChild;
+                    const closeButton = dialog.querySelector('[data-success-dialog-close]');
+
+                    requestAnimationFrame(() => {
+                        panel.dataset.ready = 'true';
+                        closeButton?.focus();
+                    });
+
+                    closeButton?.addEventListener('click', () => closeDialog(dialog));
+
+                    dialog.addEventListener('click', (event) => {
+                        if (event.target === dialog) {
+                            closeDialog(dialog);
+                        }
+                    });
                 });
+            };
 
-                closeButton?.addEventListener('click', () => closeDialog(dialog));
+            document.addEventListener('keydown', (event) => {
+                const dialog = document.querySelector('[data-success-dialog]');
 
-                dialog.addEventListener('click', (event) => {
-                    if (event.target === dialog) {
-                        closeDialog(dialog);
-                    }
-                });
-
-                document.addEventListener('keydown', (event) => {
-                    if (event.key === 'Escape' && document.body.contains(dialog)) {
-                        closeDialog(dialog);
-                    }
-                });
+                if (event.key === 'Escape' && dialog instanceof HTMLElement) {
+                    closeDialog(dialog);
+                }
             });
+
+            document.addEventListener('DOMContentLoaded', window.initSuccessDialogs);
+            document.addEventListener('livewire:navigated', window.initSuccessDialogs);
+            window.initSuccessDialogs();
         })();
     </script>
 @endonce

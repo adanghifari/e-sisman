@@ -263,7 +263,8 @@ class CreateDocumentTest extends TestCase
             ->assertSee('Import Dokumen Level I')
             ->assertSee('Nama Dokumen')
             ->assertSee('Upload Dokumen')
-            ->assertSee('Import Dokumen');
+            ->assertSee('Import Dokumen')
+            ->assertSee('Submit Dokumen');
     }
 
     public function test_create_document_sidebar_stays_active_on_level_forms(): void
@@ -388,7 +389,8 @@ class CreateDocumentTest extends TestCase
                 'imported_document' => UploadedFile::fake()->create('manual-submit.pdf', 24, 'application/pdf'),
                 'submit_action' => 'submit',
             ])
-            ->assertRedirect(route('documents.create'));
+            ->assertRedirect(route('documents.create'))
+            ->assertSessionHas('document_success.title', 'Dokumen berhasil disubmit');
 
         $document = Document::query()->firstOrFail();
 

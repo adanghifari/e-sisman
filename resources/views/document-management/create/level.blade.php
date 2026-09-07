@@ -405,7 +405,7 @@
                                 Simpan Draft
                             </button>
                             <button type="submit" name="submit_action" value="submit" class="inline-flex h-12 items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
-                                Import Dokumen
+                                Submit Dokumen
                             </button>
                         </div>
                     </div>
