@@ -352,13 +352,30 @@ class CreateDocumentTest extends TestCase
 
         StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
         StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
-        ApprovalStatus::create([
-            'kode_status' => ApprovalStatus::APPROVED,
-            'nama_status' => 'Disetujui',
-        ]);
+        StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        foreach ([
+            ApprovalStatus::PENDING => 'Dalam Review',
+            ApprovalStatus::WAITING => 'Menunggu',
+            ApprovalStatus::APPROVED => 'Disetujui',
+            ApprovalStatus::REJECTED => 'Ditolak',
+            ApprovalStatus::TERMINATED => 'Dihentikan',
+        ] as $code => $name) {
+            ApprovalStatus::create([
+                'kode_status' => $code,
+                'nama_status' => $name,
+            ]);
+        }
         DocumentType::create(['nama_types' => 'Manual']);
 
         $level = DocumentLevel::query()->where('kode', 'level-1')->firstOrFail();
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $level->id,
+            'nama_flow' => 'Flow Manual SKMBS',
+        ]);
+        $stage = $flow->stages()->create([
+            'stage_order' => 1,
+            'nama_tahap' => 'Verifikator Manual',
+        ]);
 
         $this->actingAs($submitter)
             ->post(route('documents.store', 'level-1'), [
@@ -401,6 +418,44 @@ class CreateDocumentTest extends TestCase
             ->assertSee('SM-002')
             ->assertSee('Manual')
             ->assertSee('Belum assign approver');
+
+        $this->actingAs($documentControlAdmin)
+            ->get(route('documents.approval.show', $document))
+            ->assertOk()
+            ->assertSee('Manual SKMBS Submit')
+            ->assertSee('Approval Flow Dokumen Level I')
+            ->assertSee('Verifikator Manual')
+            ->assertSee('Save Approver');
+
+        $this->actingAs($documentControlAdmin)
+            ->post(route('documents.approval.assign', $document), [
+                'stage_approvers' => [
+                    $stage->id => [$documentControlAdmin->id],
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document));
+
+        $this->assertTrue(
+            $document->approvals()
+                ->where('user_id', $documentControlAdmin->id)
+                ->where('m_approval_flow_stage_id', $stage->id)
+                ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::PENDING))
+                ->exists(),
+        );
+
+        $this->actingAs($documentControlAdmin)
+            ->post(route('documents.approval.approve', $document))
+            ->assertRedirect(route('documents.approval.show', $document));
+
+        $this->assertSame(StatusDocument::APPROVED, $document->refresh()->status->nama_status);
+        $this->assertNotNull($document->approved_at);
+        $this->assertTrue(
+            $document->approvals()
+                ->where('user_id', $documentControlAdmin->id)
+                ->where('m_approval_flow_stage_id', $stage->id)
+                ->whereHas('status', fn ($query) => $query->where('kode_status', ApprovalStatus::APPROVED))
+                ->exists(),
+        );
     }
 
     public function test_level_two_document_can_be_saved_as_draft(): void

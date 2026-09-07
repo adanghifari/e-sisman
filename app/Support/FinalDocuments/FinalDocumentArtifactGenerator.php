@@ -29,7 +29,7 @@ class FinalDocumentArtifactGenerator
             DocumentFinalArtifact::TYPE_FINAL_DOCUMENT,
         );
 
-        return $this->generatePrepared($preparation, $mode);
+        return $this->generatePrepared($preparation, $mode, PdfDocumentContext::finalFor($document));
     }
 
     public function generatePrepared(

@@ -185,7 +185,7 @@ class DocumentObsoleteController extends Controller
                 ->values(),
             'generatedPrintout' => $this->latestGeneratedPrintout($document),
             'canPreviewGeneratedPrintout' => app(DynamicFinalDocumentRenderer::class)
-                ->canRender($document, PdfDocumentContext::FINAL_DOCUMENT),
+                ->canRender($document, PdfDocumentContext::finalFor($document)),
             'documentHistory' => app(DocumentHistory::class)->forDocument($document),
         ]);
     }
@@ -286,7 +286,7 @@ class DocumentObsoleteController extends Controller
     ): Response {
         $this->authorizeObsoleteGeneratedPreviewAccess($document);
 
-        $context = PdfDocumentContext::FINAL_DOCUMENT;
+        $context = PdfDocumentContext::finalFor($document);
         $watermarkStamp = null;
 
         if ($request->boolean('download')) {

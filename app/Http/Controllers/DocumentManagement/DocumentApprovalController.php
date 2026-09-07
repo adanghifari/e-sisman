@@ -107,7 +107,7 @@ class DocumentApprovalController extends Controller
             'generatedPrintout' => $this->latestGeneratedPrintout($document),
             'canPreviewGeneratedPrintout' => app(DynamicFinalDocumentRenderer::class)
                 ->canRender($document, $document->status?->nama_status === StatusDocument::APPROVED
-                    ? PdfDocumentContext::FINAL_DOCUMENT
+                    ? PdfDocumentContext::finalFor($document)
                     : PdfDocumentContext::APPROVAL_PREVIEW),
             'documentHistory' => app(DocumentHistory::class)->forDocument($document),
             'rejectionHistory' => app(DocumentRejectionHistory::class)->forDocument($document),
@@ -493,7 +493,7 @@ class DocumentApprovalController extends Controller
         abort_if($document->request_type === 'obsolete', 404);
 
         $context = $document->status?->nama_status === StatusDocument::APPROVED
-            ? PdfDocumentContext::FINAL_DOCUMENT
+            ? PdfDocumentContext::finalFor($document)
             : PdfDocumentContext::APPROVAL_PREVIEW;
 
         return response($renderer->render($document, $context), 200, [
