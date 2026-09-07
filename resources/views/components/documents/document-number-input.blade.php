@@ -51,4 +51,7 @@
     @error('nomor_dokumen_suffix')
         <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
     @enderror
+    @error('nomor_dokumen')
+        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+    @enderror
 </div>

@@ -738,6 +738,242 @@ class ImportedExistingDocumentTest extends TestCase
         return $user->refresh();
     }
 
+    public function test_imported_existing_master_level_2_normalizes_single_digit_suffix_to_two_digits(): void
+    {
+        Storage::fake('local');
+
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.master.imports.store-level',
+            'documents.master.imports.create-level',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('documents.master.imports.store.level', 'level-2'), [
+                'm_document_level_id' => $level->id,
+                'm_document_types_id' => $documentType->id,
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'nama_dokumen' => 'Existing Master Level 2 Suffix Normalization',
+                'nomor_dokumen_suffix' => '7',
+                'nomor_revisi' => '00.00',
+                'existing_document' => UploadedFile::fake()->create('existing-master.pdf', 100, 'application/pdf'),
+            ])
+            ->assertRedirect();
+
+        $document = ImportedExistingDocument::query()
+            ->where('nama_dokumen', 'Existing Master Level 2 Suffix Normalization')
+            ->firstOrFail();
+
+        $this->assertSame('PS-OPS-07', $document->nomor_dokumen);
+        $this->assertDatabaseHas('document_number_registry', [
+            'document_number' => 'PS-OPS-07',
+            'source_type' => DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING,
+            'source_id' => $document->id,
+        ]);
+    }
+
+    public function test_imported_existing_master_level_3_constructs_number_from_procedure_reference_and_suffix(): void
+    {
+        Storage::fake('local');
+
+        [$user, $level2, $documentType2, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.master.imports.store-level',
+            'documents.master.imports.create-level',
+        ]);
+
+        $level3 = DocumentLevel::query()->where('kode', 'level-3')->firstOrFail();
+        $documentType3 = DocumentType::query()->firstOrCreate(['nama_types' => 'Instruksi Kerja']);
+
+        $procDoc = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level2->id,
+            'm_document_types_id' => $documentType2->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Parent Procedure Master',
+            'nomor_dokumen' => 'PS-PMS-01',
+            'nomor_revisi' => '00.00',
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('documents.master.imports.store.level', 'level-3'), [
+                'm_document_level_id' => $level3->id,
+                'm_document_types_id' => $documentType3->id,
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'reference' => "imported-{$procDoc->id}",
+                'department_ids' => [$department->id],
+                'nama_dokumen' => 'IK Master Dari Prosedur',
+                'nomor_dokumen_suffix' => '7',
+                'nomor_revisi' => '00.00',
+                'existing_document' => UploadedFile::fake()->create('ik-master.pdf', 100, 'application/pdf'),
+            ])
+            ->assertRedirect();
+
+        $document = ImportedExistingDocument::query()
+            ->where('nama_dokumen', 'IK Master Dari Prosedur')
+            ->firstOrFail();
+
+        $this->assertSame('IK-PMS-01-07', $document->nomor_dokumen);
+        $this->assertDatabaseHas('document_number_registry', [
+            'document_number' => 'IK-PMS-01-07',
+            'source_type' => DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING,
+            'source_id' => $document->id,
+        ]);
+    }
+
+    public function test_imported_existing_master_level_3_page_renders_document_number_segments(): void
+    {
+        [$user, $level2, $documentType2, $businessProcess, $businessFunction] = $this->existingMasterFixture([
+            'documents.master.imports.create-level',
+        ]);
+
+        ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level2->id,
+            'm_document_types_id' => $documentType2->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Procedure',
+            'nomor_dokumen' => 'PS-PMS-01',
+            'nomor_revisi' => '00.00',
+        ]);
+
+        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        Document::create([
+            'm_document_level_id' => $level2->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $documentType2->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Workflow Procedure',
+            'nomor_dokumen' => 'PS-SMR-02',
+            'nomor_revisi' => 0,
+            'approved_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.imports.create.level', 'level-3'))
+            ->assertOk()
+            ->assertSee('IK')
+            ->assertSee('data-document-number-segment="procedure-reference-0"', false)
+            ->assertSee('data-document-number-segment="procedure-reference-1"', false)
+            ->assertSee('name="nomor_dokumen_suffix"', false);
+    }
+
+    public function test_imported_existing_master_validates_invalid_suffix_characters(): void
+    {
+        Storage::fake('local');
+
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.master.imports.store-level',
+            'documents.master.imports.create-level',
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('documents.master.imports.create.level', 'level-2'))
+            ->post(route('documents.master.imports.store.level', 'level-2'), [
+                'm_document_level_id' => $level->id,
+                'm_document_types_id' => $documentType->id,
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'nama_dokumen' => 'Invalid Suffix Master',
+                'nomor_dokumen_suffix' => '###',
+                'nomor_revisi' => '00.00',
+                'existing_document' => UploadedFile::fake()->create('existing-master.pdf', 100, 'application/pdf'),
+            ])
+            ->assertRedirect(route('documents.master.imports.create.level', 'level-2'))
+            ->assertSessionHasErrors('nomor_dokumen_suffix');
+    }
+
+    public function test_imported_existing_master_rejected_when_number_exists_in_t_document(): void
+    {
+        Storage::fake('local');
+
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.master.imports.store-level',
+            'documents.master.imports.create-level',
+        ]);
+
+        $status = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $status->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'nama_dokumen' => 'Existing V2 Document',
+            'nomor_dokumen' => 'PS-OPS-01',
+            'nomor_revisi' => 0,
+            'approved_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('documents.master.imports.create.level', 'level-2'))
+            ->post(route('documents.master.imports.store.level', 'level-2'), [
+                'm_document_level_id' => $level->id,
+                'm_document_types_id' => $documentType->id,
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'nama_dokumen' => 'Duplicate V2 Number Import',
+                'nomor_dokumen_suffix' => '01',
+                'nomor_revisi' => '00.00',
+                'existing_document' => UploadedFile::fake()->create('existing-master.pdf', 100, 'application/pdf'),
+            ])
+            ->assertRedirect(route('documents.master.imports.create.level', 'level-2'))
+            ->assertSessionHasErrors(['nomor_dokumen' => 'Nomor dokumen sudah digunakan.']);
+    }
+
+    public function test_imported_existing_master_rejected_when_number_exists_in_imported_master_documents(): void
+    {
+        Storage::fake('local');
+
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.master.imports.store-level',
+            'documents.master.imports.create-level',
+        ]);
+
+        ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'First Imported Master',
+            'nomor_dokumen' => 'PS-OPS-05',
+            'nomor_revisi' => '00.00',
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('documents.master.imports.create.level', 'level-2'))
+            ->post(route('documents.master.imports.store.level', 'level-2'), [
+                'm_document_level_id' => $level->id,
+                'm_document_types_id' => $documentType->id,
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'nama_dokumen' => 'Second Imported Master With Same Number',
+                'nomor_dokumen_suffix' => '05',
+                'nomor_revisi' => '00.00',
+                'existing_document' => UploadedFile::fake()->create('existing-master.pdf', 100, 'application/pdf'),
+            ])
+            ->assertRedirect(route('documents.master.imports.create.level', 'level-2'))
+            ->assertSessionHasErrors(['nomor_dokumen' => 'Nomor dokumen sudah digunakan.']);
+    }
+
     private function existingMasterFixture(array $permissionCodes): array
     {
         $user = $this->userWithPermissions($permissionCodes);

@@ -268,6 +268,24 @@ class ImportedExistingDocumentController extends Controller
             ->map(fn ($id): string => (string) $id)
             ->all();
 
+        $procedureReferenceSegments = function ($procedure): array {
+            return collect(explode('-', (string) ($procedure?->nomor_dokumen ?? '')))
+                ->map(fn (string $segment): string => Str::upper(trim($segment)))
+                ->filter()
+                ->values()
+                ->skip(1)
+                ->values()
+                ->all();
+        };
+
+        $procedureReferenceNumberSegments = [];
+        foreach ($importedProcedures as $proc) {
+            $procedureReferenceNumberSegments["imported-{$proc->id}"] = $procedureReferenceSegments($proc);
+        }
+        foreach ($workflowProcedures as $proc) {
+            $procedureReferenceNumberSegments["existing-{$proc->id}"] = $procedureReferenceSegments($proc);
+        }
+
         return view('document-management.master.imports.create', [
             'level' => $level,
             'levelConfig' => $levelConfig,
@@ -275,10 +293,12 @@ class ImportedExistingDocumentController extends Controller
             'documentState' => $documentState,
             'processOptions' => $processOptions,
             'functionOptions' => $functionOptions,
+            'businessFunctions' => $businessFunctions,
             'departmentOptions' => $departmentOptions,
             'selectedDepartmentIds' => $selectedDepartmentIds,
             'workflowProcedures' => $workflowProcedures,
             'importedProcedures' => $importedProcedures,
+            'procedureReferenceNumberSegments' => $procedureReferenceNumberSegments,
             'importedDocumentOptions' => ImportedExistingDocument::query()->orderBy('nama_dokumen')->get(['id', 'nama_dokumen', 'nomor_dokumen']),
             'existingDocumentOptions' => Document::query()->orderBy('nama_dokumen')->get(['id', 'nama_dokumen', 'nomor_dokumen']),
             'relationDocumentOptions' => $this->relationDocumentOptions($documentLevelRecord?->id),
@@ -534,6 +554,11 @@ class ImportedExistingDocumentController extends Controller
             'document_state' => $request->input('document_state', ImportedExistingDocument::STATE_OBSOLETE),
         ]);
 
+        $resolvedNomorDokumen = $this->resolveImportedDocumentNumber($request);
+        if ($resolvedNomorDokumen !== null) {
+            $request->merge(['nomor_dokumen' => $resolvedNomorDokumen]);
+        }
+
         $validated = $request->validate([
             'document_state' => ['required', Rule::in(ImportedExistingDocument::DOCUMENT_STATES)],
             'obsolete_rule_type' => ['required', Rule::in(ImportedExistingDocument::RULE_TYPES)],
@@ -543,6 +568,7 @@ class ImportedExistingDocumentController extends Controller
             'm_proses_fungsi_id' => ['required_if:obsolete_rule_type,'.ImportedExistingDocument::CURRENT_RULE, 'nullable', 'integer', Rule::exists('m_proses_fungsi', 'id')],
             'nama_dokumen' => ['required', 'string', 'max:255'],
             'nomor_dokumen' => ['nullable', 'string', 'max:255'],
+            'nomor_dokumen_suffix' => ['nullable', 'string', 'max:50', 'regex:/^[A-Za-z0-9]+$/'],
             'nomor_revisi' => ['nullable', 'string', 'max:50'],
             'tanggal_terbit' => ['nullable', 'date'],
             'tanggal_obsolete' => ['nullable', 'date'],
@@ -561,6 +587,8 @@ class ImportedExistingDocumentController extends Controller
             'relations.*.related_document_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'relations.*.relation_type' => ['required_with:relations', Rule::in(DocumentRelation::RELATION_TYPES)],
             'relations.*.keterangan' => ['nullable', 'string', 'max:1000'],
+        ], [
+            'nomor_dokumen_suffix.regex' => 'Nomor dokumen suffix hanya boleh berupa angka atau huruf.',
         ]);
 
         if (($validated['obsolete_rule_type'] ?? null) === ImportedExistingDocument::CURRENT_RULE) {
@@ -576,6 +604,11 @@ class ImportedExistingDocumentController extends Controller
             ];
             $masterErrors = [];
 
+            $levelRecord = DocumentLevel::query()->find($validated['m_document_level_id'] ?? null);
+            if ($levelRecord?->kode === 'level-3' && ! filled($validated['reference'] ?? null)) {
+                $masterErrors['reference'] = 'Pilih Dokumen Level II: Prosedur terlebih dahulu.';
+            }
+
             foreach ($requiredMasterFields as $field) {
                 if ($field === 'department_ids') {
                     if (count($validated['department_ids'] ?? []) === 0) {
@@ -587,6 +620,9 @@ class ImportedExistingDocumentController extends Controller
 
                 if (! filled($validated[$field] ?? null)) {
                     $masterErrors[$field] = 'Field ini wajib diisi untuk import sesuai ketentuan saat ini.';
+                    if ($field === 'nomor_dokumen') {
+                        $masterErrors['nomor_dokumen_suffix'] = 'Nomor dokumen wajib diisi.';
+                    }
                 }
             }
 
@@ -786,7 +822,18 @@ class ImportedExistingDocumentController extends Controller
 
         if (Document::query()->where('nomor_dokumen', $document->nomor_dokumen)->exists()) {
             throw ValidationException::withMessages([
-                'nomor_dokumen' => 'Nomor dokumen sudah digunakan oleh dokumen V2.',
+                'nomor_dokumen' => 'Nomor dokumen sudah digunakan.',
+            ]);
+        }
+
+        if ($document->document_state === ImportedExistingDocument::STATE_MASTER
+            && ImportedExistingDocument::query()
+                ->where('nomor_dokumen', $document->nomor_dokumen)
+                ->where('id', '!=', $document->id)
+                ->where('document_state', ImportedExistingDocument::STATE_MASTER)
+                ->exists()) {
+            throw ValidationException::withMessages([
+                'nomor_dokumen' => 'Nomor dokumen sudah digunakan.',
             ]);
         }
 
@@ -802,7 +849,7 @@ class ImportedExistingDocumentController extends Controller
             }
 
             throw ValidationException::withMessages([
-                'nomor_dokumen' => 'Nomor dokumen sudah terdaftar.',
+                'nomor_dokumen' => 'Nomor dokumen sudah digunakan.',
             ]);
         }
 
@@ -830,6 +877,90 @@ class ImportedExistingDocumentController extends Controller
         $segments->pop();
 
         return $segments->implode('-');
+    }
+
+    private function normalizeDocumentNumberSuffix(?string $suffix): ?string
+    {
+        if (! filled($suffix)) {
+            return null;
+        }
+
+        $suffix = Str::upper(trim((string) $suffix));
+
+        if (ctype_digit($suffix) && strlen($suffix) === 1) {
+            return str_pad($suffix, 2, '0', STR_PAD_LEFT);
+        }
+
+        return $suffix;
+    }
+
+    private function procedureNumberSegmentsFromReference(?string $reference): \Illuminate\Support\Collection
+    {
+        if (! filled($reference)) {
+            return collect();
+        }
+
+        $procedureNumber = DocumentRelation::targetDocumentNumber($reference);
+
+        return collect(explode('-', (string) $procedureNumber))
+            ->map(fn (string $segment): string => Str::upper(trim($segment)))
+            ->filter()
+            ->values()
+            ->skip(1)
+            ->values();
+    }
+
+    private function resolveImportedDocumentNumber(Request $request): ?string
+    {
+        $suffix = $this->normalizeDocumentNumberSuffix($request->input('nomor_dokumen_suffix'));
+
+        if (filled($suffix)) {
+            $request->merge(['nomor_dokumen_suffix' => $suffix]);
+            $levelId = $request->input('m_document_level_id');
+            $level = DocumentLevel::query()->find($levelId);
+            $levelKey = $level?->kode;
+
+            if ($levelKey === 'level-1') {
+                return "SM-{$suffix}";
+            }
+
+            if ($levelKey === 'level-2') {
+                $functionCode = BusinessFunction::query()->whereKey($request->input('m_proses_fungsi_id'))->value('kode');
+                if (filled($functionCode)) {
+                    return "PS-{$functionCode}-{$suffix}";
+                }
+            }
+
+            if ($levelKey === 'level-3') {
+                $reference = (string) $request->input('reference');
+                $procedureSegments = $this->procedureNumberSegmentsFromReference($reference);
+                if ($procedureSegments->isNotEmpty()) {
+                    return collect(['IK'])
+                        ->merge($procedureSegments)
+                        ->push($suffix)
+                        ->implode('-');
+                }
+            }
+
+            return $suffix;
+        }
+
+        if ($request->filled('nomor_dokumen')) {
+            $nomorDokumen = trim((string) $request->input('nomor_dokumen'));
+            $segments = collect(explode('-', $nomorDokumen))->map(fn ($s) => trim($s))->filter()->values();
+            if ($segments->isNotEmpty()) {
+                $last = $segments->last();
+                if (ctype_digit($last) && strlen($last) === 1) {
+                    $segments[$segments->count() - 1] = str_pad($last, 2, '0', STR_PAD_LEFT);
+
+                    return $segments->implode('-');
+                }
+            }
+
+            return $nomorDokumen;
+        }
+
+        return null;
     }
 
     private function nextImportedExistingRevisionNumber(ImportedExistingDocument $document): int
