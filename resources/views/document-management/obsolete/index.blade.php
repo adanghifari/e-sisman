@@ -84,13 +84,13 @@
 
                 @forelse ($documents as $document)
                     @php
-                        $childDocuments = $document->getRelation('obsoleteChildDocuments');
+                        $childDocuments = $document->child_documents;
                         $hasChildDocuments = $childDocuments->isNotEmpty();
-                        $rowKey = 'obsolete-document-'.$document->id;
-                        $publishedAt = $document->tanggal_terbit ?? $document->approved_at;
+                        $rowKey = 'obsolete-document-'.$document->source_type.'-'.$document->source_id;
+                        $publishedAt = $document->tanggal_terbit;
                         $processLabel = collect([
-                            $document->businessProcess?->nama_proses_bisnis,
-                            $document->businessFunction?->nama_proses_fungsi,
+                            $document->proses_bisnis,
+                            $document->proses_fungsi,
                         ])->filter()->implode(' / ');
                     @endphp
 
@@ -109,9 +109,14 @@
                                 @endif
                             </td>
                             <td class="px-3 py-4">
-                                <p class="font-semibold uppercase tracking-wide text-slate-800">{{ $document->nama_dokumen }}</p>
+                                <div class="flex flex-wrap items-center gap-2">
+                                    <p class="font-semibold uppercase tracking-wide text-slate-800">{{ $document->nama_dokumen }}</p>
+                                    @if ($document->is_imported)
+                                        <span class="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">Imported</span>
+                                    @endif
+                                </div>
                                 <p class="mt-1 text-xs font-medium text-slate-500">
-                                    {{ $document->departments->pluck('nama_department')->implode(', ') ?: 'Tanpa department' }}
+                                    {{ $document->department }}
                                 </p>
                             </td>
                             <td class="px-3 py-4 font-semibold text-slate-700">{{ $document->obsolete_display_number ?: $document->nomor_dokumen ?: '-' }}</td>
@@ -122,7 +127,7 @@
                                 <x-ui.status-badge label="Obsolete" tone="red" />
                             </td>
                             <td class="px-2 py-4">
-                                <x-ui.icon-button :href="route('documents.obsolete.show', $document)" icon="eye" label="Lihat detail" size="sm" />
+                                <x-ui.icon-button :href="$document->detail_url" icon="eye" label="Lihat detail" size="sm" />
                             </td>
                         </tr>
 
@@ -156,11 +161,18 @@
                                                 <tbody class="divide-y divide-slate-100">
                                                     @foreach ($childDocuments as $child)
                                                         @php
-                                                            $childPublishedAt = $child->tanggal_terbit ?? $child->approved_at;
+                                                            $childPublishedAt = $child->tanggal_terbit;
                                                         @endphp
 
                                                         <tr>
-                                                            <td class="px-5 py-4 font-semibold uppercase tracking-wide text-slate-700">{{ $child->nama_dokumen }}</td>
+                                                            <td class="px-5 py-4">
+                                                                <div class="flex flex-wrap items-center gap-2">
+                                                                    <p class="font-semibold uppercase tracking-wide text-slate-700">{{ $child->nama_dokumen }}</p>
+                                                                    @if ($child->is_imported)
+                                                                        <span class="rounded-md bg-slate-100 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-500">Imported</span>
+                                                                    @endif
+                                                                </div>
+                                                            </td>
                                                             <td class="px-5 py-4 font-semibold text-slate-700">{{ $child->obsolete_display_number ?: $child->nomor_dokumen ?: '-' }}</td>
                                                             <td class="px-5 py-4 text-slate-600">{{ $child->formatted_revision }}</td>
                                                             <td class="px-5 py-4 text-slate-600">{{ $childPublishedAt?->format('d/m/Y') ?: '-' }}</td>
@@ -168,7 +180,7 @@
                                                                 <x-ui.status-badge label="Obsolete" tone="red" />
                                                             </td>
                                                             <td class="px-5 py-4">
-                                                                <x-ui.icon-button :href="route('documents.obsolete.show', $child)" icon="eye" label="Lihat detail obsolete" size="sm" />
+                                                                <x-ui.icon-button :href="$child->detail_url" icon="eye" label="Lihat detail obsolete" size="sm" />
                                                             </td>
                                                         </tr>
                                                     @endforeach
