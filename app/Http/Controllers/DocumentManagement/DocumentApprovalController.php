@@ -1315,7 +1315,8 @@ class DocumentApprovalController extends Controller
             ->first(fn (Document $revision): bool => $revision->id !== $source->id
                 && $revision->id !== $lockedDocument->id
                 && $revision->m_status_document_id === $approvedStatus->id
-                && $revision->request_type !== 'obsolete');
+                && $revision->request_type !== 'obsolete'
+                && (int) $revision->nomor_revisi >= (int) $lockedDocument->nomor_revisi);
 
         if ($conflictingMaster !== null) {
             throw new ConflictHttpException('Family dokumen sudah memiliki master aktif lain.');
