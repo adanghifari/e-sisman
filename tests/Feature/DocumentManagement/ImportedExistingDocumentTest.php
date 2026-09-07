@@ -974,6 +974,295 @@ class ImportedExistingDocumentTest extends TestCase
             ->assertSessionHasErrors(['nomor_dokumen' => 'Nomor dokumen sudah digunakan.']);
     }
 
+    public function test_non_admin_cannot_access_edit_imported_master_document(): void
+    {
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.master.view',
+            'documents.master.detail',
+        ]);
+
+        $importedMaster = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Master To Edit Non Admin',
+            'nomor_dokumen' => 'PS-OPS-11',
+            'nomor_revisi' => '00.00',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.imported.show', $importedMaster))
+            ->assertDontSee('Edit Dokumen');
+
+        $this->actingAs($user)
+            ->get(route('documents.master.imports.edit', $importedMaster))
+            ->assertForbidden();
+
+        $this->actingAs($user)
+            ->put(route('documents.master.imports.update', $importedMaster), [
+                'nama_dokumen' => 'Hacked Name',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+            ])
+            ->assertForbidden();
+    }
+
+    public function test_admin_can_access_edit_imported_master_document(): void
+    {
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([]);
+
+        $adminRole = Role::query()->firstOrCreate(['nama_role' => 'admin']);
+        $admin = User::factory()->create();
+        $admin->roles()->sync([$adminRole->id]);
+
+        $importedMaster = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Master To Edit Admin',
+            'nomor_dokumen' => 'PS-OPS-12',
+            'nomor_revisi' => '00.00',
+        ]);
+        $importedMaster->departments()->sync([$department->id]);
+
+        $this->actingAs($admin)
+            ->get(route('documents.master.imported.show', $importedMaster))
+            ->assertOk()
+            ->assertSee('Edit Dokumen');
+
+        $this->actingAs($admin)
+            ->get(route('documents.master.imports.edit', $importedMaster))
+            ->assertOk()
+            ->assertSee('Master To Edit Admin')
+            ->assertSee('PS-OPS-12');
+    }
+
+    public function test_admin_can_update_metadata_imported_master_document(): void
+    {
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([]);
+
+        $adminRole = Role::query()->firstOrCreate(['nama_role' => 'admin']);
+        $admin = User::factory()->create();
+        $admin->roles()->sync([$adminRole->id]);
+
+        $importedMaster = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Original Name Before Edit',
+            'nomor_dokumen' => 'PS-OPS-15',
+            'nomor_revisi' => '00.00',
+            'catatan' => 'Original Note',
+        ]);
+        $importedMaster->departments()->sync([$department->id]);
+
+        DocumentNumberRegistry::create([
+            'document_number' => 'PS-OPS-15',
+            'scope_identifier' => 'PS-OPS',
+            'source_type' => DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING,
+            'source_id' => $importedMaster->id,
+            'registered_by' => $admin->id,
+            'registered_at' => now(),
+        ]);
+
+        $response = $this->actingAs($admin)
+            ->put(route('documents.master.imports.update', $importedMaster), [
+                'nama_dokumen' => 'Updated Document Name',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'nomor_dokumen_suffix' => '16',
+                'nomor_revisi' => '01.00',
+                'tanggal_terbit' => '2026-03-01',
+                'catatan' => 'Updated note by admin',
+            ]);
+
+        $response->assertRedirect(route('documents.master.imported.show', $importedMaster));
+        $response->assertSessionHas('status', 'Metadata dokumen berhasil diperbarui.');
+
+        $importedMaster->refresh();
+        $this->assertSame('Updated Document Name', $importedMaster->nama_dokumen);
+        $this->assertSame('PS-OPS-16', $importedMaster->nomor_dokumen);
+        $this->assertSame('01.00', $importedMaster->nomor_revisi);
+        $this->assertSame('2026-03-01', $importedMaster->tanggal_terbit->format('Y-m-d'));
+        $this->assertSame('Updated note by admin', $importedMaster->catatan);
+
+        $this->assertDatabaseHas('document_number_registry', [
+            'document_number' => 'PS-OPS-16',
+            'source_type' => DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING,
+            'source_id' => $importedMaster->id,
+        ]);
+    }
+
+    public function test_admin_cannot_update_with_duplicate_document_number(): void
+    {
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([]);
+
+        $adminRole = Role::query()->firstOrCreate(['nama_role' => 'admin']);
+        $admin = User::factory()->create();
+        $admin->roles()->sync([$adminRole->id]);
+
+        $importedMaster1 = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'First Master Doc',
+            'nomor_dokumen' => 'PS-OPS-20',
+            'nomor_revisi' => '00.00',
+        ]);
+
+        $importedMaster2 = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Second Master Doc',
+            'nomor_dokumen' => 'PS-OPS-21',
+            'nomor_revisi' => '00.00',
+        ]);
+
+        $this->actingAs($admin)
+            ->from(route('documents.master.imports.edit', $importedMaster2))
+            ->put(route('documents.master.imports.update', $importedMaster2), [
+                'nama_dokumen' => 'Second Master Doc Updated',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'nomor_dokumen_suffix' => '20', // clashes with importedMaster1 (PS-OPS-20)
+                'nomor_revisi' => '00.00',
+            ])
+            ->assertRedirect(route('documents.master.imports.edit', $importedMaster2))
+            ->assertSessionHasErrors(['nomor_dokumen' => 'Nomor dokumen sudah digunakan.']);
+    }
+
+    public function test_admin_updating_file_replaces_old_file_and_leaves_only_one_file(): void
+    {
+        Storage::fake('local');
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([]);
+
+        $adminRole = Role::query()->firstOrCreate(['nama_role' => 'admin']);
+        $admin = User::factory()->create();
+        $admin->roles()->sync([$adminRole->id]);
+
+        $importedMaster = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Master With File',
+            'nomor_dokumen' => 'PS-OPS-30',
+            'nomor_revisi' => '00.00',
+        ]);
+        $importedMaster->departments()->sync([$department->id]);
+
+        $oldFile = $importedMaster->files()->create([
+            'type_file' => ImportedExistingDocumentFile::EXISTING_DOCUMENT,
+            'path_file' => 'documents/imported-existing/test-old.pdf',
+            'uploaded_by' => $user->id,
+            'original_file_name' => 'old_file.pdf',
+            'stored_file_name' => 'test-old.pdf',
+            'file_size' => 1024,
+        ]);
+        Storage::disk('local')->put($oldFile->path_file, 'old content');
+
+        $this->assertCount(1, $importedMaster->files()->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)->get());
+
+        $newUploadedFile = UploadedFile::fake()->create('new_replacement_file.pdf', 500, 'application/pdf');
+
+        $this->actingAs($admin)
+            ->put(route('documents.master.imports.update', $importedMaster), [
+                'nama_dokumen' => 'Master With Replaced File',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'nomor_dokumen_suffix' => '30',
+                'nomor_revisi' => '00.00',
+                'existing_document' => $newUploadedFile,
+            ])
+            ->assertRedirect(route('documents.master.imported.show', $importedMaster));
+
+        // Must still have exactly 1 file
+        $currentFiles = $importedMaster->files()->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)->get();
+        $this->assertCount(1, $currentFiles);
+        $this->assertSame('new_replacement_file.pdf', $currentFiles->first()->original_file_name);
+        Storage::disk('local')->assertMissing('documents/imported-existing/test-old.pdf');
+    }
+
+    public function test_show_imported_cleans_up_duplicate_existing_document_files(): void
+    {
+        Storage::fake('local');
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.master.view',
+            'documents.master.detail',
+        ]);
+
+        $importedMaster = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Master Duplicate Files',
+            'nomor_dokumen' => 'PS-OPS-31',
+            'nomor_revisi' => '00.00',
+        ]);
+
+        $file1 = $importedMaster->files()->create([
+            'type_file' => ImportedExistingDocumentFile::EXISTING_DOCUMENT,
+            'path_file' => 'documents/imported-existing/file1.pdf',
+            'uploaded_by' => $user->id,
+            'original_file_name' => 'file1.pdf',
+            'stored_file_name' => 'file1.pdf',
+            'file_size' => 1024,
+        ]);
+        Storage::disk('local')->put($file1->path_file, 'file 1');
+
+        $file2 = $importedMaster->files()->create([
+            'type_file' => ImportedExistingDocumentFile::EXISTING_DOCUMENT,
+            'path_file' => 'documents/imported-existing/file2.pdf',
+            'uploaded_by' => $user->id,
+            'original_file_name' => 'file2.pdf',
+            'stored_file_name' => 'file2.pdf',
+            'file_size' => 1024,
+        ]);
+        Storage::disk('local')->put($file2->path_file, 'file 2');
+
+        $this->assertCount(2, $importedMaster->files()->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)->get());
+
+        $this->actingAs($user)
+            ->get(route('documents.master.imported.show', $importedMaster))
+            ->assertOk()
+            ->assertSee('file2.pdf')
+            ->assertDontSee('file1.pdf');
+
+        $this->assertCount(1, $importedMaster->files()->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)->get());
+    }
+
     private function existingMasterFixture(array $permissionCodes): array
     {
         $user = $this->userWithPermissions($permissionCodes);

@@ -224,21 +224,6 @@
                         @error($mainFileName)
                             <span class="-mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
                         @enderror
-
-                        @if ($isObsoleteImport)
-                            <x-ui.file-upload
-                                label="Lampiran"
-                                name="attachments[]"
-                                accept=".pdf,.doc,.docx,.xls,.xlsx"
-                                hint="Opsional. Bisa lebih dari satu file."
-                                multiple
-                                :max-files="10"
-                                :max-file-size-kb="10240"
-                            />
-                            @error('attachments')
-                                <span class="-mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                            @enderror
-                        @endif
                     </div>
                 </x-documents.form-section>
 

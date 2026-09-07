@@ -227,15 +227,29 @@ class DocumentMasterController extends Controller
 
         $importedExistingDocument->setRelation('approvals', collect());
         $importedExistingDocument->setAttribute('formatted_revision', $this->formatImportedRevision($importedExistingDocument));
-        $contentFiles = $importedExistingDocument->files
+        $existingContentFiles = $importedExistingDocument->files
             ->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)
+            ->sortByDesc('id')
             ->values();
+
+        if ($existingContentFiles->count() > 1) {
+            $keepFile = $existingContentFiles->first();
+            $duplicates = $existingContentFiles->slice(1);
+            foreach ($duplicates as $duplicate) {
+                Storage::disk('local')->delete($duplicate->path_file);
+                $duplicate->delete();
+            }
+            $existingContentFiles = collect([$keepFile]);
+        }
+
+        $contentFiles = $existingContentFiles;
         $primaryContentFile = $contentFiles->first();
 
         return view('document-management.master.imported-show', [
             'document' => $importedExistingDocument,
             'masterDisplayNumber' => $importedExistingDocument->nomor_dokumen ?: '-',
             'revisionRequestDisplayNumber' => null,
+            'canEdit' => $request->user()?->isAdmin() ?? false,
             'canRequestRevision' => $request->user()?->hasPermission('documents.existing.imports.revision') ?? false,
             'canRequestObsolete' => $this->canRequestImportedObsolete($request, $importedExistingDocument),
             'approvalFlowStages' => collect(),

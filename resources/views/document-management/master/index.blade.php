@@ -116,6 +116,9 @@
                             <td class="px-2 py-4">
                                 <div class="flex items-center gap-2">
                                     <x-ui.icon-button :href="$document->detail_url" icon="eye" label="Lihat detail" size="sm" />
+                                    @if ($document->is_imported && auth()->user()?->isAdmin())
+                                        <x-ui.icon-button :href="route('documents.master.imports.edit', $document->source_id)" icon="pencil-square" label="Edit metadata dokumen" size="sm" />
+                                    @endif
                                 </div>
                             </td>
                         </tr>
