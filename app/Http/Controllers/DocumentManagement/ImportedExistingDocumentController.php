@@ -11,10 +11,10 @@ use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentNumberingSetup;
 use App\Models\DocumentNumberRegistry;
+use App\Models\DocumentRelation;
 use App\Models\DocumentType;
 use App\Models\ImportedExistingDocument;
 use App\Models\ImportedExistingDocumentFile;
-use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
 use App\Support\DocumentFiles\DocumentFileNumbering;
 use App\Support\FinalDocuments\AutoGenerateApprovalPreview;
@@ -348,38 +348,38 @@ class ImportedExistingDocumentController extends Controller
             }
 
             if ($replacementRelation = $this->replacementRelationAttributes($validated['replacement_reference'] ?? null)) {
-                $document->outgoingRelations()->create([
-                    'related_imported_existing_document_id' => $replacementRelation['related_imported_existing_document_id'],
-                    'related_document_id' => $replacementRelation['related_document_id'],
-                    'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
-                    'keterangan' => 'Digantikan oleh dokumen terkait.',
-                    'created_by' => $request->user()->id,
-                ]);
+                $document->outgoingRelations()->updateOrCreate(
+                    ['relation_type' => DocumentRelation::SUPERSEDED_BY],
+                    [
+                        'target_imported_existing_document_id' => $replacementRelation['target_imported_existing_document_id'],
+                        'target_document_id' => $replacementRelation['target_document_id'],
+                        'keterangan' => 'Digantikan oleh dokumen terkait.',
+                        'created_by' => $request->user()->id,
+                    ],
+                );
             }
 
             foreach ($validated['relations'] ?? [] as $relation) {
-                $document->outgoingRelations()->create([
-                    'related_imported_existing_document_id' => $relation['related_imported_existing_document_id'] ?? null,
-                    'related_document_id' => $relation['related_document_id'] ?? null,
-                    'relation_type' => $relation['relation_type'],
-                    'keterangan' => $relation['keterangan'] ?? null,
-                    'created_by' => $request->user()->id,
-                ]);
+                $document->outgoingRelations()->updateOrCreate(
+                    ['relation_type' => $relation['relation_type']],
+                    [
+                        'target_imported_existing_document_id' => $relation['target_imported_existing_document_id'] ?? null,
+                        'target_document_id' => $relation['target_document_id'] ?? null,
+                        'keterangan' => $relation['keterangan'] ?? null,
+                        'created_by' => $request->user()->id,
+                    ],
+                );
             }
 
             if (filled($validated['reference'] ?? null)) {
-                $refParts = explode('-', $validated['reference']);
-                if (count($refParts) === 2) {
-                    $refType = $refParts[0];
-                    $refId = (int) $refParts[1];
-
-                    $document->outgoingRelations()->create([
-                        'related_imported_existing_document_id' => $refType === 'imported' ? $refId : null,
-                        'related_document_id' => $refType === 'existing' ? $refId : null,
-                        'relation_type' => ImportedExistingDocumentRelation::REFERENCES,
-                        'keterangan' => 'Dokumen Acuan Prosedur',
-                        'created_by' => $request->user()->id,
-                    ]);
+                if ($targetColumns = DocumentRelation::targetColumnsForReference($validated['reference'])) {
+                    $document->outgoingRelations()->updateOrCreate(
+                        ['relation_type' => DocumentRelation::REFERENCES],
+                        $targetColumns + [
+                            'keterangan' => 'Dokumen Acuan Prosedur',
+                            'created_by' => $request->user()->id,
+                        ],
+                    );
                 }
             }
         });
@@ -404,10 +404,11 @@ class ImportedExistingDocumentController extends Controller
             'businessFunction',
             'uploader',
             'files.uploader',
-            'outgoingRelations.relatedImportedDocument',
-            'outgoingRelations.relatedDocument.status',
+            'outgoingRelations.targetImportedDocument',
+            'outgoingRelations.targetDocument.status',
             'outgoingRelations.creator',
-            'incomingImportedRelations.sourceDocument',
+            'incomingImportedRelations.sourceImportedDocument',
+            'incomingImportedRelations.sourceDocument.status',
             'incomingImportedRelations.creator',
         ]);
 
@@ -446,22 +447,6 @@ class ImportedExistingDocumentController extends Controller
             $nextRevision = $this->nextImportedExistingRevisionNumber($importedExistingDocument);
             $revisionFormNumber = $this->revisionFormNumberForImportedExisting($importedExistingDocument);
 
-            $relation = $importedExistingDocument->outgoingRelations()
-                ->where('relation_type', ImportedExistingDocumentRelation::REFERENCES)
-                ->first();
-
-            $referenceId = null;
-            if ($relation) {
-                if ($relation->related_document_id) {
-                    $referenceId = $relation->related_document_id;
-                } elseif ($relation->related_imported_existing_document_id) {
-                    $referenceId = Document::query()
-                        ->where('imported_existing_source_id', $relation->related_imported_existing_document_id)
-                        ->whereHas('status', fn ($q) => $q->where('nama_status', StatusDocument::APPROVED))
-                        ->value('id');
-                }
-            }
-
             $document = Document::create([
                 'm_document_level_id' => $importedExistingDocument->m_document_level_id,
                 'm_status_document_id' => $status->id,
@@ -470,7 +455,6 @@ class ImportedExistingDocumentController extends Controller
                 'm_proses_fungsi_id' => $importedExistingDocument->m_proses_fungsi_id,
                 'user_id' => $request->user()->id,
                 'official_preparer_id' => $validated['official_preparer_id'],
-                'reference' => $referenceId,
                 'revised_from' => null,
                 'imported_existing_source_id' => $importedExistingDocument->id,
                 'request_type' => 'revision',
@@ -484,6 +468,9 @@ class ImportedExistingDocumentController extends Controller
                 'created_at' => now(),
             ]);
             $document->departments()->sync($importedExistingDocument->departments->pluck('id')->all());
+            if ($importedExistingDocument->documentLevel?->kode === 'level-3') {
+                DocumentRelation::copyReferenceToDocumentSource($document, $importedExistingDocument, $request->user()->id);
+            }
             $document->snapshotOfficialPreparer();
 
             $this->storeTDocumentFile($document, $request->file('revision_content'), 'revision_content', $request->user()->id);
@@ -572,7 +559,7 @@ class ImportedExistingDocumentController extends Controller
             'relations.*.relation_reference' => ['nullable', 'string', 'max:255'],
             'relations.*.related_imported_existing_document_id' => ['nullable', 'integer', Rule::exists('imported_existing_documents', 'id')],
             'relations.*.related_document_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
-            'relations.*.relation_type' => ['required_with:relations', Rule::in(ImportedExistingDocumentRelation::RELATION_TYPES)],
+            'relations.*.relation_type' => ['required_with:relations', Rule::in(DocumentRelation::RELATION_TYPES)],
             'relations.*.keterangan' => ['nullable', 'string', 'max:1000'],
         ]);
 
@@ -639,16 +626,23 @@ class ImportedExistingDocumentController extends Controller
                     continue;
                 }
 
-                $validated['relations'][$index]['related_imported_existing_document_id'] = $relationAttributes['related_imported_existing_document_id'];
-                $validated['relations'][$index]['related_document_id'] = $relationAttributes['related_document_id'];
+                $validated['relations'][$index]['target_imported_existing_document_id'] = $relationAttributes['target_imported_existing_document_id'];
+                $validated['relations'][$index]['target_document_id'] = $relationAttributes['target_document_id'];
                 $relation = $validated['relations'][$index];
             }
 
-            $hasImportedTarget = filled($relation['related_imported_existing_document_id'] ?? null);
-            $hasExistingDocumentTarget = filled($relation['related_document_id'] ?? null);
+            $hasImportedTarget = filled($relation['target_imported_existing_document_id'] ?? $relation['related_imported_existing_document_id'] ?? null);
+            $hasExistingDocumentTarget = filled($relation['target_document_id'] ?? $relation['related_document_id'] ?? null);
 
             if ($hasImportedTarget === $hasExistingDocumentTarget) {
                 $relationErrors["relations.{$index}.related_imported_existing_document_id"] = 'Pilih tepat satu target relasi.';
+            } else {
+                $validated['relations'][$index]['target_imported_existing_document_id'] = $relation['target_imported_existing_document_id']
+                    ?? $relation['related_imported_existing_document_id']
+                    ?? null;
+                $validated['relations'][$index]['target_document_id'] = $relation['target_document_id']
+                    ?? $relation['related_document_id']
+                    ?? null;
             }
         }
 
@@ -665,7 +659,7 @@ class ImportedExistingDocumentController extends Controller
     private function validateRelationsAgainstSavedDocument(ImportedExistingDocument $document, array $relations): void
     {
         foreach ($relations as $index => $relation) {
-            if ((int) ($relation['related_imported_existing_document_id'] ?? 0) === $document->id) {
+            if ((int) ($relation['target_imported_existing_document_id'] ?? $relation['related_imported_existing_document_id'] ?? 0) === $document->id) {
                 throw ValidationException::withMessages([
                     "relations.{$index}.related_imported_existing_document_id" => 'Dokumen tidak boleh berelasi ke dirinya sendiri.',
                 ]);
@@ -940,15 +934,15 @@ class ImportedExistingDocumentController extends Controller
 
         if ($type === 'existing' && Document::query()->whereKey($id)->exists()) {
             return [
-                'related_imported_existing_document_id' => null,
-                'related_document_id' => $id,
+                'target_imported_existing_document_id' => null,
+                'target_document_id' => $id,
             ];
         }
 
         if ($type === 'imported' && ImportedExistingDocument::query()->whereKey($id)->exists()) {
             return [
-                'related_imported_existing_document_id' => $id,
-                'related_document_id' => null,
+                'target_imported_existing_document_id' => $id,
+                'target_document_id' => null,
             ];
         }
 
@@ -961,7 +955,7 @@ class ImportedExistingDocumentController extends Controller
             return null;
         }
 
-        if ($relationType === ImportedExistingDocumentRelation::SUPERSEDED_BY) {
+        if ($relationType === DocumentRelation::SUPERSEDED_BY) {
             return $this->replacementRelationAttributes($relationReference);
         }
 
@@ -976,15 +970,15 @@ class ImportedExistingDocumentController extends Controller
 
         if ($type === 'existing' && Document::query()->whereKey($id)->exists()) {
             return [
-                'related_imported_existing_document_id' => null,
-                'related_document_id' => $id,
+                'target_imported_existing_document_id' => null,
+                'target_document_id' => $id,
             ];
         }
 
         if ($type === 'imported' && ImportedExistingDocument::query()->whereKey($id)->exists()) {
             return [
-                'related_imported_existing_document_id' => $id,
-                'related_document_id' => null,
+                'target_imported_existing_document_id' => $id,
+                'target_document_id' => null,
             ];
         }
 
@@ -1014,8 +1008,8 @@ class ImportedExistingDocumentController extends Controller
     private function relationTypeOptions(): array
     {
         return [
-            ImportedExistingDocumentRelation::SUPERSEDED_BY => 'Digantikan Oleh',
-            ImportedExistingDocumentRelation::REFERENCES => 'Referensi',
+            DocumentRelation::SUPERSEDED_BY => 'Digantikan Oleh',
+            DocumentRelation::REFERENCES => 'Referensi',
         ];
     }
 }

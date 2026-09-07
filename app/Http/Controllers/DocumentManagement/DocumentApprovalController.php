@@ -14,9 +14,9 @@ use App\Models\DocumentFile;
 use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
 use App\Models\DocumentNumberRegistry;
+use App\Models\DocumentRelation;
 use App\Models\DocumentType;
 use App\Models\ImportedExistingDocument;
-use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentFiles\DocumentFileNumbering;
@@ -362,7 +362,6 @@ class DocumentApprovalController extends Controller
                     'nama_dokumen' => $metadata['nama_dokumen'],
                     'm_proses_bisnis_id' => $metadata['m_proses_bisnis_id'],
                     'm_proses_fungsi_id' => $metadata['m_proses_fungsi_id'],
-                    'reference' => $levelKey === 'level-3' ? ($metadata['reference'] ?? null) : $document->reference,
                     'official_preparer_id' => $metadata['official_preparer_id'],
                     'nomor_dokumen' => $documentNumber,
                     'tanggal_terbit' => $metadata['tanggal_terbit'],
@@ -385,6 +384,8 @@ class DocumentApprovalController extends Controller
                 if ($levelKey !== 'level-1') {
                     $document->departments()->sync($metadata['department_ids'] ?? []);
                 }
+
+                $this->syncSubmittedProcedureReference($document, $levelKey, $metadata['reference'] ?? null, $request->user()->id);
             }
 
             $this->normalizeSubmittedSourceAttachmentLineage($document);
@@ -785,7 +786,7 @@ class DocumentApprovalController extends Controller
         }
 
         if ($levelKey === 'level-3') {
-            $rules['reference'] = [$metadataPresence, 'integer', Rule::in($this->activeProcedureReferences($document)->pluck('id')->all())];
+            $rules['reference'] = [$metadataPresence, 'string', Rule::in($this->activeProcedureReferences($document)->pluck('reference_value')->all())];
         }
 
         if ($isMetadataUpdate && in_array($levelKey, ['level-1', 'level-2', 'level-3'], true)) {
@@ -804,7 +805,7 @@ class DocumentApprovalController extends Controller
      */
     private function submittedDocumentMetadata(Document $document, array $validated): array
     {
-        $document->loadMissing('departments');
+        $document->loadMissing(['departments', 'outgoingRelations']);
         $levelKey = $document->documentLevel?->kode;
 
         return [
@@ -816,8 +817,8 @@ class DocumentApprovalController extends Controller
                 ? $document->m_proses_fungsi_id
                 : ($validated['m_proses_fungsi_id'] ?? $document->m_proses_fungsi_id),
             'reference' => $levelKey === 'level-3'
-                ? ($validated['reference'] ?? $document->reference)
-                : $document->reference,
+                ? ($validated['reference'] ?? $document->procedureReferenceValue())
+                : null,
             'official_preparer_id' => $levelKey === 'level-1'
                 ? $document->official_preparer_id
                 : ($validated['official_preparer_id'] ?? $document->official_preparer_id),
@@ -860,7 +861,7 @@ class DocumentApprovalController extends Controller
 
         if ($levelKey === 'level-3') {
             $segments = collect([$document->documentLevel?->prefix])
-                ->merge($this->procedureNumberSegments((int) ($validated['reference'] ?? 0)))
+                ->merge($this->procedureNumberSegments((string) ($validated['reference'] ?? '')))
                 ->all();
         }
 
@@ -938,11 +939,9 @@ class DocumentApprovalController extends Controller
         return $segments->implode('-');
     }
 
-    private function procedureNumberSegments(int $referenceId): Collection
+    private function procedureNumberSegments(string $reference): Collection
     {
-        $procedureNumber = Document::query()
-            ->whereKey($referenceId)
-            ->value('nomor_dokumen');
+        $procedureNumber = DocumentRelation::targetDocumentNumber($reference);
 
         return collect(explode('-', (string) $procedureNumber))
             ->filter()
@@ -1316,12 +1315,49 @@ class DocumentApprovalController extends Controller
             return collect();
         }
 
-        return Document::query()
+        $workflowProcedures = Document::query()
             ->select(['id', 'nomor_dokumen', 'nama_dokumen', 'm_proses_bisnis_id', 'm_proses_fungsi_id'])
             ->where('m_document_level_id', $procedureLevelId)
             ->where('m_status_document_id', $approvedStatusId)
             ->orderBy('nomor_dokumen')
-            ->get();
+            ->get()
+            ->map(function (Document $procedure): Document {
+                $procedure->setAttribute('reference_value', DocumentRelation::referenceValue($procedure->id, null));
+                $procedure->setAttribute('reference_source_label', 'Workflow');
+
+                return $procedure;
+            });
+
+        $importedProcedures = ImportedExistingDocument::query()
+            ->select(['id', 'nomor_dokumen', 'nama_dokumen', 'm_proses_bisnis_id', 'm_proses_fungsi_id'])
+            ->where('document_state', ImportedExistingDocument::STATE_MASTER)
+            ->where('m_document_level_id', $procedureLevelId)
+            ->orderBy('nomor_dokumen')
+            ->get()
+            ->map(function (ImportedExistingDocument $procedure): ImportedExistingDocument {
+                $procedure->setAttribute('reference_value', DocumentRelation::referenceValue(null, $procedure->id));
+                $procedure->setAttribute('reference_source_label', 'Imported');
+
+                return $procedure;
+            });
+
+        return $workflowProcedures
+            ->concat($importedProcedures)
+            ->sortBy('nomor_dokumen')
+            ->values();
+    }
+
+    private function syncSubmittedProcedureReference(Document $document, ?string $levelKey, ?string $reference, ?int $createdBy): void
+    {
+        if ($levelKey !== 'level-3') {
+            $document->outgoingRelations()
+                ->where('relation_type', DocumentRelation::REFERENCES)
+                ->delete();
+
+            return;
+        }
+
+        DocumentRelation::syncDocumentSourceReference($document, $reference, $createdBy);
     }
 
     private function stageApproverIds(Request $request, Document $document, ApprovalFlowStage $stage): Collection
@@ -1558,7 +1594,6 @@ class DocumentApprovalController extends Controller
             'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
             'user_id' => $document->user_id,
             'official_preparer_id' => $document->official_preparer_id,
-            'reference' => $source->reference,
             'nomor_dokumen' => $source->nomor_dokumen,
             'nomor_lembar_revisi' => $lockedDocument->nomor_lembar_revisi
                 ?: $this->revisionFormNumber($source, (int) $lockedDocument->nomor_revisi),
@@ -1580,6 +1615,12 @@ class DocumentApprovalController extends Controller
                 'm_status_document_id' => $obsoleteStatus->id,
                 'obsolete_at' => $approvedAt,
             ]);
+
+        DocumentRelation::supersedeDocumentSourceWithDocument($source, $lockedDocument, $lockedDocument->user_id);
+
+        if ($lockedDocument->documentLevel?->kode === 'level-3') {
+            DocumentRelation::copyReferenceToDocumentSource($lockedDocument, $source, $lockedDocument->user_id);
+        }
 
         return $lockedDocument->refresh();
     }
@@ -1622,18 +1663,7 @@ class DocumentApprovalController extends Controller
             'tanggal_obsolete' => $lockedDocument->tanggal_terbit ?? now()->toDateString(),
         ]);
 
-        ImportedExistingDocumentRelation::query()->updateOrCreate(
-            [
-                'imported_existing_document_id' => $source->id,
-                'related_document_id' => $lockedDocument->id,
-                'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
-            ],
-            [
-                'related_imported_existing_document_id' => null,
-                'keterangan' => 'Digantikan oleh revisi V2 hasil approval.',
-                'created_by' => $lockedDocument->user_id,
-            ],
-        );
+        DocumentRelation::supersedeImportedSourceWithDocument($source, $lockedDocument, $lockedDocument->user_id);
 
         return $lockedDocument->refresh();
     }

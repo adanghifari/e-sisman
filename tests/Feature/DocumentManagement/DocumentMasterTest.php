@@ -13,10 +13,10 @@ use App\Models\Document;
 use App\Models\DocumentDownloadLog;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
+use App\Models\DocumentRelation;
 use App\Models\DocumentType;
 use App\Models\ImportedExistingDocument;
 use App\Models\ImportedExistingDocumentFile;
-use App\Models\ImportedExistingDocumentRelation;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\StatusDocument;
@@ -251,16 +251,16 @@ class DocumentMasterTest extends TestCase
             'nomor_revisi' => 'Rev A',
         ]);
 
-        ImportedExistingDocumentRelation::create([
-            'imported_existing_document_id' => $obsolete->id,
-            'related_document_id' => $master->id,
-            'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+        DocumentRelation::create([
+            'source_imported_existing_document_id' => $obsolete->id,
+            'target_document_id' => $master->id,
+            'relation_type' => DocumentRelation::SUPERSEDED_BY,
             'created_by' => $user->id,
         ]);
-        ImportedExistingDocumentRelation::create([
-            'imported_existing_document_id' => $obsolete->id,
-            'related_document_id' => $master->id,
-            'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+        DocumentRelation::create([
+            'source_imported_existing_document_id' => $obsolete->id,
+            'target_document_id' => $master->id,
+            'relation_type' => DocumentRelation::SUPERSEDED_BY,
             'created_by' => $user->id,
         ]);
 
@@ -1142,7 +1142,6 @@ class DocumentMasterTest extends TestCase
             'nama_dokumen' => 'Instruksi Induk',
             'nomor_dokumen' => 'IK-SMR-010',
             'nomor_revisi' => 0,
-            'reference' => $referenceDocument->id,
         ]);
         $revision = $this->createDocument($viewer, $approvedStatus, [
             'nama_dokumen' => 'Instruksi Revisi Aktif',
@@ -1150,8 +1149,14 @@ class DocumentMasterTest extends TestCase
             'nomor_lembar_revisi' => 'FMIK-SMR-010-01',
             'nomor_revisi' => 1,
             'revised_from' => $source->id,
-            'reference' => $referenceDocument->id,
         ]);
+        foreach ([$source, $revision] as $instruction) {
+            $instruction->outgoingRelations()->create([
+                'target_document_id' => $referenceDocument->id,
+                'relation_type' => DocumentRelation::REFERENCES,
+                'created_by' => $viewer->id,
+            ]);
+        }
 
         $response = $this->actingAs($viewer)
             ->get(route('documents.master.show', $revision))

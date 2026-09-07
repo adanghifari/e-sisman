@@ -10,10 +10,10 @@ use App\Models\Document;
 use App\Models\DocumentLevel;
 use App\Models\DocumentNumberingSetup;
 use App\Models\DocumentNumberRegistry;
+use App\Models\DocumentRelation;
 use App\Models\DocumentType;
 use App\Models\ImportedExistingDocument;
 use App\Models\ImportedExistingDocumentFile;
-use App\Models\ImportedExistingDocumentRelation;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\StatusDocument;
@@ -138,12 +138,12 @@ class ImportedExistingDocumentTest extends TestCase
                 'relations' => [
                     [
                         'related_imported_existing_document_id' => $targetImported->id,
-                        'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+                        'relation_type' => DocumentRelation::SUPERSEDED_BY,
                         'keterangan' => 'Digantikan arsip legacy berikutnya.',
                     ],
                     [
                         'related_document_id' => $targetDocument->id,
-                        'relation_type' => ImportedExistingDocumentRelation::REFERENCES,
+                        'relation_type' => DocumentRelation::REFERENCES,
                     ],
                 ],
             ])
@@ -154,17 +154,17 @@ class ImportedExistingDocumentTest extends TestCase
             ->firstOrFail();
 
         $this->assertSame(2, $source->outgoingRelations()->count());
-        $this->assertDatabaseHas('imported_existing_document_relations', [
-            'imported_existing_document_id' => $source->id,
-            'related_imported_existing_document_id' => $targetImported->id,
-            'related_document_id' => null,
-            'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+        $this->assertDatabaseHas('document_relations', [
+            'source_imported_existing_document_id' => $source->id,
+            'target_imported_existing_document_id' => $targetImported->id,
+            'target_document_id' => null,
+            'relation_type' => DocumentRelation::SUPERSEDED_BY,
         ]);
-        $this->assertDatabaseHas('imported_existing_document_relations', [
-            'imported_existing_document_id' => $source->id,
-            'related_imported_existing_document_id' => null,
-            'related_document_id' => $targetDocument->id,
-            'relation_type' => ImportedExistingDocumentRelation::REFERENCES,
+        $this->assertDatabaseHas('document_relations', [
+            'source_imported_existing_document_id' => $source->id,
+            'target_imported_existing_document_id' => null,
+            'target_document_id' => $targetDocument->id,
+            'relation_type' => DocumentRelation::REFERENCES,
         ]);
     }
 
@@ -342,8 +342,8 @@ class ImportedExistingDocumentTest extends TestCase
         $this->assertSame('2026-08-28', $document->tanggal_obsolete?->toDateString());
         $this->assertSame(ImportedExistingDocumentFile::OBSOLETE_DOCUMENT, $document->files()->firstOrFail()->type_file);
         $this->assertTrue($document->outgoingRelations()
-            ->where('related_imported_existing_document_id', $replacementDocument->id)
-            ->where('relation_type', ImportedExistingDocumentRelation::SUPERSEDED_BY)
+            ->where('target_imported_existing_document_id', $replacementDocument->id)
+            ->where('relation_type', DocumentRelation::SUPERSEDED_BY)
             ->exists());
     }
 
@@ -470,10 +470,10 @@ class ImportedExistingDocumentTest extends TestCase
             'nomor_revisi' => '00.00',
             'tanggal_obsolete' => now()->subDay()->toDateString(),
         ]);
-        ImportedExistingDocumentRelation::create([
-            'imported_existing_document_id' => $olderObsolete->id,
-            'related_imported_existing_document_id' => $source->id,
-            'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+        DocumentRelation::create([
+            'source_imported_existing_document_id' => $olderObsolete->id,
+            'target_imported_existing_document_id' => $source->id,
+            'relation_type' => DocumentRelation::SUPERSEDED_BY,
             'created_by' => $user->id,
         ]);
 
@@ -518,11 +518,11 @@ class ImportedExistingDocumentTest extends TestCase
         $this->assertSame(StatusDocument::APPROVED, $revision->status->nama_status);
         $this->assertSame('PS-SMR-120', $revision->nomor_dokumen);
         $this->assertSame(ImportedExistingDocument::STATE_OBSOLETE, $source->document_state);
-        $this->assertDatabaseHas('imported_existing_document_relations', [
-            'imported_existing_document_id' => $source->id,
-            'related_imported_existing_document_id' => null,
-            'related_document_id' => $revision->id,
-            'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+        $this->assertDatabaseHas('document_relations', [
+            'source_imported_existing_document_id' => $source->id,
+            'target_imported_existing_document_id' => null,
+            'target_document_id' => $revision->id,
+            'relation_type' => DocumentRelation::SUPERSEDED_BY,
         ]);
         $this->assertSame($approvedStatus->id, $revision->approvals()->first()->m_approval_status_id);
 
@@ -582,7 +582,7 @@ class ImportedExistingDocumentTest extends TestCase
                 'obsolete_document' => UploadedFile::fake()->create('legacy-no-target.pdf', 100, 'application/pdf'),
                 'relations' => [
                     [
-                        'relation_type' => ImportedExistingDocumentRelation::REFERENCES,
+                        'relation_type' => DocumentRelation::REFERENCES,
                     ],
                 ],
             ])
@@ -599,7 +599,7 @@ class ImportedExistingDocumentTest extends TestCase
                     [
                         'related_imported_existing_document_id' => $targetImported->id,
                         'related_document_id' => $targetDocument->id,
-                        'relation_type' => ImportedExistingDocumentRelation::REFERENCES,
+                        'relation_type' => DocumentRelation::REFERENCES,
                     ],
                 ],
             ])

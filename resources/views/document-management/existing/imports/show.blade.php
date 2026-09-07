@@ -86,7 +86,7 @@
                     <div class="space-y-3">
                         @forelse ($document->outgoingRelations as $relation)
                             @php
-                                $target = $relation->relatedImportedDocument ?: $relation->relatedDocument;
+                                $target = $relation->targetImportedDocument ?: $relation->targetDocument;
                                 $targetNumber = $target?->nomor_dokumen ?: '-';
                                 $targetName = $target?->nama_dokumen ?: '-';
                             @endphp
@@ -107,12 +107,13 @@
                 <x-ui.panel title="Relasi Masuk">
                     <div class="space-y-3">
                         @forelse ($document->incomingImportedRelations as $relation)
+                            @php($sourceDocument = $relation->sourceImportedDocument ?: $relation->sourceDocument)
                             <div class="rounded-lg border border-slate-200 px-4 py-3">
                                 <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
-                                    {{ $relation->relation_type === \App\Models\ImportedExistingDocumentRelation::SUPERSEDED_BY ? 'Menggantikan' : ($relationTypeOptions[$relation->relation_type] ?? $relation->relation_type) }}
+                                    {{ $relation->relation_type === \App\Models\DocumentRelation::SUPERSEDED_BY ? 'Menggantikan' : ($relationTypeOptions[$relation->relation_type] ?? $relation->relation_type) }}
                                 </p>
-                                <p class="mt-1 font-semibold text-slate-800">{{ $relation->sourceDocument?->nama_dokumen ?: '-' }}</p>
-                                <p class="mt-1 text-sm text-slate-500">{{ $relation->sourceDocument?->nomor_dokumen ?: '-' }}</p>
+                                <p class="mt-1 font-semibold text-slate-800">{{ $sourceDocument?->nama_dokumen ?: '-' }}</p>
+                                <p class="mt-1 text-sm text-slate-500">{{ $sourceDocument?->nomor_dokumen ?: '-' }}</p>
                             </div>
                         @empty
                             <p class="rounded-lg border border-dashed border-slate-200 px-4 py-6 text-center text-sm font-medium text-slate-500">Belum ada relasi masuk.</p>

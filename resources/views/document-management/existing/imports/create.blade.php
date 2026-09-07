@@ -220,7 +220,7 @@
                                     <x-ui.select
                                         label="Jenis Relasi"
                                         name="relations[{{ $index }}][relation_type]"
-                                        :value="$relation['relation_type'] ?? \App\Models\ImportedExistingDocumentRelation::SUPERSEDED_BY"
+                                        :value="$relation['relation_type'] ?? \App\Models\DocumentRelation::SUPERSEDED_BY"
                                         :options="$relationTypeOptions"
                                         data-imported-existing-relation-type
                                     />

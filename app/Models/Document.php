@@ -20,7 +20,6 @@ use Illuminate\Support\Collection;
     'official_preparer_name_snapshot',
     'official_preparer_position_snapshot',
     'official_preparer_department_snapshot',
-    'reference',
     'revised_from',
     'imported_existing_source_id',
     'resubmitted_from',
@@ -116,11 +115,6 @@ class Document extends Model
         ])->save();
     }
 
-    public function referenceDocument(): BelongsTo
-    {
-        return $this->belongsTo(self::class, 'reference');
-    }
-
     public function revisedFrom(): BelongsTo
     {
         return $this->belongsTo(self::class, 'revised_from');
@@ -185,6 +179,34 @@ class Document extends Model
     {
         return $this->hasMany(self::class, 'revised_from')
             ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::OBSOLETE));
+    }
+
+    public function outgoingRelations(): HasMany
+    {
+        return $this->hasMany(DocumentRelation::class, 'source_document_id');
+    }
+
+    public function incomingRelations(): HasMany
+    {
+        return $this->hasMany(DocumentRelation::class, 'target_document_id');
+    }
+
+    public function procedureReferenceRelation(): ?DocumentRelation
+    {
+        return $this->outgoingRelations()
+            ->with(['targetDocument', 'targetImportedDocument'])
+            ->where('relation_type', DocumentRelation::REFERENCES)
+            ->first();
+    }
+
+    public function procedureReferenceValue(): ?string
+    {
+        $relation = $this->procedureReferenceRelation();
+
+        return DocumentRelation::referenceValue(
+            $relation?->target_document_id,
+            $relation?->target_imported_existing_document_id,
+        );
     }
 
     public function getFormattedRevisionAttribute(): string

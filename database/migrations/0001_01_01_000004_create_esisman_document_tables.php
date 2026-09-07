@@ -18,7 +18,6 @@ return new class extends Migration
             $table->foreignId('m_proses_bisnis_id')->constrained('m_proses_bisnis')->restrictOnDelete();
             $table->foreignId('m_proses_fungsi_id')->constrained('m_proses_fungsi')->restrictOnDelete();
             $table->foreignId('user_id')->constrained('users')->restrictOnDelete();
-            $table->foreignId('reference')->nullable()->constrained('t_document')->restrictOnDelete();
             $table->string('nama_dokumen');
             $table->string('nomor_dokumen')->nullable();
             $table->unsignedInteger('nomor_revisi')->default(0);

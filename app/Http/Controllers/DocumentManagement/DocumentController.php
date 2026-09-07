@@ -11,7 +11,9 @@ use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
 use App\Models\DocumentNumberingSetup;
 use App\Models\DocumentNumberRegistry;
+use App\Models\DocumentRelation;
 use App\Models\DocumentType;
+use App\Models\ImportedExistingDocument;
 use App\Models\StatusDocument;
 use App\Support\DocumentFiles\DocumentFileNumbering;
 use App\Support\FinalDocuments\AutoGenerateApprovalPreview;
@@ -68,7 +70,7 @@ class DocumentController extends Controller
             : Document::query()->findOrFail($document);
 
         $this->authorizeDraftAccess($request, $document);
-        $document->loadMissing(['status', 'documentLevel', 'departments', 'files', 'officialPreparer', 'revisedFrom.status', 'revisedFrom.documentLevel', 'revisedFrom.businessProcess', 'revisedFrom.businessFunction', 'revisedFrom.departments', 'revisedFrom.referenceDocument']);
+        $document->loadMissing(['status', 'documentLevel', 'departments', 'files', 'officialPreparer', 'outgoingRelations', 'revisedFrom.status', 'revisedFrom.documentLevel', 'revisedFrom.businessProcess', 'revisedFrom.businessFunction', 'revisedFrom.departments', 'revisedFrom.outgoingRelations']);
 
         $level = $document->documentLevel?->kode;
         abort_unless(filled($level) && array_key_exists($level, config('document-levels')), 404);
@@ -141,7 +143,7 @@ class DocumentController extends Controller
             $validated['m_proses_bisnis_id'] = $revisionSource->m_proses_bisnis_id;
             $validated['m_proses_fungsi_id'] = $revisionSource->m_proses_fungsi_id;
             $validated['department_ids'] = collect($revisionSource->departments)->pluck('id')->all();
-            $validated['reference'] = $revisionSource->reference;
+            $validated['reference'] = $revisionSource->procedureReferenceValue();
             $validated['nama_dokumen'] = $validated['nama_dokumen'] ?? $revisionSource->nama_dokumen;
         }
 
@@ -191,7 +193,7 @@ class DocumentController extends Controller
                         'businessFunction',
                         'departments',
                         'files',
-                        'referenceDocument',
+                        'outgoingRelations',
                         'revisedFrom.documentLevel',
                     ]);
 
@@ -228,7 +230,7 @@ class DocumentController extends Controller
                     $documentAttributes['m_proses_bisnis_id'] = $lockedRevisionSource->m_proses_bisnis_id;
                     $documentAttributes['m_proses_fungsi_id'] = $lockedRevisionSource->m_proses_fungsi_id;
                     $documentAttributes['department_ids'] = $lockedRevisionSource->departments->pluck('id')->all();
-                    $documentAttributes['reference'] = $lockedRevisionSource->reference;
+                    $documentAttributes['reference'] = $lockedRevisionSource->procedureReferenceValue();
                     $documentAttributes['nama_dokumen'] = $documentAttributes['nama_dokumen'] ?? $lockedRevisionSource->nama_dokumen;
                 } elseif ($currentDocumentNumber !== null) {
                     if (($documentAttributes['submit_action'] ?? null) === 'submit') {
@@ -249,7 +251,6 @@ class DocumentController extends Controller
                     'm_proses_fungsi_id' => $documentAttributes['m_proses_fungsi_id'] ?? null,
                     'user_id' => $request->user()->id,
                     'official_preparer_id' => $documentAttributes['official_preparer_id'] ?? null,
-                    'reference' => $level === 'level-3' ? ($documentAttributes['reference'] ?? null) : null,
                     'revised_from' => $lockedRevisionSource?->id,
                     'resubmitted_from' => $resubmittedFromId,
                     'request_type' => $revisionSource !== null ? 'revision' : null,
@@ -282,6 +283,7 @@ class DocumentController extends Controller
                 $document->unsetRelation('files');
 
                 $document->departments()->sync($documentAttributes['department_ids'] ?? []);
+                $this->syncProcedureReference($document, $level, $documentAttributes['reference'] ?? null, $request->user()->id);
 
                 $this->removeExistingDocumentFiles($document, $documentAttributes['remove_existing_files'] ?? []);
                 $this->updateExistingAttachments(
@@ -399,7 +401,7 @@ class DocumentController extends Controller
             $validated['m_proses_bisnis_id'] = $revisionSource->m_proses_bisnis_id;
             $validated['m_proses_fungsi_id'] = $revisionSource->m_proses_fungsi_id;
             $validated['department_ids'] = collect($revisionSource->departments)->pluck('id')->all();
-            $validated['reference'] = $revisionSource->reference;
+            $validated['reference'] = $revisionSource->procedureReferenceValue();
             $validated['nama_dokumen'] = $validated['nama_dokumen'] ?? $revisionSource->nama_dokumen;
         }
 
@@ -430,7 +432,6 @@ class DocumentController extends Controller
                 'm_proses_fungsi_id' => $validated['m_proses_fungsi_id'] ?? null,
                 'user_id' => $request->user()->id,
                 'official_preparer_id' => $validated['official_preparer_id'] ?? null,
-                'reference' => $documentLevel->kode === 'level-3' ? ($validated['reference'] ?? null) : null,
                 'revised_from' => $revisionSource?->id,
                 'request_type' => $revisionSource !== null ? 'revision' : null,
                 'nama_dokumen' => $validated['nama_dokumen'],
@@ -455,6 +456,7 @@ class DocumentController extends Controller
             $document->unsetRelation('files');
 
             $document->departments()->sync($validated['department_ids'] ?? []);
+            $this->syncProcedureReference($document, $documentLevel->kode, $validated['reference'] ?? null, $request->user()->id);
             $this->storeAutosaveFiles($request, $document);
 
             $savedDocument = $document;
@@ -516,7 +518,7 @@ class DocumentController extends Controller
                 'nama_dokumen' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:255'],
                 'm_proses_bisnis_id' => [$isDraftAction ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
                 'm_proses_fungsi_id' => [$isDraftAction ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
-                'reference' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+                'reference' => ['nullable', 'string', 'max:255'],
                 'department_ids' => [$isDraftAction ? 'nullable' : 'required', 'array', 'min:1'],
                 'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
                 'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
@@ -550,7 +552,7 @@ class DocumentController extends Controller
             'nama_dokumen' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:255'],
             'm_proses_bisnis_id' => [$isDraftAction ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
             'm_proses_fungsi_id' => [$isDraftAction ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
-            'reference' => $isDraftAction ? ['nullable', 'integer', Rule::exists('t_document', 'id')] : $this->referenceRulesForLevel($level),
+            'reference' => $isDraftAction ? ['nullable', 'string', 'max:255'] : $this->referenceRulesForLevel($level),
             'department_ids' => [$isDraftAction ? 'nullable' : 'required', 'array', 'min:1'],
             'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
             'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
@@ -584,7 +586,7 @@ class DocumentController extends Controller
             'nama_dokumen' => ['nullable', 'string', 'max:255'],
             'm_proses_bisnis_id' => ['nullable', 'integer', Rule::exists('m_proses_bisnis', 'id')],
             'm_proses_fungsi_id' => ['nullable', 'integer', Rule::exists('m_proses_fungsi', 'id')],
-            'reference' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
+            'reference' => ['nullable', 'string', 'max:255'],
             'department_ids' => ['nullable', 'array'],
             'department_ids.*' => ['integer', Rule::exists('departments', 'id')],
             'official_preparer_id' => ['nullable', 'integer', Rule::exists('users', 'id')],
@@ -1161,7 +1163,7 @@ class DocumentController extends Controller
         }
 
         $source = Document::query()
-            ->with(['status', 'documentLevel', 'businessProcess', 'businessFunction', 'departments', 'referenceDocument', 'revisedFrom.documentLevel'])
+            ->with(['status', 'documentLevel', 'businessProcess', 'businessFunction', 'departments', 'outgoingRelations', 'revisedFrom.documentLevel'])
             ->whereKey($sourceId)
             ->firstOrFail();
 
@@ -1196,18 +1198,31 @@ class DocumentController extends Controller
             ->exists();
     }
 
+    private function syncProcedureReference(Document $document, string $level, ?string $reference, ?int $createdBy): void
+    {
+        if ($level !== 'level-3') {
+            $document->outgoingRelations()
+                ->where('relation_type', DocumentRelation::REFERENCES)
+                ->delete();
+
+            return;
+        }
+
+        DocumentRelation::syncDocumentSourceReference($document, $reference, $createdBy);
+    }
+
     protected function referenceRulesForLevel(string $level): array
     {
         if ($level !== 'level-3') {
-            return ['nullable', 'integer', Rule::exists('t_document', 'id')];
+            return ['nullable', 'string', 'max:255'];
         }
 
-        $procedureReferenceIds = $this->activeProcedureReferences(
+        $procedureReferenceValues = $this->activeProcedureReferences(
             (int) request('m_proses_bisnis_id'),
             (int) request('m_proses_fungsi_id'),
-        )->pluck('id')->all();
+        )->pluck('reference_value')->all();
 
-        return ['required', 'integer', Rule::in($procedureReferenceIds)];
+        return ['required', 'string', Rule::in($procedureReferenceValues)];
     }
 
     protected function activeProcedureReferences(?int $businessProcessId = null, ?int $businessFunctionId = null): Collection
@@ -1224,7 +1239,7 @@ class DocumentController extends Controller
             return collect();
         }
 
-        return Document::query()
+        $workflowProcedures = Document::query()
             ->with(['documentLevel'])
             ->where('m_status_document_id', $approvedStatusId)
             ->where(function ($query) use ($procedureLevelId): void {
@@ -1261,9 +1276,30 @@ class DocumentController extends Controller
                 $displayNumber = $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen;
 
                 $document->setAttribute('procedure_reference_number', $displayNumber);
+                $document->setAttribute('reference_value', DocumentRelation::referenceValue($document->id, null));
+                $document->setAttribute('reference_source_label', 'Workflow');
 
                 return $document;
             })
+            ->values();
+
+        $importedProcedures = ImportedExistingDocument::query()
+            ->with(['documentLevel'])
+            ->where('document_state', ImportedExistingDocument::STATE_MASTER)
+            ->where('m_document_level_id', $procedureLevelId)
+            ->when($businessProcessId, fn ($query) => $query->where('m_proses_bisnis_id', $businessProcessId))
+            ->when($businessFunctionId, fn ($query) => $query->where('m_proses_fungsi_id', $businessFunctionId))
+            ->get()
+            ->map(function (ImportedExistingDocument $document): ImportedExistingDocument {
+                $document->setAttribute('procedure_reference_number', $document->nomor_dokumen);
+                $document->setAttribute('reference_value', DocumentRelation::referenceValue(null, $document->id));
+                $document->setAttribute('reference_source_label', 'Imported');
+
+                return $document;
+            });
+
+        return $workflowProcedures
+            ->concat($importedProcedures)
             ->sortBy('procedure_reference_number')
             ->values();
     }
@@ -1322,7 +1358,7 @@ class DocumentController extends Controller
             }
 
             $segments = collect([$documentLevel->prefix])
-                ->merge($this->procedureNumberSegments((int) ($validated['reference'] ?? 0)))
+                ->merge($this->procedureNumberSegments((string) ($validated['reference'] ?? '')))
                 ->push($suffix)
                 ->all();
         } else {
@@ -1351,11 +1387,9 @@ class DocumentController extends Controller
         return $suffix;
     }
 
-    private function procedureNumberSegments(int $referenceId): Collection
+    private function procedureNumberSegments(string $reference): Collection
     {
-        $procedureNumber = Document::query()
-            ->whereKey($referenceId)
-            ->value('nomor_dokumen');
+        $procedureNumber = DocumentRelation::targetDocumentNumber($reference);
 
         return collect(explode('-', (string) $procedureNumber))
             ->filter()
