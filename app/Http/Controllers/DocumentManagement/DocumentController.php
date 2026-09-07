@@ -133,10 +133,6 @@ class DocumentController extends Controller
         abort_if($level === 'level-4' && $revisionSource === null, 404);
         abort_if($draft !== null && $draft->documentLevel?->kode !== $level, 404);
 
-        if ($level === 'level-1') {
-            $validated['submit_action'] = 'draft';
-        }
-
         if ($revisionSource !== null) {
             $validated['m_proses_bisnis_id'] = $revisionSource->m_proses_bisnis_id;
             $validated['m_proses_fungsi_id'] = $revisionSource->m_proses_fungsi_id;
@@ -488,7 +484,7 @@ class DocumentController extends Controller
 
     protected function validationRulesForLevel(string $level, ?Document $draft = null): array
     {
-        $submitAction = request('submit_action', $level === 'level-1' ? 'draft' : null);
+        $submitAction = request('submit_action', null);
         $requiresSubmittedFile = $submitAction !== 'draft';
         $isDraftAction = $submitAction === 'draft';
 
@@ -496,10 +492,12 @@ class DocumentController extends Controller
             return [
                 'nama_dokumen' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:255'],
                 'nomor_dokumen_suffix' => $this->documentNumberSuffixRules($isDraftAction),
-                'nomor_revisi' => ['nullable', 'string', 'max:20'],
-                'tanggal_terbit' => ['nullable', 'date'],
+                'nomor_revisi' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:20'],
+                'tanggal_terbit' => [$isDraftAction ? 'nullable' : 'required', 'date'],
                 'catatan_revisi' => ['nullable', 'string', 'max:1000'],
+                'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
                 'imported_document' => [$isDraftAction || $draft?->files()->where('type_file', 'imported_document')->exists() ? 'nullable' : 'required', 'file', 'mimes:pdf', 'max:10240'],
+                'submit_action' => ['required', Rule::in(['draft', 'submit'])],
                 'revised_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'remove_existing_files' => ['nullable', 'array'],

@@ -2,6 +2,7 @@
 
 namespace Tests\Feature\DocumentManagement;
 
+use App\Http\Controllers\DocumentManagement\DocumentController;
 use App\Models\Approval;
 use App\Models\ApprovalFlow;
 use App\Models\ApprovalStatus;
@@ -98,13 +99,13 @@ class CreateDocumentTest extends TestCase
 
     public function test_document_number_lock_name_stays_within_mysql_limit(): void
     {
-        $controller = app(\App\Http\Controllers\DocumentManagement\DocumentController::class);
+        $controller = app(DocumentController::class);
         $method = new \ReflectionMethod($controller, 'documentNumberLockName');
         $method->setAccessible(true);
 
         $lockName = $method->invoke($controller, 'PS-KSA-001');
 
-        $this->assertStringStartsWith('document-number:', $lockName);
+        $this->assertStringStartsWith('doc-num:', $lockName);
         $this->assertLessThanOrEqual(64, strlen($lockName));
     }
 
@@ -278,7 +279,7 @@ class CreateDocumentTest extends TestCase
         }
     }
 
-    public function test_level_one_document_can_be_imported(): void
+    public function test_level_one_document_can_be_saved_as_draft(): void
     {
         Storage::fake('local');
 
@@ -307,6 +308,7 @@ class CreateDocumentTest extends TestCase
                 'tanggal_terbit' => '2026-08-12',
                 'catatan_revisi' => 'Dokumen awal.',
                 'imported_document' => UploadedFile::fake()->create('manual.pdf', 24, 'application/pdf'),
+                'submit_action' => 'draft',
             ])
             ->assertRedirect(route('documents.create.drafts'));
 
@@ -317,7 +319,88 @@ class CreateDocumentTest extends TestCase
         $this->assertSame('SM-001', $document->nomor_dokumen);
         $this->assertSame(0, $document->nomor_revisi);
         $this->assertSame('Dokumen awal.', $document->catatan_revisi);
+        $this->assertNull($document->submitted_at);
         $this->assertTrue($document->files()->where('type_file', 'imported_document')->exists());
+    }
+
+    public function test_level_one_document_can_be_submitted_to_needs_process(): void
+    {
+        Storage::fake('local');
+
+        $submitter = User::factory()->create([
+            'name' => 'Pengaju Manual',
+        ]);
+        $officialPreparer = User::factory()->create([
+            'name' => 'Penyusun Manual',
+        ]);
+        $documentControlAdmin = User::factory()->create([
+            'name' => 'Admin Kontrol Dokumen',
+        ]);
+
+        $documentControlRole = Role::query()->firstOrCreate(['nama_role' => 'Admin Kontrol Dokumen']);
+        $assignPermission = Permission::query()->firstOrCreate(
+            ['code' => 'documents.approval.assign'],
+            [
+                'name' => 'Assign Approver Dokumen',
+                'module' => 'Manajemen Dokumen',
+                'route' => 'documents.approval.assign',
+                'action' => 'assign',
+            ],
+        );
+        $documentControlRole->permissions()->syncWithoutDetaching([$assignPermission->id]);
+        $documentControlAdmin->roles()->attach($documentControlRole);
+
+        StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::APPROVED,
+            'nama_status' => 'Disetujui',
+        ]);
+        DocumentType::create(['nama_types' => 'Manual']);
+
+        $level = DocumentLevel::query()->where('kode', 'level-1')->firstOrFail();
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-1'), [
+                'nama_dokumen' => 'Manual SKMBS Submit',
+                'official_preparer_id' => $officialPreparer->id,
+                'nomor_dokumen_suffix' => '002',
+                'nomor_revisi' => '00.00',
+                'tanggal_terbit' => '2026-08-12',
+                'catatan_revisi' => 'Dokumen manual siap diproses.',
+                'imported_document' => UploadedFile::fake()->create('manual-submit.pdf', 24, 'application/pdf'),
+                'submit_action' => 'submit',
+            ])
+            ->assertRedirect(route('documents.create'));
+
+        $document = Document::query()->firstOrFail();
+
+        $this->assertSame($level->id, $document->m_document_level_id);
+        $this->assertSame(StatusDocument::PROPOSED, $document->status->nama_status);
+        $this->assertSame($officialPreparer->id, $document->official_preparer_id);
+        $this->assertSame('Manual SKMBS Submit', $document->nama_dokumen);
+        $this->assertSame('SM-002', $document->nomor_dokumen);
+        $this->assertSame(0, $document->nomor_revisi);
+        $this->assertNotNull($document->submitted_at);
+        $this->assertNull($document->m_proses_bisnis_id);
+        $this->assertNull($document->m_proses_fungsi_id);
+        $this->assertNull($document->reference);
+        $this->assertCount(0, $document->departments);
+        $this->assertTrue($document->files()->where('type_file', 'imported_document')->exists());
+        $this->assertTrue(
+            $document->approvals()
+                ->where('user_id', $officialPreparer->id)
+                ->where('stages', 'TTD Penyusun Resmi')
+                ->exists(),
+        );
+
+        $this->actingAs($documentControlAdmin)
+            ->get(route('documents.inbox', ['tab' => 'needs-process']))
+            ->assertOk()
+            ->assertSee('Manual SKMBS Submit')
+            ->assertSee('SM-002')
+            ->assertSee('Manual')
+            ->assertSee('Belum assign approver');
     }
 
     public function test_level_two_document_can_be_saved_as_draft(): void
