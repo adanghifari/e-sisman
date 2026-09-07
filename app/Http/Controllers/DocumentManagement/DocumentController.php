@@ -151,10 +151,6 @@ class DocumentController extends Controller
         abort_if($level === 'level-4' && $revisionSource === null, 404);
         abort_if($draft !== null && $draft->documentLevel?->kode !== $level, 404);
 
-        if ($level === 'level-1') {
-            $validated['submit_action'] = 'draft';
-        }
-
         if ($revisionSource !== null) {
             $validated['m_proses_bisnis_id'] = $revisionSource->m_proses_bisnis_id;
             $validated['m_proses_fungsi_id'] = $revisionSource->m_proses_fungsi_id;
@@ -527,7 +523,7 @@ class DocumentController extends Controller
 
     protected function validationRulesForLevel(string $level, ?Document $draft = null, ?Document $resubmissionSource = null): array
     {
-        $submitAction = request('submit_action', $level === 'level-1' ? 'draft' : null);
+        $submitAction = request('submit_action', null);
         $requiresSubmittedFile = $submitAction !== 'draft';
         $isDraftAction = $submitAction === 'draft';
         $removedExistingFileIds = request('remove_existing_files', []);

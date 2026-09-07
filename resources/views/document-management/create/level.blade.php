@@ -311,6 +311,12 @@
                         </div>
                     </section>
 
+                    <x-documents.official-preparer
+                        :label="$ownerLabel"
+                        :users="$assignableUsers"
+                        :selected-user="$draft?->officialPreparer"
+                    />
+
                     <section class="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
                         <div class="border-b border-slate-200 px-6 py-5">
                             <h2 class="text-lg font-bold text-slate-900">Upload Dokumen</h2>
@@ -397,9 +403,14 @@
                         <p class="mb-3 text-center text-xs font-semibold text-slate-500" data-autosave-status>
                             Draft akan tersimpan otomatis saat Anda mengisi form.
                         </p>
-                        <button type="submit" class="inline-flex h-12 w-full items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
-                            Import Dokumen
-                        </button>
+                        <div class="grid gap-3 sm:grid-cols-2">
+                            <button type="submit" name="submit_action" value="draft" formnovalidate data-loading-overlay-skip="true" class="inline-flex h-12 items-center justify-center rounded-lg border border-slate-300 bg-white px-4 text-base font-semibold text-slate-500 transition hover:bg-slate-50">
+                                Simpan Draft
+                            </button>
+                            <button type="submit" name="submit_action" value="submit" class="inline-flex h-12 items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
+                                Import Dokumen
+                            </button>
+                        </div>
                     </div>
                 </aside>
             </form>
