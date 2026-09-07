@@ -145,6 +145,7 @@
                                         :value="old('replacement_reference')"
                                         placeholder="Belum ditentukan"
                                         empty-label="Dokumen tidak ditemukan."
+                                        :filter-by-context="! $legacyOnly"
                                     />
                                     @error('replacement_reference')
                                         <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -180,7 +181,7 @@
 
             <x-ui.panel
                 title="Dokumen Terkait"
-                :description="$isMasterImport ? 'Tambahkan relasi jika dokumen master existing ini punya acuan atau menggantikan arsip lain.' : 'Tambahkan relasi legacy jika arsip ini digantikan dokumen lain atau punya dokumen acuan.'"
+                :description="$isMasterImport ? 'Tambahkan relasi dokumen bila diperlukan, maksimal dua relasi.' : 'Tambahkan Dokumen Pengganti dan Referensi Prosedur bila diperlukan, maksimal dua relasi.'"
                 :padded="false"
                 data-legacy-rule-section
             >
@@ -253,6 +254,9 @@
                         <flux:icon name="plus" class="size-4" />
                         Tambah Relasi
                     </button>
+                    <p class="hidden text-xs font-semibold text-slate-500" data-imported-existing-relation-limit>
+                        Maksimal dua relasi: Digantikan Oleh dan Referensi.
+                    </p>
                 </div>
 
                 <template data-imported-existing-relation-template>
@@ -499,7 +503,18 @@
 
             const list = root.querySelector('[data-imported-existing-relation-list]');
             const template = document.querySelector('[data-imported-existing-relation-template]');
+            const addButton = root.querySelector('[data-imported-existing-relation-add]');
+            const limitMessage = root.querySelector('[data-imported-existing-relation-limit]');
+            const maxRelations = 2;
             let nextIndex = list?.querySelectorAll('[data-imported-existing-relation-row]').length || 0;
+
+            const syncAddButton = () => {
+                const rowCount = list?.querySelectorAll('[data-imported-existing-relation-row]').length || 0;
+                const isLimitReached = rowCount >= maxRelations;
+
+                addButton?.classList.toggle('hidden', isLimitReached);
+                limitMessage?.classList.toggle('hidden', !isLimitReached);
+            };
 
             const syncTargetVisibility = (row) => {
                 const type = row.querySelector('[data-imported-existing-target-type]')?.value || 'imported';
@@ -522,10 +537,19 @@
 
             const syncAllRows = () => {
                 list?.querySelectorAll('[data-imported-existing-relation-row]').forEach(syncTargetVisibility);
+                syncAddButton();
             };
 
             document.addEventListener('click', (event) => {
                 if (event.target.closest('[data-imported-existing-relation-add]')) {
+                    const rowCount = list?.querySelectorAll('[data-imported-existing-relation-row]').length || 0;
+
+                    if (rowCount >= maxRelations) {
+                        syncAddButton();
+
+                        return;
+                    }
+
                     const content = template?.innerHTML.replaceAll('__INDEX__', String(nextIndex));
 
                     if (!content || !list) {
@@ -543,6 +567,7 @@
 
                 if (removeButton) {
                     removeButton.closest('[data-imported-existing-relation-row]')?.remove();
+                    syncAddButton();
                 }
             });
 

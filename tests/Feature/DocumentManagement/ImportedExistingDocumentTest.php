@@ -168,6 +168,30 @@ class ImportedExistingDocumentTest extends TestCase
         ]);
     }
 
+    public function test_imported_existing_document_relations_are_limited_to_two_entries(): void
+    {
+        Storage::fake('local');
+
+        $user = $this->userWithPermissions([
+            'documents.obsolete.imports.store',
+        ]);
+
+        $targets = collect(range(1, 3))->map(fn () => $this->createExistingDocument($user));
+
+        $this->actingAs($user)
+            ->post(route('documents.obsolete.imports.store'), [
+                'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
+                'nama_dokumen' => 'Legacy Source With Too Many Relations',
+                'nomor_revisi' => '00.01',
+                'obsolete_document' => UploadedFile::fake()->create('legacy-source.pdf', 100, 'application/pdf'),
+                'relations' => $targets->map(fn (Document $target) => [
+                    'related_document_id' => $target->id,
+                    'relation_type' => DocumentRelation::REFERENCES,
+                ])->all(),
+            ])
+            ->assertSessionHasErrors('relations');
+    }
+
     public function test_imported_existing_master_can_be_stored_with_current_rule_and_claimed_number(): void
     {
         Storage::fake('local');
@@ -279,6 +303,18 @@ class ImportedExistingDocumentTest extends TestCase
         ]);
         $this->createExistingDocument($user);
         $replacementDocument = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Master Versi 00.01',
+            'nomor_dokumen' => 'PS-SMR-OBSOLETE-001',
+            'nomor_revisi' => '00.01',
+        ]);
+        ImportedExistingDocument::create([
             'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
             'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
             'm_document_level_id' => $level->id,
@@ -287,8 +323,8 @@ class ImportedExistingDocumentTest extends TestCase
             'm_proses_fungsi_id' => $businessFunction->id,
             'uploaded_by' => $user->id,
             'nama_dokumen' => 'Imported Obsolete Versi 00.01',
-            'nomor_dokumen' => 'PS-SMR-OBSOLETE-001',
-            'nomor_revisi' => '00.01',
+            'nomor_dokumen' => 'PS-SMR-OBSOLETE-OLD',
+            'nomor_revisi' => '00.00',
         ]);
         $wrongLevel = DocumentLevel::query()->where('kode', 'level-1')->firstOrFail();
         ImportedExistingDocument::create([
@@ -309,9 +345,10 @@ class ImportedExistingDocumentTest extends TestCase
             ->assertOk()
             ->assertSee('Dokumen Pengganti')
             ->assertSee('Digantikan Oleh')
-            ->assertSee('PS-SMR-OBSOLETE-001 - Imported Obsolete Versi 00.01')
-            ->assertSee('Arsip Obsolete')
-            ->assertSee('MS-SMR-WRONG-LEVEL')
+            ->assertSee('PS-SMR-OBSOLETE-001 - Imported Master Versi 00.01')
+            ->assertSee('Imported Master - Revisi 00.01')
+            ->assertDontSee('PS-SMR-OBSOLETE-OLD')
+            ->assertDontSee('MS-SMR-WRONG-LEVEL')
             ->assertDontSee('Tambah Relasi');
 
         $this->actingAs($user)

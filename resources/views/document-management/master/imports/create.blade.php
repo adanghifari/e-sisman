@@ -215,6 +215,7 @@
                                 :value="old('replacement_reference')"
                                 placeholder="Belum ditentukan"
                                 empty-label="Dokumen tidak ditemukan."
+                                :filter-by-context="true"
                             />
                             @error('replacement_reference')
                                 <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
