@@ -28,9 +28,10 @@ class AutoGenerateFinalDocument
             : ($generatedBy !== null ? User::query()->find($generatedBy) : null);
         $preparation = null;
         $existingArtifact = null;
+        $context = PdfDocumentContext::FINAL_DOCUMENT;
 
         try {
-            DB::transaction(function () use ($documentId, $generatedByUser, &$preparation, &$existingArtifact): void {
+            DB::transaction(function () use ($documentId, $generatedByUser, &$preparation, &$existingArtifact, &$context): void {
                 $lockedDocument = Document::query()
                     ->whereKey($documentId)
                     ->lockForUpdate()
@@ -93,6 +94,7 @@ class AutoGenerateFinalDocument
                     $generatedByUser,
                     DocumentFinalArtifact::TYPE_FINAL_DOCUMENT,
                 );
+                $context = PdfDocumentContext::finalFor($lockedDocument);
 
                 Log::info('Final document auto-generation claimed artifact.', [
                     'document_id' => $lockedDocument->id,
@@ -105,7 +107,11 @@ class AutoGenerateFinalDocument
                 return $existingArtifact;
             }
 
-            $artifact = $this->finalDocumentArtifactGenerator->generatePrepared($preparation, $mode);
+            $artifact = $this->finalDocumentArtifactGenerator->generatePrepared(
+                $preparation,
+                $mode,
+                $context,
+            );
 
             Log::info('Final document auto-generation completed.', [
                 'document_id' => $artifact->t_document_id,

@@ -14,8 +14,12 @@
         $showSourceFiles = $document->status?->nama_status === \App\Models\StatusDocument::PROPOSED;
         $printoutTitle = $showSourceFiles ? 'Printout PDF Sementara' : 'Printout PDF Final';
         $printoutDescription = $showSourceFiles
-            ? 'Preview dinamis. Lembar pengesahan akan tersedia setelah semua approval selesai.'
-            : 'Versi final lengkap dengan cover, kop, footer, lembar pengesahan, dan lampiran.';
+            ? ($isLevelOne
+                ? 'Preview dinamis. Versi final akan memakai cover, kop, footer, dan lampiran tanpa lembar pengesahan.'
+                : 'Preview dinamis. Lembar pengesahan akan tersedia setelah semua approval selesai.')
+            : ($isLevelOne
+                ? 'Versi final lengkap dengan cover, kop, footer, dan lampiran tanpa lembar pengesahan.'
+                : 'Versi final lengkap dengan cover, kop, footer, lembar pengesahan, dan lampiran.');
         $printoutVersion = collect([
             $document->updated_at?->timestamp,
             $document->files->max(fn ($file) => $file->updated_at?->timestamp),

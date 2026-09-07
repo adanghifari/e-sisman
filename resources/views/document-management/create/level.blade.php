@@ -162,6 +162,40 @@
                 })
                 ->all()
             : [];
+        $nextLevelOneDocumentNumberSuffix = null;
+        if ($levelKey === 'level-1') {
+            $manualDocumentNumbers = collect();
+
+            if ($documentLevelRecord) {
+                $manualDocumentNumbers = $manualDocumentNumbers->merge(
+                    \App\Models\Document::query()
+                        ->where('m_document_level_id', $documentLevelRecord->id)
+                        ->whereNotNull('nomor_dokumen')
+                        ->when($draft?->id, fn ($query) => $query->whereKeyNot($draft->id))
+                        ->pluck('nomor_dokumen'),
+                );
+            }
+
+            if (\Illuminate\Support\Facades\Schema::hasTable('document_number_registry')) {
+                $manualDocumentNumbers = $manualDocumentNumbers->merge(
+                    \App\Models\DocumentNumberRegistry::query()
+                        ->where('scope_identifier', 'SM')
+                        ->pluck('document_number'),
+                );
+            }
+
+            $manualNextSequence = ((int) $manualDocumentNumbers
+                ->map(fn ($documentNumber) => $documentNumberSequence($documentNumber))
+                ->filter()
+                ->max()) + 1;
+            $manualReservedStart = \Illuminate\Support\Facades\Schema::hasTable('document_numbering_setups')
+                ? (int) \App\Models\DocumentNumberingSetup::query()
+                    ->where('scope_identifier', 'SM')
+                    ->value('v2_start_number')
+                : 0;
+            $manualNextSequence = max($manualNextSequence, $manualReservedStart);
+            $nextLevelOneDocumentNumberSuffix = str_pad((string) $manualNextSequence, 3, '0', STR_PAD_LEFT);
+        }
         $departmentOptions = $departments
             ->map(fn ($department) => [
                 'value' => $department->id,
@@ -408,7 +442,7 @@
                                 Simpan Draft
                             </button>
                             <button type="submit" name="submit_action" value="submit" class="inline-flex h-12 items-center justify-center rounded-lg bg-blue-500 px-4 text-base font-semibold text-white shadow-sm transition hover:bg-blue-600">
-                                Import Dokumen
+                                Submit Dokumen
                             </button>
                         </div>
                     </div>

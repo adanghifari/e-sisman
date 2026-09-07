@@ -201,7 +201,7 @@ class DocumentMasterController extends Controller
                 ->values(),
             'generatedPrintout' => $this->latestGeneratedPrintout($document),
             'canPreviewGeneratedPrintout' => app(DynamicFinalDocumentRenderer::class)
-                ->canRender($document, PdfDocumentContext::FINAL_DOCUMENT),
+                ->canRender($document, PdfDocumentContext::finalFor($document)),
             'documentHistory' => app(DocumentHistory::class)->forDocument($document),
             'relatedObsoleteDocuments' => $this->relatedImportedObsoleteForWorkflowMaster($document),
         ]);
@@ -430,7 +430,7 @@ class DocumentMasterController extends Controller
     ): Response {
         $this->authorizeMasterGeneratedPreviewAccess($document);
 
-        $context = PdfDocumentContext::FINAL_DOCUMENT;
+        $context = PdfDocumentContext::finalFor($document);
         $watermarkStamp = null;
 
         if ($request->boolean('download')) {

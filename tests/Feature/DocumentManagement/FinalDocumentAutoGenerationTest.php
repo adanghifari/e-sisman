@@ -19,6 +19,7 @@ use App\Models\User;
 use App\Support\FinalDocuments\AutoGenerateFinalDocument;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
+use setasign\Fpdi\Tcpdf\Fpdi;
 use TCPDF;
 use Tests\TestCase;
 
@@ -71,6 +72,39 @@ class FinalDocumentAutoGenerationTest extends TestCase
         $this->assertNotNull($artifact->checksum_sha256);
         $this->assertGreaterThan(1000, $artifact->file_size);
         Storage::disk('local')->assertExists($artifact->path_file);
+    }
+
+    public function test_level_one_final_document_skips_approval_sheet_after_approval(): void
+    {
+        $submitter = User::factory()->create();
+        $approver = User::factory()->create();
+        $manualLevel = DocumentLevel::query()->where('kode', 'level-1')->firstOrFail();
+        $manualType = DocumentType::query()->firstOrCreate(['nama_types' => 'Manual']);
+        $document = $this->createDocument($submitter, [
+            'm_document_level_id' => $manualLevel->id,
+            'm_document_types_id' => $manualType->id,
+            'm_proses_bisnis_id' => null,
+            'm_proses_fungsi_id' => null,
+            'nama_dokumen' => 'Manual Tanpa Lembar Pengesahan',
+            'nomor_dokumen' => 'SM-001',
+        ]);
+        $document->departments()->detach();
+        $this->createFlow($document, ['Verifikator Manual']);
+        $this->createApproval($document, $approver, ApprovalStatus::PENDING, 'Verifikator Manual');
+        $this->storeDocumentFile($document, 'imported_document', $this->pdfBinary(['Manual Body']));
+
+        $this->actingAs($approver)
+            ->post(route('documents.approval.approve', $document))
+            ->assertRedirect(route('documents.approval.show', $document));
+
+        $artifact = DocumentFinalArtifact::query()
+            ->where('t_document_id', $document->id)
+            ->where('artifact_type', DocumentFinalArtifact::TYPE_FINAL_DOCUMENT)
+            ->firstOrFail();
+
+        $this->assertSame(StatusDocument::APPROVED, $document->refresh()->status->nama_status);
+        $this->assertSame(DocumentFinalArtifact::STATUS_GENERATED, $artifact->generation_status);
+        $this->assertSame(2, $this->pageCount(Storage::disk('local')->path($artifact->path_file)));
     }
 
     public function test_rejected_document_does_not_generate_final_document(): void
@@ -438,6 +472,11 @@ class FinalDocumentAutoGenerationTest extends TestCase
         }
 
         return $pdf->Output('', 'S');
+    }
+
+    private function pageCount(string $path): int
+    {
+        return (new Fpdi)->setSourceFile($path);
     }
 
     private function ensureStatuses(): void
