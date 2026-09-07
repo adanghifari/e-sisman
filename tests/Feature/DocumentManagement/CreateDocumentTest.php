@@ -11,6 +11,7 @@ use App\Models\BusinessProcess;
 use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentLevel;
+use App\Models\DocumentNumberRegistry;
 use App\Models\DocumentType;
 use App\Models\Permission;
 use App\Models\Role;
@@ -264,7 +265,42 @@ class CreateDocumentTest extends TestCase
             ->assertSee('Nama Dokumen')
             ->assertSee('Upload Dokumen')
             ->assertSee('Import Dokumen')
-            ->assertSee('Submit Dokumen');
+            ->assertSee('Submit Dokumen')
+            ->assertSee('value="001"', false)
+            ->assertSee('value="00.00"', false);
+    }
+
+    public function test_level_one_create_page_suggests_next_manual_document_number(): void
+    {
+        $user = User::factory()->create();
+        $status = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $documentType = DocumentType::create(['nama_types' => 'Manual']);
+        $level = DocumentLevel::query()->where('kode', 'level-1')->firstOrFail();
+
+        Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $status->id,
+            'm_document_types_id' => $documentType->id,
+            'user_id' => $user->id,
+            'nama_dokumen' => 'Manual Lama',
+            'nomor_dokumen' => 'SM-001',
+            'nomor_revisi' => 0,
+            'approved_at' => now(),
+        ]);
+
+        DocumentNumberRegistry::create([
+            'document_number' => 'SM-002',
+            'scope_identifier' => 'SM',
+            'source_type' => DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING,
+            'source_id' => 1,
+            'registered_by' => $user->id,
+            'registered_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.create.level', 'level-1'))
+            ->assertOk()
+            ->assertSee('value="003"', false);
     }
 
     public function test_create_document_sidebar_stays_active_on_level_forms(): void
@@ -383,7 +419,7 @@ class CreateDocumentTest extends TestCase
                 'nama_dokumen' => 'Manual SKMBS Submit',
                 'official_preparer_id' => $officialPreparer->id,
                 'nomor_dokumen_suffix' => '002',
-                'nomor_revisi' => '00.00',
+                'nomor_revisi' => '99.99',
                 'tanggal_terbit' => '2026-08-12',
                 'catatan_revisi' => 'Dokumen manual siap diproses.',
                 'imported_document' => UploadedFile::fake()->create('manual-submit.pdf', 24, 'application/pdf'),

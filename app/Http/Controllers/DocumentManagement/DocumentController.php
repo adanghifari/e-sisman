@@ -127,6 +127,8 @@ class DocumentController extends Controller
             )
             ->firstOrFail();
 
+        $this->forceInitialRevisionForLevelOne($request, $level);
+
         $validated = $request->validate($this->validationRulesForLevel($level, $draft));
         $revisionSource = $draft?->revisedFrom ?: $this->revisionSourceForRequest($request, $level);
 
@@ -391,6 +393,10 @@ class DocumentController extends Controller
             ]);
         }
 
+        if ($level === 'level-1') {
+            $validated['nomor_revisi'] = '00.00';
+        }
+
         if ($revisionSource !== null) {
             $validated['m_proses_bisnis_id'] = $revisionSource->m_proses_bisnis_id;
             $validated['m_proses_fungsi_id'] = $revisionSource->m_proses_fungsi_id;
@@ -491,8 +497,8 @@ class DocumentController extends Controller
         if ($level === 'level-1') {
             return [
                 'nama_dokumen' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:255'],
-                'nomor_dokumen_suffix' => $this->documentNumberSuffixRules($isDraftAction),
-                'nomor_revisi' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:20'],
+                'nomor_dokumen_suffix' => $this->manualDocumentNumberSuffixRules($isDraftAction),
+                'nomor_revisi' => ['required', Rule::in(['00.00'])],
                 'tanggal_terbit' => [$isDraftAction ? 'nullable' : 'required', 'date'],
                 'catatan_revisi' => ['nullable', 'string', 'max:1000'],
                 'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
@@ -616,7 +622,23 @@ class DocumentController extends Controller
             $rules['revised_from'] = ['required', 'integer', Rule::exists('t_document', 'id')];
         }
 
+        if ($level === 'level-1') {
+            $rules['nomor_dokumen_suffix'] = $this->manualDocumentNumberSuffixRules(true);
+            $rules['nomor_revisi'] = ['nullable', Rule::in(['00.00'])];
+        }
+
         return $rules;
+    }
+
+    private function forceInitialRevisionForLevelOne(Request $request, string $level): void
+    {
+        if ($level !== 'level-1') {
+            return;
+        }
+
+        $request->merge([
+            'nomor_revisi' => '00.00',
+        ]);
     }
 
     private function documentNumberSuffixRules(bool $nullable): array
@@ -626,6 +648,16 @@ class DocumentController extends Controller
             'string',
             'max:50',
             'regex:/^[A-Za-z0-9]+$/',
+        ];
+    }
+
+    private function manualDocumentNumberSuffixRules(bool $nullable): array
+    {
+        return [
+            $nullable ? 'nullable' : 'required',
+            'string',
+            'max:50',
+            'regex:/^\d+$/',
         ];
     }
 

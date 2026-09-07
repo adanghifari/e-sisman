@@ -160,6 +160,40 @@
                 })
                 ->all()
             : [];
+        $nextLevelOneDocumentNumberSuffix = null;
+        if ($levelKey === 'level-1') {
+            $manualDocumentNumbers = collect();
+
+            if ($documentLevelRecord) {
+                $manualDocumentNumbers = $manualDocumentNumbers->merge(
+                    \App\Models\Document::query()
+                        ->where('m_document_level_id', $documentLevelRecord->id)
+                        ->whereNotNull('nomor_dokumen')
+                        ->when($draft?->id, fn ($query) => $query->whereKeyNot($draft->id))
+                        ->pluck('nomor_dokumen'),
+                );
+            }
+
+            if (\Illuminate\Support\Facades\Schema::hasTable('document_number_registry')) {
+                $manualDocumentNumbers = $manualDocumentNumbers->merge(
+                    \App\Models\DocumentNumberRegistry::query()
+                        ->where('scope_identifier', 'SM')
+                        ->pluck('document_number'),
+                );
+            }
+
+            $manualNextSequence = ((int) $manualDocumentNumbers
+                ->map(fn ($documentNumber) => $documentNumberSequence($documentNumber))
+                ->filter()
+                ->max()) + 1;
+            $manualReservedStart = \Illuminate\Support\Facades\Schema::hasTable('document_numbering_setups')
+                ? (int) \App\Models\DocumentNumberingSetup::query()
+                    ->where('scope_identifier', 'SM')
+                    ->value('v2_start_number')
+                : 0;
+            $manualNextSequence = max($manualNextSequence, $manualReservedStart);
+            $nextLevelOneDocumentNumberSuffix = str_pad((string) $manualNextSequence, 3, '0', STR_PAD_LEFT);
+        }
         $departmentOptions = $departments
             ->map(fn ($department) => [
                 'value' => $department->id,
@@ -206,7 +240,7 @@
             : null;
         $documentNumberSuffixDefault = $draft?->nomor_dokumen
             ? \Illuminate\Support\Str::afterLast($draft->nomor_dokumen, '-')
-            : $revisionDocumentSuffix;
+            : ($revisionDocumentSuffix ?? $nextLevelOneDocumentNumberSuffix);
         $revisionFormDisplayNumber = $revisionSource
             ? ($draft?->nomor_lembar_revisi ?: app(\App\Support\DocumentFiles\DocumentFileNumbering::class)->revisionFormNumber($revisionSource))
             : null;
@@ -368,7 +402,7 @@
                             <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4">
                                 <input type="text" value="{{ $documentNumberPrefix }}" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
                                 <span class="text-lg font-semibold text-slate-500">-</span>
-                                <input type="text" name="nomor_dokumen_suffix" value="{{ old('nomor_dokumen_suffix', $documentNumberSuffixDefault) }}" required class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                <input type="text" name="nomor_dokumen_suffix" value="{{ old('nomor_dokumen_suffix', $documentNumberSuffixDefault) }}" inputmode="numeric" pattern="[0-9]*" required class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                             </div>
                             @error('nomor_dokumen_suffix')
                                 <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -380,9 +414,9 @@
                             <input
                                 type="text"
                                 name="nomor_revisi"
-                                value="{{ old('nomor_revisi', $draft?->formatted_revision ?? ($revisionSource ? $nextRevisionValue : null)) }}"
-                                @readonly($revisionSource)
-                                class="h-14 w-full rounded-lg border {{ $revisionSource ? 'border-slate-200 bg-slate-50 text-slate-600' : 'border-slate-300 bg-white text-slate-700 focus:border-sky-400 focus:ring-2 focus:ring-sky-100' }} px-4 text-base font-semibold outline-none transition"
+                                value="00.00"
+                                readonly
+                                class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none transition"
                             >
                             @error('nomor_revisi')
                                 <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
