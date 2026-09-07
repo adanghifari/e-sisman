@@ -14,7 +14,7 @@ return new class extends Migration
         Schema::table('t_document', function (Blueprint $table): void {
             $table->foreignId('revised_from')
                 ->nullable()
-                ->after('reference')
+                ->after('user_id')
                 ->constrained('t_document')
                 ->restrictOnDelete();
         });

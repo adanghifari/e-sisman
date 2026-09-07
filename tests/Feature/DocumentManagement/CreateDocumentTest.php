@@ -11,6 +11,7 @@ use App\Models\BusinessProcess;
 use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentLevel;
+use App\Models\DocumentRelation;
 use App\Models\DocumentType;
 use App\Models\Permission;
 use App\Models\Role;
@@ -1728,7 +1729,7 @@ class CreateDocumentTest extends TestCase
                 'nama_dokumen' => 'Instruksi Kerja Pengujian',
                 'm_proses_bisnis_id' => $businessProcess->id,
                 'm_proses_fungsi_id' => $businessFunction->id,
-                'reference' => $procedure->id,
+                'reference' => "existing-{$procedure->id}",
                 'department_ids' => [$department->id, $secondDepartment->id],
                 'official_preparer_id' => $user->id,
                 'nomor_dokumen_suffix' => '001',
@@ -1744,7 +1745,12 @@ class CreateDocumentTest extends TestCase
         $this->assertSame($level->id, $document->m_document_level_id);
         $this->assertSame('Instruksi Kerja Pengujian', $document->nama_dokumen);
         $this->assertSame($user->id, $document->official_preparer_id);
-        $this->assertSame($procedure->id, $document->reference);
+        $this->assertDatabaseHas('document_relations', [
+            'source_document_id' => $document->id,
+            'target_document_id' => $procedure->id,
+            'target_imported_existing_document_id' => null,
+            'relation_type' => DocumentRelation::REFERENCES,
+        ]);
         $this->assertSame('IK-SMR-001-001', $document->nomor_dokumen);
         $this->assertTrue($document->departments()->whereKey($department->id)->exists());
         $this->assertTrue($document->departments()->whereKey($secondDepartment->id)->exists());
@@ -1791,7 +1797,7 @@ class CreateDocumentTest extends TestCase
                 'nama_dokumen' => 'Draft IK Dengan File',
                 'm_proses_bisnis_id' => $businessProcess->id,
                 'm_proses_fungsi_id' => $businessFunction->id,
-                'reference' => $procedure->id,
+                'reference' => "existing-{$procedure->id}",
                 'department_ids' => [$department->id],
                 'nomor_dokumen_suffix' => '020',
                 'filled_template' => UploadedFile::fake()->create('template-draft.pdf', 24, 'application/pdf'),
@@ -1907,7 +1913,7 @@ class CreateDocumentTest extends TestCase
                 'nama_dokumen' => 'Instruksi Kerja Pengujian',
                 'm_proses_bisnis_id' => $businessProcess->id,
                 'm_proses_fungsi_id' => $businessFunction->id,
-                'reference' => $procedure->id,
+                'reference' => "existing-{$procedure->id}",
                 'department_ids' => [$department->id],
                 'official_preparer_id' => $user->id,
                 'nomor_dokumen_suffix' => '001',

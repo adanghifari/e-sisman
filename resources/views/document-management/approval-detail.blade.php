@@ -229,8 +229,8 @@
                                                 <select name="reference" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
                                                     <option value="">-Pilih-</option>
                                                     @foreach ($procedureReferences as $procedureReference)
-                                                        <option value="{{ $procedureReference->id }}" @selected((string) old('reference', $document->reference) === (string) $procedureReference->id)>
-                                                            {{ $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }}
+                                                        <option value="{{ $procedureReference->reference_value }}" @selected((string) old('reference', $document->procedureReferenceValue()) === (string) $procedureReference->reference_value)>
+                                                            {{ $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }} ({{ $procedureReference->reference_source_label }})
                                                         </option>
                                                     @endforeach
                                                 </select>

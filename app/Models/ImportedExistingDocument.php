@@ -103,12 +103,12 @@ class ImportedExistingDocument extends Model
 
     public function outgoingRelations(): HasMany
     {
-        return $this->hasMany(ImportedExistingDocumentRelation::class);
+        return $this->hasMany(DocumentRelation::class, 'source_imported_existing_document_id');
     }
 
     public function incomingImportedRelations(): HasMany
     {
-        return $this->hasMany(ImportedExistingDocumentRelation::class, 'related_imported_existing_document_id');
+        return $this->hasMany(DocumentRelation::class, 'target_imported_existing_document_id');
     }
 
     public function tDocumentRevisions(): HasMany

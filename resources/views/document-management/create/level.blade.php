@@ -215,7 +215,7 @@
             : collect();
         $selectedBusinessProcessId = old('m_proses_bisnis_id', $draft?->m_proses_bisnis_id ?? $revisionSource?->m_proses_bisnis_id);
         $selectedBusinessFunctionId = old('m_proses_fungsi_id', $draft?->m_proses_fungsi_id ?? $revisionSource?->m_proses_fungsi_id);
-        $selectedReferenceId = old('reference', $draft?->reference ?? $revisionSource?->reference);
+        $selectedReferenceId = old('reference', $draft?->procedureReferenceValue() ?? $revisionSource?->procedureReferenceValue());
         $selectedDepartmentIds = old('department_ids', $draft
             ? $draft->departments->pluck('id')->all()
             : collect($revisionSource?->departments ?? [])->pluck('id')->all());
@@ -226,7 +226,7 @@
             : '00.00');
         $selectedBusinessFunction = $businessFunctions->firstWhere('id', (int) $selectedBusinessFunctionId);
         $documentNumberFunctionCode = $selectedBusinessFunction?->kode ?: 'SMR';
-        $selectedProcedureReference = $procedureReferences->firstWhere('id', (int) $selectedReferenceId);
+        $selectedProcedureReference = $procedureReferences->firstWhere('reference_value', $selectedReferenceId);
         $procedureReferenceSegments = fn ($procedure) => collect(explode('-', (string) ($procedure?->procedure_reference_number ?: $procedure?->nomor_dokumen)))
             ->filter()
             ->values()
@@ -235,7 +235,7 @@
         $selectedProcedureNumberSegments = $procedureReferenceSegments($selectedProcedureReference);
         $procedureReferenceNumberSegments = $procedureReferences
             ->mapWithKeys(fn ($procedure) => [
-                $procedure->id => $procedureReferenceSegments($procedure)->all(),
+                $procedure->reference_value => $procedureReferenceSegments($procedure)->all(),
             ])
             ->all();
         $documentNumberSegments = match ($levelKey) {
@@ -441,7 +441,7 @@
                                 <input type="hidden" name="department_ids[]" value="{{ $departmentId }}">
                             @endforeach
                             @if ($levelKey === 'level-3')
-                                <input type="hidden" name="reference" value="{{ $revisionSource->reference }}">
+                                <input type="hidden" name="reference" value="{{ $revisionSource->procedureReferenceValue() }}">
                             @endif
 
                             <dl class="divide-y divide-slate-100 px-6 py-4">
@@ -471,11 +471,11 @@
                                         {{ $revisionSource->departments->map(fn ($department) => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department)->implode(', ') ?: '-' }}
                                     </dd>
                                 </div>
-                                @if ($revisionSource->referenceDocument)
+                                @if ($revisionReference = $revisionSource->procedureReferenceRelation()?->target())
                                     <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                         <dt class="text-sm font-semibold text-slate-500">Dokumen Acuan</dt>
                                         <dd class="text-sm font-bold text-slate-900">
-                                            {{ $revisionSource->referenceDocument->nomor_dokumen ?: '-' }} - {{ $revisionSource->referenceDocument->nama_dokumen }}
+                                            {{ $revisionReference->nomor_dokumen ?: '-' }} - {{ $revisionReference->nama_dokumen }}
                                         </dd>
                                     </div>
                                 @endif
@@ -557,12 +557,12 @@
                                             <option value="">-Pilih-</option>
                                             @foreach ($procedureReferences as $procedureReference)
                                                 <option
-                                                    value="{{ $procedureReference->id }}"
+                                                    value="{{ $procedureReference->reference_value }}"
                                                     data-business-process-id="{{ $procedureReference->m_proses_bisnis_id }}"
                                                     data-business-function-id="{{ $procedureReference->m_proses_fungsi_id }}"
-                                                    @selected((string) $selectedReferenceId === (string) $procedureReference->id)
+                                                    @selected((string) $selectedReferenceId === (string) $procedureReference->reference_value)
                                                 >
-                                                    {{ $procedureReference->procedure_reference_number ?: $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }}
+                                                    {{ $procedureReference->procedure_reference_number ?: $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }} ({{ $procedureReference->reference_source_label }})
                                                 </option>
                                             @endforeach
                                         </select>

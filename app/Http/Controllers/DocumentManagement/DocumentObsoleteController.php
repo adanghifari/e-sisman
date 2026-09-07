@@ -10,6 +10,8 @@ use App\Models\DocumentDownloadLog;
 use App\Models\DocumentFile;
 use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
+use App\Models\DocumentRelation;
+use App\Models\ImportedExistingDocument;
 use App\Models\StatusDocument;
 use App\Support\DocumentHistory;
 use App\Support\FinalDocuments\DocumentWatermarkStamp;
@@ -18,6 +20,7 @@ use App\Support\FinalDocuments\PdfDocumentContext;
 use Illuminate\Contracts\View\View;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
+use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
@@ -73,45 +76,16 @@ class DocumentObsoleteController extends Controller
             $query->where('m_proses_bisnis_id', $filters['process']);
         }
 
-        match ($filters['sort']) {
-            'oldest' => $query->orderBy('approved_at')->orderBy('tanggal_terbit')->orderBy('id'),
-            'name_asc' => $query->orderBy('nama_dokumen')->orderBy('nomor_dokumen'),
-            'name_desc' => $query->orderByDesc('nama_dokumen')->orderByDesc('nomor_dokumen'),
-            'revision_desc' => $query->orderByDesc('nomor_revisi')->orderByDesc('approved_at')->orderByDesc('id'),
-            default => $query->orderByDesc('approved_at')->orderByDesc('tanggal_terbit')->orderByDesc('id'),
-        };
+        $workflowObsoleteDocuments = $query->get();
+        $importedObsoleteDocuments = $this->importedObsoleteQuery($filters)->get();
 
-        $obsoleteDocuments = $query->get();
-        $obsoleteDocuments->each(function (Document $document): void {
-            $rootDocument = $document->revised_from !== null
-                ? Document::query()->whereKey($document->revisionRootId())->first()
-                : null;
+        $documents = $this->buildObsoleteFamilyGroups(
+            $workflowObsoleteDocuments,
+            $importedObsoleteDocuments,
+            $filters['sort']
+        );
 
-            $document->setAttribute('obsolete_display_number', $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen);
-        });
-        $documents = $obsoleteDocuments
-            ->groupBy(fn (Document $document): int => $document->revisionRootId())
-            ->map(function ($family): Document {
-                $sortedFamily = $family
-                    ->sortByDesc(fn (Document $document): string => sprintf(
-                        '%010d-%010d-%010d',
-                        $document->nomor_revisi,
-                        $document->approved_at?->timestamp ?? 0,
-                        $document->id,
-                    ))
-                    ->values();
-                $latestDocument = $sortedFamily->first();
-
-                $latestDocument->setRelation(
-                    'obsoleteChildDocuments',
-                    $sortedFamily
-                        ->where('id', '!=', $latestDocument->id)
-                        ->values(),
-                );
-
-                return $latestDocument;
-            })
-            ->values();
+        $totalDocuments = $workflowObsoleteDocuments->count() + $importedObsoleteDocuments->count();
 
         $typeOptions = ['' => 'Semua Level'] + DocumentLevel::query()
             ->orderBy('id')
@@ -125,7 +99,7 @@ class DocumentObsoleteController extends Controller
 
         return view('document-management.obsolete.index', [
             'documents' => $documents,
-            'totalDocuments' => $obsoleteDocuments->count(),
+            'totalDocuments' => $totalDocuments,
             'filters' => $filters,
             'typeOptions' => $typeOptions,
             'processOptions' => $processOptions,
@@ -441,5 +415,331 @@ class DocumentObsoleteController extends Controller
         return $document->nomor_dokumen !== $masterDisplayNumber
             ? $document->nomor_dokumen
             : null;
+    }
+
+    private function importedObsoleteQuery(array $filters)
+    {
+        $query = ImportedExistingDocument::query()
+            ->with([
+                'documentLevel',
+                'documentType',
+                'businessProcess',
+                'businessFunction',
+                'departments',
+                'uploader',
+                'outgoingRelations',
+                'incomingImportedRelations',
+            ])
+            ->where('document_state', ImportedExistingDocument::STATE_OBSOLETE);
+
+        if ($filters['search'] !== '') {
+            $search = $filters['search'];
+
+            $query->where(function ($query) use ($search): void {
+                $query
+                    ->where('nama_dokumen', 'like', "%{$search}%")
+                    ->orWhere('nomor_dokumen', 'like', "%{$search}%")
+                    ->orWhere('nomor_revisi', 'like', "%{$search}%")
+                    ->orWhereHas('documentLevel', fn ($query) => $query->where('nama_dokumen', 'like', "%{$search}%"))
+                    ->orWhereHas('businessProcess', fn ($query) => $query->where('nama_proses_bisnis', 'like', "%{$search}%"))
+                    ->orWhereHas('businessFunction', fn ($query) => $query->where('nama_proses_fungsi', 'like', "%{$search}%"))
+                    ->orWhereHas('departments', fn ($query) => $query->where('nama_department', 'like', "%{$search}%"));
+            });
+        }
+
+        if ($filters['type'] !== '') {
+            $query->where('m_document_level_id', $filters['type']);
+        }
+
+        if ($filters['process'] !== '') {
+            $query->where('m_proses_bisnis_id', $filters['process']);
+        }
+
+        return $query;
+    }
+
+    private function buildObsoleteFamilyGroups(
+        Collection $workflowDocuments,
+        Collection $importedDocuments,
+        string $sort,
+    ): Collection {
+        if ($workflowDocuments->isEmpty() && $importedDocuments->isEmpty()) {
+            return collect();
+        }
+
+        $presentedWf = $workflowDocuments->mapWithKeys(function (Document $doc): array {
+            return ["wf:{$doc->id}" => $this->presentWorkflowObsoleteItem($doc)];
+        });
+
+        $presentedImp = $importedDocuments->mapWithKeys(function (ImportedExistingDocument $doc): array {
+            return ["imp:{$doc->id}" => $this->presentImportedObsoleteItem($doc)];
+        });
+
+        $adj = [];
+        $addNode = function (string $u) use (&$adj): void {
+            if (!isset($adj[$u])) {
+                $adj[$u] = [];
+            }
+        };
+        $addEdge = function (string $u, string $v) use (&$adj, $addNode): void {
+            $addNode($u);
+            $addNode($v);
+            $adj[$u][] = $v;
+            $adj[$v][] = $u;
+        };
+
+        foreach ($presentedWf->keys() as $key) {
+            $addNode($key);
+        }
+        foreach ($presentedImp->keys() as $key) {
+            $addNode($key);
+        }
+
+        foreach ($workflowDocuments as $wfDoc) {
+            $rootId = $wfDoc->revisionRootId();
+            $addEdge("wf:{$wfDoc->id}", "wf-root:{$rootId}");
+
+            $masterNum = Str::upper(trim($wfDoc->obsolete_display_number ?? $this->masterDisplayNumber($wfDoc)));
+            if ($masterNum !== '' && $masterNum !== '-') {
+                $addEdge("wf:{$wfDoc->id}", "docnum:{$masterNum}");
+            }
+            $docNum = Str::upper(trim((string) $wfDoc->nomor_dokumen));
+            if ($docNum !== '' && $docNum !== '-' && $docNum !== $masterNum) {
+                $addEdge("wf:{$wfDoc->id}", "docnum:{$docNum}");
+            }
+        }
+
+        foreach ($importedDocuments as $impDoc) {
+            $impNum = Str::upper(trim((string) $impDoc->nomor_dokumen));
+            if ($impNum !== '' && $impNum !== '-') {
+                $addEdge("imp:{$impDoc->id}", "docnum:{$impNum}");
+            }
+        }
+
+        $wfIds = $workflowDocuments->pluck('id')->all();
+        $impIds = $importedDocuments->pluck('id')->all();
+
+        if (!empty($wfIds) || !empty($impIds)) {
+            $relations = DocumentRelation::query()
+                ->where('relation_type', DocumentRelation::SUPERSEDED_BY)
+                ->where(function ($q) use ($wfIds, $impIds) {
+                    $hasClause = false;
+                    if (!empty($wfIds)) {
+                        $q->whereIn('source_document_id', $wfIds)
+                          ->orWhereIn('target_document_id', $wfIds);
+                        $hasClause = true;
+                    }
+                    if (!empty($impIds)) {
+                        if ($hasClause) {
+                            $q->orWhereIn('source_imported_existing_document_id', $impIds)
+                              ->orWhereIn('target_imported_existing_document_id', $impIds);
+                        } else {
+                            $q->whereIn('source_imported_existing_document_id', $impIds)
+                              ->orWhereIn('target_imported_existing_document_id', $impIds);
+                        }
+                    }
+                })
+                ->get();
+
+            foreach ($relations as $rel) {
+                $src = $rel->source_document_id
+                    ? "wf:{$rel->source_document_id}"
+                    : ($rel->source_imported_existing_document_id ? "imp:{$rel->source_imported_existing_document_id}" : null);
+
+                $tgt = $rel->target_document_id
+                    ? "wf:{$rel->target_document_id}"
+                    : ($rel->target_imported_existing_document_id ? "imp:{$rel->target_imported_existing_document_id}" : null);
+
+                if ($src && $tgt && (isset($adj[$src]) || isset($adj[$tgt]))) {
+                    $addEdge($src, $tgt);
+                }
+            }
+        }
+
+        $visited = [];
+        $families = collect();
+
+        foreach ($adj as $node => $neighbors) {
+            if (!str_starts_with($node, 'wf:') && !str_starts_with($node, 'imp:')) {
+                continue;
+            }
+            if (isset($visited[$node])) {
+                continue;
+            }
+
+            $queue = [$node];
+            $visited[$node] = true;
+            $componentDocs = [];
+
+            while (!empty($queue)) {
+                $curr = array_shift($queue);
+                if (str_starts_with($curr, 'wf:') && isset($presentedWf[$curr])) {
+                    $componentDocs[$curr] = $presentedWf[$curr];
+                } elseif (str_starts_with($curr, 'imp:') && isset($presentedImp[$curr])) {
+                    $componentDocs[$curr] = $presentedImp[$curr];
+                }
+
+                foreach ($adj[$curr] ?? [] as $neighbor) {
+                    if (!isset($visited[$neighbor])) {
+                        $visited[$neighbor] = true;
+                        $queue[] = $neighbor;
+                    }
+                }
+            }
+
+            if (!empty($componentDocs)) {
+                $familyCollection = collect(array_values($componentDocs));
+
+                $sortedFamily = $familyCollection
+                    ->sortByDesc(fn (object $item): string => sprintf(
+                        '%010d-%010d-%010d-%010d',
+                        $item->numeric_revision,
+                        $item->tanggal_obsolete?->timestamp ?? 0,
+                        $item->tanggal_terbit?->timestamp ?? 0,
+                        $item->source_id,
+                    ))
+                    ->values();
+
+                $parent = clone $sortedFamily->first();
+
+                // Clean master base document number if parent is a revision form starting with FM
+                $baseNumber = $familyCollection
+                    ->map(fn (object $i): string => (string) ($i->obsolete_display_number ?: $i->nomor_dokumen))
+                    ->first(fn (string $num): bool => !Str::startsWith($num, ['FM', 'fm']) && $num !== '' && $num !== '-');
+
+                if ($baseNumber && Str::startsWith((string) $parent->nomor_dokumen, ['FM', 'fm'])) {
+                    $parent->nomor_dokumen = $baseNumber;
+                    $parent->obsolete_display_number = $baseNumber;
+                }
+
+                $parent->child_documents = $sortedFamily->slice(1)->values();
+                $parent->obsoleteChildDocuments = $parent->child_documents;
+                $families->push($parent);
+            }
+        }
+
+        return $this->sortPresentedObsoleteRows($families, $sort);
+    }
+
+    private function presentWorkflowObsoleteItem(Document $doc): object
+    {
+        $rootDocument = $doc->revised_from !== null
+            ? Document::query()->whereKey($doc->revisionRootId())->first()
+            : null;
+
+        $masterNumber = $rootDocument?->nomor_dokumen ?: $doc->nomor_dokumen ?: '-';
+        $publishedAt = $doc->tanggal_terbit ?? $doc->approved_at;
+
+        return (object) [
+            'source_type' => 'workflow',
+            'source_id' => $doc->id,
+            'source' => $doc,
+            'id' => $doc->id,
+            'is_imported' => false,
+            'nama_dokumen' => $doc->nama_dokumen,
+            'nomor_dokumen' => $masterNumber,
+            'obsolete_display_number' => $masterNumber,
+            'nomor_revisi' => $doc->formatted_revision,
+            'formatted_revision' => $doc->formatted_revision,
+            'numeric_revision' => (int) $doc->nomor_revisi,
+            'department' => $doc->departments->pluck('nama_department')->implode(', ') ?: 'Tanpa department',
+            'departments' => $doc->departments,
+            'proses_bisnis' => $doc->businessProcess?->nama_proses_bisnis,
+            'proses_fungsi' => $doc->businessFunction?->nama_proses_fungsi,
+            'businessProcess' => $doc->businessProcess,
+            'businessFunction' => $doc->businessFunction,
+            'tanggal_terbit' => $publishedAt,
+            'approved_at' => $doc->approved_at,
+            'tanggal_obsolete' => $doc->obsolete_at,
+            'detail_url' => route('documents.obsolete.show', $doc),
+            'child_documents' => collect(),
+            'obsoleteChildDocuments' => collect(),
+        ];
+    }
+
+    private function presentImportedObsoleteItem(ImportedExistingDocument $doc): object
+    {
+        $revisionStr = $this->formatImportedRevision($doc);
+
+        return (object) [
+            'source_type' => 'imported_existing',
+            'source_id' => $doc->id,
+            'source' => $doc,
+            'id' => $doc->id,
+            'is_imported' => true,
+            'nama_dokumen' => $doc->nama_dokumen,
+            'nomor_dokumen' => $doc->nomor_dokumen ?: '-',
+            'obsolete_display_number' => $doc->nomor_dokumen ?: '-',
+            'nomor_revisi' => $revisionStr,
+            'formatted_revision' => $revisionStr,
+            'numeric_revision' => $this->parseRevisionNumber($doc->nomor_revisi),
+            'department' => $doc->departments->pluck('nama_department')->implode(', ') ?: 'Tanpa department',
+            'departments' => $doc->departments,
+            'proses_bisnis' => $doc->businessProcess?->nama_proses_bisnis,
+            'proses_fungsi' => $doc->businessFunction?->nama_proses_fungsi,
+            'businessProcess' => $doc->businessProcess,
+            'businessFunction' => $doc->businessFunction,
+            'tanggal_terbit' => $doc->tanggal_terbit,
+            'approved_at' => null,
+            'tanggal_obsolete' => $doc->tanggal_obsolete,
+            'detail_url' => route('documents.existing.imports.show', $doc),
+            'child_documents' => collect(),
+            'obsoleteChildDocuments' => collect(),
+        ];
+    }
+
+    private function sortPresentedObsoleteRows(Collection $rows, string $sort): Collection
+    {
+        $sortedRows = match ($sort) {
+            'oldest' => $rows->sortBy(fn (object $row): string => sprintf(
+                '%010d-%010d',
+                $row->tanggal_obsolete?->timestamp ?? $row->tanggal_terbit?->timestamp ?? 0,
+                $row->source_id,
+            )),
+            'name_asc' => $rows->sortBy(fn (object $row): string => $row->nama_dokumen.'-'.$row->nomor_dokumen),
+            'name_desc' => $rows->sortByDesc(fn (object $row): string => $row->nama_dokumen.'-'.$row->nomor_dokumen),
+            'revision_desc' => $rows->sortByDesc(fn (object $row): string => sprintf(
+                '%010d-%010d-%010d',
+                $row->numeric_revision,
+                $row->tanggal_obsolete?->timestamp ?? $row->tanggal_terbit?->timestamp ?? 0,
+                $row->source_id,
+            )),
+            default => $rows->sortByDesc(fn (object $row): string => sprintf(
+                '%010d-%010d',
+                $row->tanggal_obsolete?->timestamp ?? $row->tanggal_terbit?->timestamp ?? 0,
+                $row->source_id,
+            )),
+        };
+
+        return $sortedRows->values();
+    }
+
+    private function parseRevisionNumber($revision): int
+    {
+        if ($revision === null || $revision === '' || $revision === '-') {
+            return 0;
+        }
+
+        if (is_int($revision)) {
+            return $revision;
+        }
+
+        $str = trim((string) $revision);
+        if (str_contains($str, '.')) {
+            $parts = explode('.', $str);
+            $major = (int) preg_replace('/[^\d]/', '', $parts[0] ?? '0');
+            $minor = (int) preg_replace('/[^\d]/', '', $parts[1] ?? '0');
+
+            return ($major * 100) + $minor;
+        }
+
+        $clean = preg_replace('/[^\d]/', '', $str);
+
+        return $clean !== '' ? (int) $clean : 0;
+    }
+
+    private function formatImportedRevision(ImportedExistingDocument $document): string
+    {
+        return filled($document->nomor_revisi) ? (string) $document->nomor_revisi : '-';
     }
 }

@@ -24,9 +24,15 @@
     document-name-badge="Imported"
 >
     <x-slot:actions>
-        @if ($canRequestRevision || $canRequestObsolete)
+        @if (($canEdit ?? false) || $canRequestRevision || $canRequestObsolete)
             <div class="border-t border-dashed border-slate-200 px-6 py-5">
                 <div class="grid gap-3">
+                    @if ($canEdit ?? false)
+                        <a href="{{ route('documents.master.imports.edit', $document) }}" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" wire:navigate>
+                            <flux:icon name="pencil-square" class="size-4" />
+                            Edit Dokumen
+                        </a>
+                    @endif
                     @if ($canRequestRevision)
                         <button type="button" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-imported-revision-modal-open>
                             <flux:icon name="arrow-path" class="size-4" />

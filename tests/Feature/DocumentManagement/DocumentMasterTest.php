@@ -13,10 +13,10 @@ use App\Models\Document;
 use App\Models\DocumentDownloadLog;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
+use App\Models\DocumentRelation;
 use App\Models\DocumentType;
 use App\Models\ImportedExistingDocument;
 use App\Models\ImportedExistingDocumentFile;
-use App\Models\ImportedExistingDocumentRelation;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\StatusDocument;
@@ -251,16 +251,16 @@ class DocumentMasterTest extends TestCase
             'nomor_revisi' => 'Rev A',
         ]);
 
-        ImportedExistingDocumentRelation::create([
-            'imported_existing_document_id' => $obsolete->id,
-            'related_document_id' => $master->id,
-            'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+        DocumentRelation::create([
+            'source_imported_existing_document_id' => $obsolete->id,
+            'target_document_id' => $master->id,
+            'relation_type' => DocumentRelation::SUPERSEDED_BY,
             'created_by' => $user->id,
         ]);
-        ImportedExistingDocumentRelation::create([
-            'imported_existing_document_id' => $obsolete->id,
-            'related_document_id' => $master->id,
-            'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
+        DocumentRelation::create([
+            'source_imported_existing_document_id' => $obsolete->id,
+            'target_document_id' => $master->id,
+            'relation_type' => DocumentRelation::SUPERSEDED_BY,
             'created_by' => $user->id,
         ]);
 
@@ -834,6 +834,98 @@ class DocumentMasterTest extends TestCase
         );
     }
 
+    public function test_obsolete_page_shows_imported_obsolete_document(): void
+    {
+        $user = $this->userWithPermission('documents.obsolete.view');
+        $importedObsolete = $this->createImportedExistingObsolete($user, [
+            'nama_dokumen' => 'Prosedur Obsolete Manual Standar',
+            'nomor_dokumen' => 'PS-SMR-OBS-IMP-1',
+            'nomor_revisi' => '00.00',
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.obsolete'))
+            ->assertOk()
+            ->assertSee('Prosedur Obsolete Manual Standar')
+            ->assertSee('PS-SMR-OBS-IMP-1')
+            ->assertSee('00.00')
+            ->assertSee('Imported')
+            ->assertSee(route('documents.existing.imports.show', $importedObsolete), false);
+    }
+
+    public function test_obsolete_page_groups_workflow_and_imported_obsolete_with_same_document_number(): void
+    {
+        $user = $this->userWithPermission('documents.obsolete.view');
+        $obsoleteStatus = StatusDocument::create(['nama_status' => StatusDocument::OBSOLETE]);
+
+        $workflowObsolete = $this->createDocument($user, $obsoleteStatus, [
+            'nama_dokumen' => 'Prosedur Bersama Workflow Rev 1',
+            'nomor_dokumen' => 'PS-SMR-SHARED',
+            'nomor_revisi' => 1,
+            'approved_at' => now()->subDays(2),
+        ]);
+
+        $importedObsolete = $this->createImportedExistingObsolete($user, [
+            'nama_dokumen' => 'Prosedur Bersama Import Awal',
+            'nomor_dokumen' => 'PS-SMR-SHARED',
+            'nomor_revisi' => '00.00',
+            'tanggal_terbit' => now()->subMonth()->toDateString(),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->get(route('documents.obsolete'))
+            ->assertOk()
+            ->assertSee('Menampilkan 1 grup dari total 2 dokumen obsolete.', false)
+            ->assertSee('Tampilkan riwayat versi obsolete')
+            ->assertSee('Prosedur Bersama Workflow Rev 1')
+            ->assertSee('00.01')
+            ->assertSee('Prosedur Bersama Import Awal')
+            ->assertSee('00.00')
+            ->assertSee(route('documents.obsolete.show', $workflowObsolete), false)
+            ->assertSee(route('documents.existing.imports.show', $importedObsolete), false);
+
+        $content = $response->getContent();
+        $this->assertLessThan(
+            strpos($content, route('documents.existing.imports.show', $importedObsolete)),
+            strpos($content, route('documents.obsolete.show', $workflowObsolete)),
+        );
+    }
+
+    public function test_obsolete_page_groups_multiple_imported_obsolete_documents_with_same_document_number(): void
+    {
+        $user = $this->userWithPermission('documents.obsolete.view');
+
+        $olderImported = $this->createImportedExistingObsolete($user, [
+            'nama_dokumen' => 'Imported Obsolete Rev 0',
+            'nomor_dokumen' => 'PS-SMR-MULTI-IMP',
+            'nomor_revisi' => '00.00',
+            'tanggal_terbit' => now()->subYear()->toDateString(),
+        ]);
+
+        $newerImported = $this->createImportedExistingObsolete($user, [
+            'nama_dokumen' => 'Imported Obsolete Rev 1',
+            'nomor_dokumen' => 'PS-SMR-MULTI-IMP',
+            'nomor_revisi' => '00.01',
+            'tanggal_terbit' => now()->subMonths(3)->toDateString(),
+        ]);
+
+        $response = $this->actingAs($user)
+            ->get(route('documents.obsolete'))
+            ->assertOk()
+            ->assertSee('Menampilkan 1 grup dari total 2 dokumen obsolete.', false)
+            ->assertSee('Tampilkan riwayat versi obsolete')
+            ->assertSee('Imported Obsolete Rev 1')
+            ->assertSee('Imported Obsolete Rev 0')
+            ->assertSee(route('documents.existing.imports.show', $newerImported), false)
+            ->assertSee(route('documents.existing.imports.show', $olderImported), false);
+
+        $content = $response->getContent();
+        $this->assertLessThan(
+            strpos($content, route('documents.existing.imports.show', $olderImported)),
+            strpos($content, route('documents.existing.imports.show', $newerImported)),
+        );
+    }
+
     public function test_obsolete_page_shows_add_button_for_user_with_create_permission(): void
     {
         $user = $this->userWithPermission('documents.obsolete.imports.create');
@@ -1142,7 +1234,6 @@ class DocumentMasterTest extends TestCase
             'nama_dokumen' => 'Instruksi Induk',
             'nomor_dokumen' => 'IK-SMR-010',
             'nomor_revisi' => 0,
-            'reference' => $referenceDocument->id,
         ]);
         $revision = $this->createDocument($viewer, $approvedStatus, [
             'nama_dokumen' => 'Instruksi Revisi Aktif',
@@ -1150,8 +1241,14 @@ class DocumentMasterTest extends TestCase
             'nomor_lembar_revisi' => 'FMIK-SMR-010-01',
             'nomor_revisi' => 1,
             'revised_from' => $source->id,
-            'reference' => $referenceDocument->id,
         ]);
+        foreach ([$source, $revision] as $instruction) {
+            $instruction->outgoingRelations()->create([
+                'target_document_id' => $referenceDocument->id,
+                'relation_type' => DocumentRelation::REFERENCES,
+                'created_by' => $viewer->id,
+            ]);
+        }
 
         $response = $this->actingAs($viewer)
             ->get(route('documents.master.show', $revision))
@@ -1761,6 +1858,26 @@ class DocumentMasterTest extends TestCase
             'nomor_dokumen' => 'PS-SMR-IMP',
             'nomor_revisi' => '00.00',
             'tanggal_terbit' => now()->toDateString(),
+        ]);
+    }
+
+    private function createImportedExistingObsolete(User $user, array $attributes = []): ImportedExistingDocument
+    {
+        [$level, $documentType, $businessProcess, $businessFunction] = $this->masterMetadata();
+
+        return ImportedExistingDocument::create($attributes + [
+            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
+            'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Existing Obsolete',
+            'nomor_dokumen' => 'PS-SMR-OBS-IMP',
+            'nomor_revisi' => '00.00',
+            'tanggal_terbit' => now()->subMonths(6)->toDateString(),
+            'tanggal_obsolete' => now()->toDateString(),
         ]);
     }
 

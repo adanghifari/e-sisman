@@ -21,6 +21,29 @@
         : route('documents.master.imports.store.level', $level);
     $mainFileName = $isObsoleteImport ? 'obsolete_document' : 'existing_document';
     $mainFileLabel = $isObsoleteImport ? 'File Dokumen Obsolete' : 'Dokumen Master Import';
+
+    $documentPrefixes = [
+        'level-1' => 'SM',
+        'level-2' => 'PS',
+        'level-3' => 'IK',
+    ];
+    $documentNumberPrefix = $documentPrefixes[$level] ?? 'DOC';
+    $selectedBusinessFunction = isset($businessFunctions)
+        ? $businessFunctions->firstWhere('id', (int) $selectedBusinessFunctionId)
+        : null;
+    $documentNumberFunctionCode = $selectedBusinessFunction?->kode ?: 'XXX';
+    $selectedReference = old('reference');
+    $procedureReferenceNumberSegments = $procedureReferenceNumberSegments ?? [];
+    $selectedProcedureSegments = collect($procedureReferenceNumberSegments[$selectedReference] ?? ['XXX', 'YY']);
+
+    $documentNumberSegments = match ($level) {
+        'level-2' => [['value' => $documentNumberFunctionCode, 'target' => 'business-function']],
+        'level-3' => [
+            ['value' => $selectedProcedureSegments->get(0, 'XXX'), 'target' => 'procedure-reference-0'],
+            ['value' => $selectedProcedureSegments->get(1, 'YY'), 'target' => 'procedure-reference-1'],
+        ],
+        default => [],
+    };
 @endphp
 
 <x-layouts::app :title="__($pageTitle)">
@@ -46,7 +69,7 @@
             method="POST"
             action="{{ $storeRoute }}"
             enctype="multipart/form-data"
-            class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_380px]"
+            class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]"
         >
             @csrf
             <input type="hidden" name="document_state" value="{{ $documentState }}">
@@ -108,9 +131,23 @@
                                 required
                                 class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                             >
-                                @foreach ($functionOptions as $value => $label)
-                                    <option value="{{ $value }}" @selected((string) $selectedBusinessFunctionId === (string) $value)>{{ $label }}</option>
-                                @endforeach
+                                <option value="">Pilih Proses Fungsi</option>
+                                @if (isset($businessFunctions) && $businessFunctions->isNotEmpty())
+                                    @foreach ($businessFunctions as $func)
+                                        <option
+                                            value="{{ $func->id }}"
+                                            data-function-code="{{ $func->kode }}"
+                                            data-business-process-id="{{ $func->m_proses_bisnis_id }}"
+                                            @selected((string) $selectedBusinessFunctionId === (string) $func->id)
+                                        >
+                                            {{ $func->nama_proses_fungsi }}
+                                        </option>
+                                    @endforeach
+                                @else
+                                    @foreach ($functionOptions as $value => $label)
+                                        <option value="{{ $value }}" @selected((string) $selectedBusinessFunctionId === (string) $value)>{{ $label }}</option>
+                                    @endforeach
+                                @endif
                             </select>
                             @error('m_proses_fungsi_id')
                                 <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -187,21 +224,6 @@
                         @error($mainFileName)
                             <span class="-mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
                         @enderror
-
-                        @if ($isObsoleteImport)
-                            <x-ui.file-upload
-                                label="Lampiran"
-                                name="attachments[]"
-                                accept=".pdf,.doc,.docx,.xls,.xlsx"
-                                hint="Opsional. Bisa lebih dari satu file."
-                                multiple
-                                :max-files="10"
-                                :max-file-size-kb="10240"
-                            />
-                            @error('attachments')
-                                <span class="-mt-3 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                            @enderror
-                        @endif
                     </div>
                 </x-documents.form-section>
 
@@ -215,6 +237,7 @@
                                 :value="old('replacement_reference')"
                                 placeholder="Belum ditentukan"
                                 empty-label="Dokumen tidak ditemukan."
+                                :filter-by-context="true"
                             />
                             @error('replacement_reference')
                                 <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -232,24 +255,12 @@
                     </div>
 
                     <div class="space-y-5 px-6 py-6">
-                        <div>
-                            <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen</span>
-                            <input
-                                type="text"
-                                name="nomor_dokumen"
-                                value="{{ old('nomor_dokumen') }}"
-                                placeholder="Contoh: SM-001"
-                                required
-                                @class([
-                                    'h-14 w-full rounded-lg px-4 text-base font-semibold outline-none transition',
-                                    'border border-red-300 bg-white text-slate-700 focus:border-red-400 focus:ring-2 focus:ring-red-100' => $errors->has('nomor_dokumen'),
-                                    'border border-slate-300 bg-white text-slate-700 focus:border-sky-400 focus:ring-2 focus:ring-sky-100' => ! $errors->has('nomor_dokumen'),
-                                ])
-                            >
-                            @error('nomor_dokumen')
-                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                            @enderror
-                        </div>
+                        <x-documents.document-number-input
+                            :prefix="$documentNumberPrefix"
+                            :segments="$documentNumberSegments"
+                            :default-value="old('nomor_dokumen_suffix')"
+                            label="Nomor Dokumen"
+                        />
 
                         <div>
                             <span class="mb-2 block text-base font-medium text-slate-500">Nomor Revisi</span>
@@ -391,6 +402,32 @@
                 if (!selectedReferenceStillValid) {
                     referenceSelect.value = '';
                 }
+
+                syncProcedureReferenceNumberSegments(form);
+            };
+
+            const procedureReferenceNumberSegments = @json($procedureReferenceNumberSegments);
+
+            const syncProcedureReferenceNumberSegments = (form) => {
+                const referenceSelect = form.querySelector('select[name="reference"]');
+                if (!referenceSelect) {
+                    return;
+                }
+                const segments = procedureReferenceNumberSegments[referenceSelect.value] || ['XXX', 'YY'];
+                form.querySelectorAll('[data-document-number-segment^="procedure-reference-"]').forEach((input, index) => {
+                    input.value = segments[index] || (index === 0 ? 'XXX' : 'YY');
+                });
+            };
+
+            const syncDocumentNumberFunctionSegment = (form) => {
+                const functionSelect = form.querySelector('select[name="m_proses_fungsi_id"]');
+                const segment = form.querySelector('[data-document-number-segment="business-function"]');
+                if (!functionSelect || !segment) {
+                    return;
+                }
+                const selectedOption = functionSelect.selectedOptions[0];
+                const functionCode = selectedOption?.dataset.functionCode;
+                segment.value = functionCode || 'XXX';
             };
 
             const closeDocumentSearch = (root) => {
@@ -464,18 +501,46 @@
             document.querySelectorAll('form').forEach((form) => {
                 syncProcedureReferenceOptions(form);
                 syncDocumentSearchOptions(form);
+                syncDocumentNumberFunctionSegment(form);
+                syncProcedureReferenceNumberSegments(form);
+
+                form.addEventListener('submit', () => {
+                    const suffixInput = form.querySelector('input[name="nomor_dokumen_suffix"]');
+                    if (suffixInput) {
+                        const val = suffixInput.value.trim();
+                        if (/^\d{1}$/.test(val)) {
+                            suffixInput.value = val.padStart(2, '0');
+                        }
+                    }
+                });
             });
 
             document.addEventListener('change', (event) => {
-                if (!event.target.closest('select[name="m_proses_bisnis_id"], select[name="m_proses_fungsi_id"]')) {
+                const form = event.target.closest('form');
+                if (!form) {
                     return;
                 }
-                const form = event.target.closest('form');
-                if (form) {
+
+                if (event.target.closest('select[name="m_proses_bisnis_id"], select[name="m_proses_fungsi_id"]')) {
                     syncProcedureReferenceOptions(form);
                     syncDocumentSearchOptions(form);
+                    syncDocumentNumberFunctionSegment(form);
+                }
+
+                if (event.target.closest('select[name="reference"]')) {
+                    syncProcedureReferenceNumberSegments(form);
                 }
             });
+
+            document.addEventListener('blur', (event) => {
+                const suffixInput = event.target.closest('input[name="nomor_dokumen_suffix"]');
+                if (suffixInput) {
+                    const val = suffixInput.value.trim();
+                    if (/^\d{1}$/.test(val)) {
+                        suffixInput.value = val.padStart(2, '0');
+                    }
+                }
+            }, true);
 
             document.addEventListener('input', (event) => {
                 if (!event.target.closest('[data-document-search-input]')) {

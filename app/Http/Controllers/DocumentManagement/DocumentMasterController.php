@@ -10,9 +10,9 @@ use App\Models\DocumentDownloadLog;
 use App\Models\DocumentFile;
 use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
+use App\Models\DocumentRelation;
 use App\Models\ImportedExistingDocument;
 use App\Models\ImportedExistingDocumentFile;
-use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentHistory;
@@ -217,7 +217,8 @@ class DocumentMasterController extends Controller
             'departments',
             'uploader',
             'files.uploader',
-            'incomingImportedRelations.sourceDocument',
+            'incomingImportedRelations.sourceImportedDocument',
+            'incomingImportedRelations.sourceDocument.status',
             'incomingImportedRelations.creator',
         ]);
 
@@ -226,15 +227,29 @@ class DocumentMasterController extends Controller
 
         $importedExistingDocument->setRelation('approvals', collect());
         $importedExistingDocument->setAttribute('formatted_revision', $this->formatImportedRevision($importedExistingDocument));
-        $contentFiles = $importedExistingDocument->files
+        $existingContentFiles = $importedExistingDocument->files
             ->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)
+            ->sortByDesc('id')
             ->values();
+
+        if ($existingContentFiles->count() > 1) {
+            $keepFile = $existingContentFiles->first();
+            $duplicates = $existingContentFiles->slice(1);
+            foreach ($duplicates as $duplicate) {
+                Storage::disk('local')->delete($duplicate->path_file);
+                $duplicate->delete();
+            }
+            $existingContentFiles = collect([$keepFile]);
+        }
+
+        $contentFiles = $existingContentFiles;
         $primaryContentFile = $contentFiles->first();
 
         return view('document-management.master.imported-show', [
             'document' => $importedExistingDocument,
             'masterDisplayNumber' => $importedExistingDocument->nomor_dokumen ?: '-',
             'revisionRequestDisplayNumber' => null,
+            'canEdit' => $request->user()?->isAdmin() ?? false,
             'canRequestRevision' => $request->user()?->hasPermission('documents.existing.imports.revision') ?? false,
             'canRequestObsolete' => $this->canRequestImportedObsolete($request, $importedExistingDocument),
             'approvalFlowStages' => collect(),
@@ -304,7 +319,6 @@ class DocumentMasterController extends Controller
             'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
             'user_id' => $request->user()->id,
             'official_preparer_id' => $document->official_preparer_id ?: $request->user()->id,
-            'reference' => null,
             'revised_from' => $document->id,
             'request_type' => 'obsolete',
             'nama_dokumen' => $document->nama_dokumen,
@@ -787,20 +801,20 @@ class DocumentMasterController extends Controller
             return collect();
         }
 
-        $relations = ImportedExistingDocumentRelation::query()
-            ->with(['sourceDocument.businessProcess', 'sourceDocument.businessFunction'])
-            ->where('relation_type', ImportedExistingDocumentRelation::SUPERSEDED_BY)
-            ->whereHas('sourceDocument', fn ($query) => $query->where('document_state', ImportedExistingDocument::STATE_OBSOLETE))
+        $relations = DocumentRelation::query()
+            ->with(['sourceImportedDocument.businessProcess', 'sourceImportedDocument.businessFunction'])
+            ->where('relation_type', DocumentRelation::SUPERSEDED_BY)
+            ->whereHas('sourceImportedDocument', fn ($query) => $query->where('document_state', ImportedExistingDocument::STATE_OBSOLETE))
             ->when(
                 $relatedDocumentId !== null,
-                fn ($query) => $query->where('related_document_id', $relatedDocumentId),
-                fn ($query) => $query->where('related_imported_existing_document_id', $relatedImportedExistingDocumentId),
+                fn ($query) => $query->where('target_document_id', $relatedDocumentId),
+                fn ($query) => $query->where('target_imported_existing_document_id', $relatedImportedExistingDocumentId),
             )
             ->get();
 
         return $relations
-            ->flatMap(function (ImportedExistingDocumentRelation $relation) use ($visitedImportedDocumentIds): Collection {
-                $sourceDocument = $relation->sourceDocument;
+            ->flatMap(function (DocumentRelation $relation) use ($visitedImportedDocumentIds): Collection {
+                $sourceDocument = $relation->sourceImportedDocument;
 
                 if ($sourceDocument === null || in_array($sourceDocument->id, $visitedImportedDocumentIds, true)) {
                     return collect();
