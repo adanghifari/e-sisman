@@ -1992,6 +1992,87 @@ class DocumentInboxTest extends TestCase
         $this->assertSame(StatusDocument::PROPOSED, $staleRevision->refresh()->status->nama_status);
     }
 
+    public function test_resubmitted_rejected_revision_approval_promotes_new_attempt_and_keeps_rejected_attempt_for_audit(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create();
+        $approver = User::factory()->create();
+        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        $obsoleteStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::OBSOLETE]);
+        $rejectedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::REJECTED]);
+        $proposedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::PROPOSED]);
+
+        $previousMaster = $this->createDocument($submitter, [
+            'm_status_document_id' => $approvedStatus->id,
+            'nama_dokumen' => 'Instruksi Master Lama',
+            'nomor_dokumen' => 'IK-SMR-RESUB',
+            'nomor_revisi' => 5,
+            'approved_at' => now()->subDays(4),
+        ]);
+
+        $currentMaster = $this->createDocument($submitter, [
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_level_id' => $previousMaster->m_document_level_id,
+            'm_document_types_id' => $previousMaster->m_document_types_id,
+            'm_proses_bisnis_id' => $previousMaster->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $previousMaster->m_proses_fungsi_id,
+            'revised_from' => $previousMaster->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Instruksi Master Aktif',
+            'nomor_dokumen' => 'IK-SMR-RESUB',
+            'nomor_revisi' => 6,
+            'approved_at' => now()->subDays(3),
+        ]);
+        $currentMaster->departments()->sync($previousMaster->departments()->pluck('departments.id')->all());
+
+        $rejectedAttempt = $this->createDocument($submitter, [
+            'm_status_document_id' => $rejectedStatus->id,
+            'm_document_level_id' => $currentMaster->m_document_level_id,
+            'm_document_types_id' => $currentMaster->m_document_types_id,
+            'm_proses_bisnis_id' => $currentMaster->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $currentMaster->m_proses_fungsi_id,
+            'revised_from' => $currentMaster->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Instruksi Revisi Ditolak',
+            'nomor_dokumen' => 'IK-SMR-RESUB',
+            'nomor_lembar_revisi' => 'FMIK-SMR-RESUB-01',
+            'nomor_revisi' => 7,
+            'rejected_at' => now()->subDay(),
+        ]);
+
+        $resubmittedAttempt = $this->createDocument($submitter, [
+            'm_status_document_id' => $proposedStatus->id,
+            'm_document_level_id' => $currentMaster->m_document_level_id,
+            'm_document_types_id' => $currentMaster->m_document_types_id,
+            'm_proses_bisnis_id' => $currentMaster->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $currentMaster->m_proses_fungsi_id,
+            'revised_from' => $currentMaster->id,
+            'resubmitted_from' => $rejectedAttempt->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Instruksi Revisi Ajukan Ulang',
+            'nomor_dokumen' => 'IK-SMR-RESUB',
+            'nomor_lembar_revisi' => 'FMIK-SMR-RESUB-01',
+            'nomor_revisi' => 7,
+            'submitted_at' => now(),
+        ]);
+        $resubmittedAttempt->departments()->sync($currentMaster->departments()->pluck('departments.id')->all());
+
+        $this->createApproval($resubmittedAttempt, $approver, ApprovalStatus::PENDING);
+
+        $this->actingAs($approver)
+            ->post(route('documents.approval.approve', $resubmittedAttempt))
+            ->assertRedirect(route('documents.approval.show', $resubmittedAttempt));
+
+        $this->assertSame(StatusDocument::APPROVED, $resubmittedAttempt->refresh()->status->nama_status);
+        $this->assertSame(StatusDocument::OBSOLETE, $currentMaster->refresh()->status->nama_status);
+        $this->assertSame(StatusDocument::OBSOLETE, $previousMaster->refresh()->status->nama_status);
+        $this->assertSame(StatusDocument::REJECTED, $rejectedAttempt->refresh()->status->nama_status);
+        $this->assertSame($rejectedAttempt->id, $resubmittedAttempt->resubmitted_from);
+        $this->assertSame(7, $resubmittedAttempt->nomor_revisi);
+        $this->assertSame('IK-SMR-RESUB', $resubmittedAttempt->nomor_dokumen);
+    }
+
     public function test_approved_obsolete_request_obsoletes_source_master_document(): void
     {
         $this->ensureApprovalStatuses();

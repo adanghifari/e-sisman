@@ -100,25 +100,48 @@ class DocumentAssignmentAccessTest extends TestCase
             'kode_department' => 'QA',
             'nama_department' => 'Quality Assurance',
         ]);
+        $replacementDepartment = Department::create([
+            'kode_department' => 'OPS',
+            'nama_department' => 'Operations',
+        ]);
+        $replacementBusinessProcess = BusinessProcess::query()->create([
+            'kode' => 'ALT',
+            'nama_proses_bisnis' => 'Alternate Process',
+        ]);
+        $replacementBusinessFunction = BusinessFunction::query()->create([
+            'kode' => 'ALT',
+            'nama_proses_fungsi' => 'Alternate Function',
+        ]);
         $admin = $this->documentControlAdmin($department);
         $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
         $document = $this->proposedDocumentForDepartments([$department]);
+        $originalBusinessProcessId = $document->m_proses_bisnis_id;
+        $originalBusinessFunctionId = $document->m_proses_fungsi_id;
+        $originalDocumentNumber = $document->nomor_dokumen;
+        $originalOfficialPreparerId = $document->official_preparer_id;
 
         $response = $this
             ->actingAs($admin)
             ->post(route('documents.approval.update-submitted', $document), [
                 '_update_scope' => 'metadata',
                 'nama_dokumen' => 'Dokumen hasil koreksi admin',
-                'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
-                'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
-                'department_ids' => [$department->id],
-                'official_preparer_id' => $document->official_preparer_id,
+                'm_proses_bisnis_id' => $replacementBusinessProcess->id,
+                'm_proses_fungsi_id' => $replacementBusinessFunction->id,
+                'department_ids' => [$replacementDepartment->id],
+                'official_preparer_id' => $admin->id,
                 'nomor_dokumen_suffix' => '77',
             ]);
 
         $response->assertRedirect(route('documents.approval.show', $document));
-        $this->assertSame('Dokumen hasil koreksi admin', $document->refresh()->nama_dokumen);
-        $this->assertSame('PS-'.$document->businessFunction->kode.'-77', $document->nomor_dokumen);
+        $document->refresh();
+
+        $this->assertSame('Dokumen hasil koreksi admin', $document->nama_dokumen);
+        $this->assertSame($originalBusinessProcessId, $document->m_proses_bisnis_id);
+        $this->assertSame($originalBusinessFunctionId, $document->m_proses_fungsi_id);
+        $this->assertSame($originalDocumentNumber, $document->nomor_dokumen);
+        $this->assertSame($originalOfficialPreparerId, $document->official_preparer_id);
+        $this->assertTrue($document->departments()->whereKey($replacementDepartment->id)->exists());
+        $this->assertFalse($document->departments()->whereKey($department->id)->exists());
     }
 
     public function test_submitted_document_update_is_blocked_after_approver_assigned(): void

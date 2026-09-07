@@ -63,22 +63,12 @@
                 ->values()
             : $contentFiles;
         $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
-        $readonlySelect = 'h-12 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
         $departmentOptions = collect($departments ?? [])
             ->map(fn ($department) => [
                 'value' => $department->id,
                 'label' => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department,
             ])
             ->values();
-        $formatBusinessProcess = fn ($businessProcess) => $businessProcess
-            ? (($businessProcess->kode ? $businessProcess->kode.' - ' : '').$businessProcess->nama_proses_bisnis)
-            : '-';
-        $formatBusinessFunction = fn ($businessFunction) => $businessFunction
-            ? (($businessFunction->kode ? $businessFunction->kode.' - ' : '').$businessFunction->nama_proses_fungsi)
-            : '-';
-        $documentNumberSuffix = filled($document->nomor_dokumen)
-            ? \Illuminate\Support\Str::afterLast($document->nomor_dokumen, '-')
-            : null;
         $filePreviewVersion = fn ($file) => collect([
             $file->updated_at?->timestamp,
             $file->id,
@@ -125,16 +115,18 @@
         <div class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_440px]">
             <div class="space-y-6">
                 <x-documents.form-section title="Informasi Dokumen">
-                    <div class="px-6 py-4" data-submitted-document-editor>
-                        @if ($canUpdateSubmittedDocument)
-                            <div class="mb-4 flex justify-end {{ $metadataEditorStartsOpen ? 'hidden' : '' }}" data-submitted-document-readonly-action>
+                    @if ($canUpdateSubmittedDocument)
+                        <x-slot:actions>
+                            <div class="{{ $metadataEditorStartsOpen ? 'hidden' : '' }}" data-submitted-document-readonly-action>
                                 <button type="button" class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-slate-200 bg-white px-4 text-sm font-semibold text-slate-700 transition hover:bg-slate-50" data-submitted-document-edit-open>
                                     <flux:icon name="pencil-square" class="size-4" />
                                     Edit Informasi
                                 </button>
                             </div>
-                        @endif
+                        </x-slot:actions>
+                    @endif
 
+                    <div class="px-6 py-4" data-submitted-document-editor>
                         <dl class="divide-y divide-slate-100 {{ $metadataEditorStartsOpen ? 'hidden' : '' }}" data-submitted-document-readonly>
                             <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                 <dt class="text-sm font-semibold text-slate-500">Nama Dokumen</dt>
@@ -173,35 +165,19 @@
 
                                 @if ($levelKey !== 'level-1')
                                     <div class="grid gap-5 md:grid-cols-2">
-                                        <label class="block">
+                                        <div class="block">
                                             <span class="mb-2 block text-base font-medium text-slate-500">Proses Bisnis</span>
-                                            <select name="m_proses_bisnis_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                                <option value="">-Pilih-</option>
-                                                @foreach ($businessProcesses as $businessProcess)
-                                                    <option value="{{ $businessProcess->id }}" @selected((string) old('m_proses_bisnis_id', $document->m_proses_bisnis_id) === (string) $businessProcess->id)>
-                                                        {{ $formatBusinessProcess($businessProcess) }}
-                                                    </option>
-                                                @endforeach
-                                            </select>
-                                            @error('m_proses_bisnis_id')
-                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                            @enderror
-                                        </label>
+                                            <div class="flex min-h-12 items-center rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-700">
+                                                {{ $document->businessProcess?->nama_proses_bisnis ?? '-' }}
+                                            </div>
+                                        </div>
 
-                                        <label class="block">
+                                        <div class="block">
                                             <span class="mb-2 block text-base font-medium text-slate-500">Proses / Fungsi</span>
-                                            <select name="m_proses_fungsi_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                                <option value="">-Pilih-</option>
-                                                @foreach ($businessFunctions as $businessFunction)
-                                                    <option value="{{ $businessFunction->id }}" @selected((string) old('m_proses_fungsi_id', $document->m_proses_fungsi_id) === (string) $businessFunction->id)>
-                                                        {{ $formatBusinessFunction($businessFunction) }}
-                                                    </option>
-                                                @endforeach
-                                            </select>
-                                            @error('m_proses_fungsi_id')
-                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                            @enderror
-                                        </label>
+                                            <div class="flex min-h-12 items-center rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-700">
+                                                {{ $document->businessFunction?->nama_proses_fungsi ?? '-' }}
+                                            </div>
+                                        </div>
 
                                         <x-ui.multi-select
                                             label="Department Terkait"
@@ -212,61 +188,19 @@
                                             required
                                         />
 
-                                        <label class="block">
-                                            <span class="mb-2 block text-base font-medium text-slate-500">Penyusun Resmi</span>
-                                            <select name="official_preparer_id" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                                <option value="">-Pilih-</option>
-                                                @foreach ($assignableUsers as $user)
-                                                    <option value="{{ $user->id }}" @selected((string) old('official_preparer_id', $document->official_preparer_id) === (string) $user->id)>
-                                                        {{ $user->name }}{{ $user->jabatan ? ' - '.$user->jabatan : '' }}
-                                                    </option>
-                                                @endforeach
-                                            </select>
-                                            @error('official_preparer_id')
-                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                            @enderror
-                                        </label>
-
                                         @if ($levelKey === 'level-3')
-                                            <label class="block md:col-span-2">
+                                            <div class="block md:col-span-2">
                                                 <span class="mb-2 block text-base font-medium text-slate-500">Dokumen Acuan</span>
-                                                <select name="reference" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                                    <option value="">-Pilih-</option>
-                                                    @foreach ($procedureReferences as $procedureReference)
-                                                        <option value="{{ $procedureReference->reference_value }}" @selected((string) old('reference', $document->procedureReferenceValue()) === (string) $procedureReference->reference_value)>
-                                                            {{ $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }} ({{ $procedureReference->reference_source_label }})
-                                                        </option>
-                                                    @endforeach
-                                                </select>
-                                                @error('reference')
-                                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                                @enderror
-                                            </label>
+                                                <div class="flex min-h-12 items-center rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-700">
+                                                    @if ($referenceRelation = $document->procedureReferenceRelation())
+                                                        {{ $referenceRelation->target()?->nomor_dokumen ?: '-' }} - {{ $referenceRelation->target()?->nama_dokumen ?? '-' }}
+                                                    @else
+                                                        -
+                                                    @endif
+                                                </div>
+                                            </div>
                                         @endif
                                     </div>
-                                @endif
-
-                                @if (in_array($levelKey, ['level-1', 'level-2', 'level-3'], true))
-                                    <label class="block">
-                                        <span class="mb-2 block text-base font-medium text-slate-500">Nomor Dokumen Suffix</span>
-                                        <input type="text" name="nomor_dokumen_suffix" value="{{ old('nomor_dokumen_suffix', $documentNumberSuffix) }}" required class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
-                                        @error('nomor_dokumen_suffix')
-                                            <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                        @enderror
-                                    </label>
-                                @endif
-
-                                <x-ui.date-input
-                                    label="Tanggal Terbit"
-                                    name="tanggal_terbit"
-                                    :value="old('tanggal_terbit', $document->tanggal_terbit?->format('Y-m-d'))"
-                                />
-
-                                @if ($levelKey === 'level-1')
-                                    <label class="block">
-                                        <span class="mb-2 block text-base font-medium text-slate-500">Catatan</span>
-                                        <textarea name="catatan_revisi" rows="4" class="w-full resize-none rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-medium text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">{{ old('catatan_revisi', $document->catatan_revisi) }}</textarea>
-                                    </label>
                                 @endif
 
                                 <div class="flex flex-wrap justify-end gap-3">
@@ -1151,7 +1085,7 @@
 
             if (editor) {
                 const readonly = editor.querySelector('[data-submitted-document-readonly]');
-                const readonlyAction = editor.querySelector('[data-submitted-document-readonly-action]');
+                const readonlyAction = document.querySelector('[data-submitted-document-readonly-action]');
                 const form = editor.querySelector('[data-submitted-document-form]');
 
                 document.addEventListener('click', (event) => {

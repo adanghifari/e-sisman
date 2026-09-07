@@ -1621,7 +1621,7 @@ class DocumentController extends Controller
 
     protected function nextRevisionNumber(Document $source): int
     {
-        return ((int) $source->revisionFamily()->max('nomor_revisi')) + 1;
+        return $source->latestApprovedRevisionNumber() + 1;
     }
 
     private function hasActiveRevisionRequest(Document $source): bool

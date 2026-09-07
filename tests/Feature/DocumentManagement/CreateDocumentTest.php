@@ -1424,6 +1424,56 @@ class CreateDocumentTest extends TestCase
         $this->assertSame('FMPS-SMR-010-01', $revision->nomor_lembar_revisi);
     }
 
+    public function test_new_revision_request_ignores_rejected_attempt_when_incrementing_revision_number(): void
+    {
+        Storage::fake('local');
+
+        [$source, $submitter, $officialPreparer] = $this->revisionCreationFixture();
+        $rejectedStatus = StatusDocument::query()->where('nama_status', StatusDocument::REJECTED)->firstOrFail();
+        $formLevel = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $formType = DocumentType::query()->where('nama_types', 'Form')->firstOrFail();
+
+        $source->update([
+            'nomor_revisi' => 6,
+        ]);
+
+        Document::create([
+            'm_document_level_id' => $formLevel->id,
+            'm_status_document_id' => $rejectedStatus->id,
+            'm_document_types_id' => $formType->id,
+            'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+            'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $officialPreparer->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Prosedur Revisi Ditolak',
+            'nomor_dokumen' => 'PS-SMR-010',
+            'nomor_lembar_revisi' => 'FMPS-SMR-010-07',
+            'nomor_revisi' => 7,
+            'rejected_at' => now(),
+        ]);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
+            ->assertOk()
+            ->assertSee('00.07')
+            ->assertDontSee('00.08');
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-4'), $this->revisionSubmitPayload($source, $officialPreparer, [
+                'nama_dokumen' => 'Prosedur Revisi Baru Setelah Rejected',
+            ]))
+            ->assertRedirect(route('documents.create'));
+
+        $revision = Document::query()
+            ->where('nama_dokumen', 'Prosedur Revisi Baru Setelah Rejected')
+            ->firstOrFail();
+
+        $this->assertSame(7, $revision->nomor_revisi);
+        $this->assertSame('00.07', $revision->formatted_revision);
+    }
+
     public function test_multiple_rejected_revision_resubmissions_keep_same_revision_number(): void
     {
         Storage::fake('local');

@@ -227,7 +227,7 @@
             ? ($levelKey === 'level-4' ? $levelFourPrefix : ($revisionPrefixes[$levelKey] ?? 'FM'.$documentPrefixes[$levelKey]))
             : $documentPrefixes[$levelKey];
         $latestRevisionNumber = $revisionSource
-            ? (int) $revisionSource->revisionFamily()->max('nomor_revisi')
+            ? $revisionSource->latestApprovedRevisionNumber()
             : null;
         $documentNumberSuffixDefault = $formSource?->nomor_dokumen
             ? \Illuminate\Support\Str::afterLast($formSource->nomor_dokumen, '-')
@@ -246,6 +246,8 @@
             : ($resubmissionSource
                 ? $resubmissionSource->departments->pluck('id')->all()
                 : collect($revisionSource?->departments ?? [])->pluck('id')->all()));
+        $revisionDocumentNameValue = old('nama_dokumen', $formSource?->nama_dokumen ?? $revisionSource?->nama_dokumen);
+        $revisionNameEditorStartsOpen = $revisionSource && $errors->has('nama_dokumen');
         $nextRevisionValue = $draft
             ? $draft->formatted_revision
             : ($revisionSource
@@ -473,7 +475,6 @@
 
                     <x-documents.form-section title="Informasi Dokumen">
                         @if ($revisionSource)
-                            <input type="hidden" name="nama_dokumen" value="{{ $revisionSource->nama_dokumen }}">
                             <input type="hidden" name="m_document_level_id" value="{{ $documentLevelRecord?->id }}">
                             <input type="hidden" name="m_proses_bisnis_id" value="{{ $revisionSource->m_proses_bisnis_id }}">
                             <input type="hidden" name="m_proses_fungsi_id" value="{{ $revisionSource->m_proses_fungsi_id }}">
@@ -485,9 +486,61 @@
                             @endif
 
                             <dl class="divide-y divide-slate-100 px-6 py-4">
-                                <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
-                                    <dt class="text-sm font-semibold text-slate-500">Nama Dokumen</dt>
-                                    <dd class="text-sm font-bold leading-6 text-slate-900">{{ $revisionSource->nama_dokumen }}</dd>
+                                <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]" data-revision-name-editor data-initial-name="{{ $revisionDocumentNameValue }}">
+                                    <dt class="flex items-center gap-2 text-sm font-semibold text-slate-500">
+                                        <span>Nama Dokumen</span>
+                                        <span class="inline-flex items-center gap-1">
+                                            <button
+                                                type="button"
+                                                @class([
+                                                    'inline-flex size-9 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-500 transition hover:border-orange-200 hover:bg-orange-50 hover:text-orange-600 focus:outline-none focus:ring-2 focus:ring-orange-100',
+                                                    'border-orange-200 bg-orange-50 text-orange-600' => $revisionNameEditorStartsOpen,
+                                                ])
+                                                data-revision-name-edit-toggle
+                                                data-editing="{{ $revisionNameEditorStartsOpen ? 'true' : 'false' }}"
+                                                aria-label="{{ $revisionNameEditorStartsOpen ? 'Batal ubah nama dokumen' : 'Ubah nama dokumen' }}"
+                                            >
+                                                <span @class(['hidden' => $revisionNameEditorStartsOpen]) data-revision-name-edit-icon>
+                                                    <flux:icon name="pencil-square" class="size-4" />
+                                                </span>
+                                                <span @class(['hidden' => ! $revisionNameEditorStartsOpen]) data-revision-name-cancel-icon>
+                                                    <flux:icon name="x-mark" class="size-4" />
+                                                </span>
+                                            </button>
+                                            <button
+                                                type="button"
+                                                @class([
+                                                    'inline-flex size-9 items-center justify-center rounded-lg border border-emerald-200 bg-emerald-50 text-emerald-600 transition hover:border-emerald-300 hover:bg-emerald-100 focus:outline-none focus:ring-2 focus:ring-emerald-100',
+                                                    'hidden' => ! $revisionNameEditorStartsOpen,
+                                                ])
+                                                data-revision-name-save
+                                                aria-label="Simpan nama dokumen"
+                                                style="{{ $revisionNameEditorStartsOpen ? '' : 'display: none;' }}"
+                                            >
+                                                <flux:icon name="check" class="size-4" />
+                                            </button>
+                                        </span>
+                                    </dt>
+                                    <dd class="min-w-0">
+                                        <p @class(['text-sm font-bold leading-6 text-slate-900', 'hidden' => $revisionNameEditorStartsOpen]) data-revision-name-display>
+                                            {{ $revisionDocumentNameValue }}
+                                        </p>
+                                        <div @class(['space-y-2', 'hidden' => ! $revisionNameEditorStartsOpen]) data-revision-name-input-wrap>
+                                            <input
+                                                type="text"
+                                                name="nama_dokumen"
+                                                value="{{ $revisionDocumentNameValue }}"
+                                                required
+                                                class="h-11 w-full rounded-lg border border-slate-300 bg-white px-3 text-sm font-semibold text-slate-700 outline-none transition focus:border-orange-300 focus:ring-2 focus:ring-orange-100"
+                                                data-revision-name-input
+                                            >
+                                            <div>
+                                                @error('nama_dokumen')
+                                                    <span class="block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                                @enderror
+                                            </div>
+                                        </div>
+                                    </dd>
                                 </div>
                                 <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                     <dt class="text-sm font-semibold text-slate-500">Level Dokumen</dt>
@@ -1299,11 +1352,110 @@
                 });
 
                 document.addEventListener('input', (event) => {
+                    const revisionNameInput = event.target.closest('[data-revision-name-input]');
+
+                    if (revisionNameInput) {
+                        const root = revisionNameInput.closest('[data-revision-name-editor]');
+                        const display = root?.querySelector('[data-revision-name-display]');
+
+                        if (display) {
+                            display.textContent = revisionNameInput.value || '-';
+                        }
+                    }
+
                     const suffixInput = event.target.closest('input[name="nomor_dokumen_suffix"]');
 
                     if (suffixInput && !suffixInput.readOnly) {
                         suffixInput.dataset.userEdited = 'true';
                     }
+                });
+
+                document.addEventListener('click', (event) => {
+                    const toggle = event.target.closest('[data-revision-name-edit-toggle]');
+
+                    if (!toggle) {
+                        return;
+                    }
+
+                    const root = toggle.closest('[data-revision-name-editor]');
+                    const display = root?.querySelector('[data-revision-name-display]');
+                    const inputWrap = root?.querySelector('[data-revision-name-input-wrap]');
+                    const input = root?.querySelector('[data-revision-name-input]');
+                    const editIcon = toggle.querySelector('[data-revision-name-edit-icon]');
+                    const cancelIcon = toggle.querySelector('[data-revision-name-cancel-icon]');
+                    const saveButton = root?.querySelector('[data-revision-name-save]');
+                    const isEditing = toggle.dataset.editing === 'true';
+
+                    if (!root || !display || !inputWrap || !input) {
+                        return;
+                    }
+
+                    if (isEditing) {
+                        const initialName = root.dataset.initialName || '';
+
+                        input.value = initialName;
+                        display.textContent = initialName || '-';
+                        display.classList.remove('hidden');
+                        inputWrap.classList.add('hidden');
+                        toggle.dataset.editing = 'false';
+                        toggle.setAttribute('aria-label', 'Ubah nama dokumen');
+                        toggle.classList.remove('border-orange-200', 'bg-orange-50', 'text-orange-600');
+                        editIcon?.classList.remove('hidden');
+                        cancelIcon?.classList.add('hidden');
+                        saveButton?.classList.add('hidden');
+                        if (saveButton) {
+                            saveButton.style.display = 'none';
+                        }
+
+                        return;
+                    }
+
+                    display.classList.add('hidden');
+                    inputWrap.classList.remove('hidden');
+                    toggle.dataset.editing = 'true';
+                    toggle.setAttribute('aria-label', 'Batal ubah nama dokumen');
+                    toggle.classList.add('border-orange-200', 'bg-orange-50', 'text-orange-600');
+                    editIcon?.classList.add('hidden');
+                    cancelIcon?.classList.remove('hidden');
+                    saveButton?.classList.remove('hidden');
+                    if (saveButton) {
+                        saveButton.style.display = '';
+                    }
+                    input.focus();
+                    input.select();
+                });
+
+                document.addEventListener('click', (event) => {
+                    const saveButton = event.target.closest('[data-revision-name-save]');
+
+                    if (!saveButton) {
+                        return;
+                    }
+
+                    const root = saveButton.closest('[data-revision-name-editor]');
+                    const toggle = root?.querySelector('[data-revision-name-edit-toggle]');
+                    const display = root?.querySelector('[data-revision-name-display]');
+                    const inputWrap = root?.querySelector('[data-revision-name-input-wrap]');
+                    const input = root?.querySelector('[data-revision-name-input]');
+                    const editIcon = toggle?.querySelector('[data-revision-name-edit-icon]');
+                    const cancelIcon = toggle?.querySelector('[data-revision-name-cancel-icon]');
+                    const savedName = input?.value || '';
+
+                    if (!root || !toggle || !display || !inputWrap || !input) {
+                        return;
+                    }
+
+                    root.dataset.initialName = savedName;
+                    display.textContent = savedName || '-';
+                    display.classList.remove('hidden');
+                    inputWrap.classList.add('hidden');
+                    toggle.dataset.editing = 'false';
+                    toggle.setAttribute('aria-label', 'Ubah nama dokumen');
+                    toggle.classList.remove('border-orange-200', 'bg-orange-50', 'text-orange-600');
+                    editIcon?.classList.remove('hidden');
+                    cancelIcon?.classList.add('hidden');
+                    saveButton.classList.add('hidden');
+                    saveButton.style.display = 'none';
                 });
 
                 document.addEventListener('change', (event) => {
