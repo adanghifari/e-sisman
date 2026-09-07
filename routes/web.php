@@ -46,6 +46,8 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::get('documents/drafts', [DocumentController::class, 'drafts'])->name('documents.create.drafts');
     Route::get('documents/drafts/{document}/edit', [DocumentController::class, 'editDraft'])
         ->name('documents.create.drafts.edit');
+    Route::get('documents/rejected/{document}/resubmit', [DocumentController::class, 'resubmitRejected'])
+        ->name('documents.rejected.resubmit');
     Route::delete('documents/drafts/{document}', [DocumentController::class, 'destroyDraft'])
         ->name('documents.create.drafts.destroy');
     Route::get('documents/create/{level}', [DocumentController::class, 'create'])
@@ -93,6 +95,8 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::post('document-templates', [DocumentTemplateController::class, 'store'])->name('document-templates.store');
     Route::get('document-templates/files/{file}', [DocumentTemplateController::class, 'file'])->name('document-templates.files.show');
     Route::get('documents/master/imported/{importedExistingDocument}', [DocumentMasterController::class, 'showImported'])->name('documents.master.imported.show');
+    Route::get('documents/master/imported/{importedExistingDocument}/edit', [ImportedExistingDocumentController::class, 'editMaster'])->name('documents.master.imports.edit');
+    Route::match(['put', 'patch', 'post'], 'documents/master/imported/{importedExistingDocument}', [ImportedExistingDocumentController::class, 'updateMaster'])->name('documents.master.imports.update');
     Route::post('documents/master/imported/{importedExistingDocument}/obsolete', [DocumentMasterController::class, 'obsoleteImported'])->name('documents.master.imported.obsolete');
     Route::get('documents/master/{document}', [DocumentMasterController::class, 'show'])->name('documents.master.show');
     Route::post('documents/master/{document}/obsolete', [DocumentMasterController::class, 'obsolete'])->name('documents.master.obsolete');

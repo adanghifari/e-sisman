@@ -11,10 +11,10 @@ use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentNumberingSetup;
 use App\Models\DocumentNumberRegistry;
+use App\Models\DocumentRelation;
 use App\Models\DocumentType;
 use App\Models\ImportedExistingDocument;
 use App\Models\ImportedExistingDocumentFile;
-use App\Models\ImportedExistingDocumentRelation;
 use App\Models\StatusDocument;
 use App\Support\DocumentFiles\DocumentFileNumbering;
 use App\Support\FinalDocuments\AutoGenerateApprovalPreview;
@@ -268,6 +268,24 @@ class ImportedExistingDocumentController extends Controller
             ->map(fn ($id): string => (string) $id)
             ->all();
 
+        $procedureReferenceSegments = function ($procedure): array {
+            return collect(explode('-', (string) ($procedure?->nomor_dokumen ?? '')))
+                ->map(fn (string $segment): string => Str::upper(trim($segment)))
+                ->filter()
+                ->values()
+                ->skip(1)
+                ->values()
+                ->all();
+        };
+
+        $procedureReferenceNumberSegments = [];
+        foreach ($importedProcedures as $proc) {
+            $procedureReferenceNumberSegments["imported-{$proc->id}"] = $procedureReferenceSegments($proc);
+        }
+        foreach ($workflowProcedures as $proc) {
+            $procedureReferenceNumberSegments["existing-{$proc->id}"] = $procedureReferenceSegments($proc);
+        }
+
         return view('document-management.master.imports.create', [
             'level' => $level,
             'levelConfig' => $levelConfig,
@@ -275,15 +293,208 @@ class ImportedExistingDocumentController extends Controller
             'documentState' => $documentState,
             'processOptions' => $processOptions,
             'functionOptions' => $functionOptions,
+            'businessFunctions' => $businessFunctions,
             'departmentOptions' => $departmentOptions,
             'selectedDepartmentIds' => $selectedDepartmentIds,
             'workflowProcedures' => $workflowProcedures,
             'importedProcedures' => $importedProcedures,
+            'procedureReferenceNumberSegments' => $procedureReferenceNumberSegments,
             'importedDocumentOptions' => ImportedExistingDocument::query()->orderBy('nama_dokumen')->get(['id', 'nama_dokumen', 'nomor_dokumen']),
             'existingDocumentOptions' => Document::query()->orderBy('nama_dokumen')->get(['id', 'nama_dokumen', 'nomor_dokumen']),
-            'relationDocumentOptions' => $this->relationDocumentOptions(),
+            'relationDocumentOptions' => $this->relationDocumentOptions($documentLevelRecord?->id),
             'relationTypeOptions' => $this->relationTypeOptions(),
         ]);
+    }
+
+    public function editMaster(Request $request, ImportedExistingDocument $importedExistingDocument): View
+    {
+        abort_unless($request->user()?->isAdmin(), 403);
+        abort_unless($importedExistingDocument->isMaster(), 404);
+
+        $importedExistingDocument->loadMissing([
+            'documentLevel',
+            'documentType',
+            'businessProcess',
+            'businessFunction',
+            'departments',
+            'files',
+            'outgoingRelations',
+        ]);
+
+        $level = $importedExistingDocument->documentLevel?->kode ?? 'level-2';
+        $levelConfig = config("document-levels.{$level}");
+        abort_if($levelConfig === null, 404);
+
+        $documentLevelRecord = $importedExistingDocument->documentLevel;
+
+        $businessProcesses = BusinessProcess::query()->active()->orderBy('nama_proses_bisnis')->get();
+        $businessFunctions = BusinessFunction::query()->active()->orderBy('nama_proses_fungsi')->get();
+        $departments = Department::query()->active()->orderBy('nama_department')->get();
+
+        $workflowProcedures = collect();
+        $importedProcedures = collect();
+        if ($level === 'level-3') {
+            $procedureLevelId = DocumentLevel::query()->where('kode', 'level-2')->value('id');
+            $approvedStatusId = StatusDocument::query()->where('nama_status', StatusDocument::APPROVED)->value('id');
+            if ($procedureLevelId) {
+                if ($approvedStatusId) {
+                    $workflowProcedures = Document::query()
+                        ->select(['id', 'nomor_dokumen', 'nama_dokumen', 'm_proses_bisnis_id', 'm_proses_fungsi_id'])
+                        ->where('m_document_level_id', $procedureLevelId)
+                        ->where('m_status_document_id', $approvedStatusId)
+                        ->orderBy('nomor_dokumen')
+                        ->get();
+                }
+                $importedProcedures = ImportedExistingDocument::query()
+                    ->select(['id', 'nomor_dokumen', 'nama_dokumen', 'm_proses_bisnis_id', 'm_proses_fungsi_id'])
+                    ->where('m_document_level_id', $procedureLevelId)
+                    ->where('document_state', ImportedExistingDocument::STATE_MASTER)
+                    ->where('id', '!=', $importedExistingDocument->id)
+                    ->orderBy('nomor_dokumen')
+                    ->get();
+            }
+        }
+
+        $processOptions = ['' => 'Pilih Proses Bisnis'] + $businessProcesses->pluck('nama_proses_bisnis', 'id')->all();
+        $functionOptions = ['' => 'Pilih Proses Fungsi'] + $businessFunctions->pluck('nama_proses_fungsi', 'id')->all();
+        $departmentOptions = $departments->map(fn ($d) => [
+            'value' => $d->id,
+            'label' => ($d->kode_department ? $d->kode_department.' - ' : '').$d->nama_department,
+        ])->values();
+
+        $selectedDepartmentIds = collect(old('department_ids', $importedExistingDocument->departments->pluck('id')->all()))
+            ->map(fn ($id): string => (string) $id)
+            ->all();
+
+        $procedureReferenceSegments = function ($procedure): array {
+            return collect(explode('-', (string) ($procedure?->nomor_dokumen ?? '')))
+                ->map(fn (string $segment): string => Str::upper(trim($segment)))
+                ->filter()
+                ->values()
+                ->skip(1)
+                ->values()
+                ->all();
+        };
+
+        $procedureReferenceNumberSegments = [];
+        foreach ($importedProcedures as $proc) {
+            $procedureReferenceNumberSegments["imported-{$proc->id}"] = $procedureReferenceSegments($proc);
+        }
+        foreach ($workflowProcedures as $proc) {
+            $procedureReferenceNumberSegments["existing-{$proc->id}"] = $procedureReferenceSegments($proc);
+        }
+
+        $referenceRelation = $importedExistingDocument->outgoingRelations
+            ->firstWhere('relation_type', DocumentRelation::REFERENCES);
+        $selectedReference = old('reference', $referenceRelation ? DocumentRelation::targetReferenceValue($referenceRelation) : null);
+
+        $docSegments = explode('-', (string) $importedExistingDocument->nomor_dokumen);
+        $existingSuffix = count($docSegments) > 1 ? end($docSegments) : $importedExistingDocument->nomor_dokumen;
+        $nomorDokumenSuffix = old('nomor_dokumen_suffix', $existingSuffix);
+
+        $currentFile = $importedExistingDocument->files
+            ->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)
+            ->first();
+
+        return view('document-management.master.imports.edit', [
+            'document' => $importedExistingDocument,
+            'level' => $level,
+            'levelConfig' => $levelConfig,
+            'documentLevelRecord' => $documentLevelRecord,
+            'processOptions' => $processOptions,
+            'functionOptions' => $functionOptions,
+            'businessFunctions' => $businessFunctions,
+            'departmentOptions' => $departmentOptions,
+            'selectedDepartmentIds' => $selectedDepartmentIds,
+            'workflowProcedures' => $workflowProcedures,
+            'importedProcedures' => $importedProcedures,
+            'procedureReferenceNumberSegments' => $procedureReferenceNumberSegments,
+            'selectedReference' => $selectedReference,
+            'nomorDokumenSuffix' => $nomorDokumenSuffix,
+            'currentFile' => $currentFile,
+        ]);
+    }
+
+    public function updateMaster(Request $request, ImportedExistingDocument $importedExistingDocument): RedirectResponse
+    {
+        abort_unless($request->user()?->isAdmin(), 403);
+        abort_unless($importedExistingDocument->isMaster(), 404);
+
+        $level = $importedExistingDocument->documentLevel?->kode ?? 'level-2';
+
+        $validated = $request->validate([
+            'nama_dokumen' => ['required', 'string', 'max:255'],
+            'm_proses_bisnis_id' => ['required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
+            'm_proses_fungsi_id' => [$level === 'level-1' ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
+            'department_ids' => ['required', 'array', 'min:1'],
+            'department_ids.*' => ['integer', Rule::exists('departments', 'id')],
+            'reference' => [$level === 'level-3' ? 'required' : 'nullable', 'string'],
+            'nomor_dokumen' => ['nullable', 'string', 'max:100'],
+            'nomor_dokumen_suffix' => ['nullable', 'string', 'max:50'],
+            'nomor_revisi' => ['nullable', 'string', 'max:50'],
+            'tanggal_terbit' => ['nullable', 'date'],
+            'catatan' => ['nullable', 'string', 'max:1000'],
+            'existing_document' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
+        ]);
+
+        $request->merge(['m_document_level_id' => $importedExistingDocument->m_document_level_id]);
+        $resolvedNomorDokumen = $this->resolveImportedDocumentNumber($request);
+
+        DB::transaction(function () use ($request, $importedExistingDocument, $validated, $resolvedNomorDokumen, $level): void {
+            $this->updateClaimedImportedExistingNumber($importedExistingDocument, $resolvedNomorDokumen, $request->user()->id);
+
+            $importedExistingDocument->update([
+                'nama_dokumen' => $validated['nama_dokumen'],
+                'm_proses_bisnis_id' => $validated['m_proses_bisnis_id'],
+                'm_proses_fungsi_id' => $level === 'level-1' ? null : ($validated['m_proses_fungsi_id'] ?? null),
+                'nomor_dokumen' => $resolvedNomorDokumen,
+                'nomor_revisi' => $validated['nomor_revisi'] ?? null,
+                'tanggal_terbit' => $validated['tanggal_terbit'] ?? null,
+                'catatan' => $validated['catatan'] ?? null,
+            ]);
+
+            $importedExistingDocument->departments()->sync($validated['department_ids']);
+
+            if ($level === 'level-3') {
+                if (filled($validated['reference'] ?? null)) {
+                    if ($targetColumns = DocumentRelation::targetColumnsForReference($validated['reference'])) {
+                        $importedExistingDocument->outgoingRelations()->updateOrCreate(
+                            ['relation_type' => DocumentRelation::REFERENCES],
+                            $targetColumns + [
+                                'keterangan' => 'Dokumen Acuan Prosedur',
+                                'created_by' => $request->user()->id,
+                            ],
+                        );
+                    }
+                } else {
+                    $importedExistingDocument->outgoingRelations()
+                        ->where('relation_type', DocumentRelation::REFERENCES)
+                        ->delete();
+                }
+            }
+
+            if ($request->hasFile('existing_document')) {
+                $oldPrimaryFiles = $importedExistingDocument->files()
+                    ->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)
+                    ->get();
+
+                foreach ($oldPrimaryFiles as $oldFile) {
+                    Storage::disk('local')->delete($oldFile->path_file);
+                    $oldFile->delete();
+                }
+
+                $this->storeImportedExistingFile(
+                    $importedExistingDocument,
+                    $request->file('existing_document'),
+                    ImportedExistingDocumentFile::EXISTING_DOCUMENT,
+                    $request->user()->id,
+                );
+            }
+        });
+
+        return redirect()
+            ->route('documents.master.imported.show', $importedExistingDocument)
+            ->with('status', 'Metadata dokumen berhasil diperbarui.');
     }
 
     private function documentTypeForLevel(string $level): ?DocumentType
@@ -348,38 +559,38 @@ class ImportedExistingDocumentController extends Controller
             }
 
             if ($replacementRelation = $this->replacementRelationAttributes($validated['replacement_reference'] ?? null)) {
-                $document->outgoingRelations()->create([
-                    'related_imported_existing_document_id' => $replacementRelation['related_imported_existing_document_id'],
-                    'related_document_id' => $replacementRelation['related_document_id'],
-                    'relation_type' => ImportedExistingDocumentRelation::SUPERSEDED_BY,
-                    'keterangan' => 'Digantikan oleh dokumen terkait.',
-                    'created_by' => $request->user()->id,
-                ]);
+                $document->outgoingRelations()->updateOrCreate(
+                    ['relation_type' => DocumentRelation::SUPERSEDED_BY],
+                    [
+                        'target_imported_existing_document_id' => $replacementRelation['target_imported_existing_document_id'],
+                        'target_document_id' => $replacementRelation['target_document_id'],
+                        'keterangan' => 'Digantikan oleh dokumen terkait.',
+                        'created_by' => $request->user()->id,
+                    ],
+                );
             }
 
             foreach ($validated['relations'] ?? [] as $relation) {
-                $document->outgoingRelations()->create([
-                    'related_imported_existing_document_id' => $relation['related_imported_existing_document_id'] ?? null,
-                    'related_document_id' => $relation['related_document_id'] ?? null,
-                    'relation_type' => $relation['relation_type'],
-                    'keterangan' => $relation['keterangan'] ?? null,
-                    'created_by' => $request->user()->id,
-                ]);
+                $document->outgoingRelations()->updateOrCreate(
+                    ['relation_type' => $relation['relation_type']],
+                    [
+                        'target_imported_existing_document_id' => $relation['target_imported_existing_document_id'] ?? null,
+                        'target_document_id' => $relation['target_document_id'] ?? null,
+                        'keterangan' => $relation['keterangan'] ?? null,
+                        'created_by' => $request->user()->id,
+                    ],
+                );
             }
 
             if (filled($validated['reference'] ?? null)) {
-                $refParts = explode('-', $validated['reference']);
-                if (count($refParts) === 2) {
-                    $refType = $refParts[0];
-                    $refId = (int) $refParts[1];
-
-                    $document->outgoingRelations()->create([
-                        'related_imported_existing_document_id' => $refType === 'imported' ? $refId : null,
-                        'related_document_id' => $refType === 'existing' ? $refId : null,
-                        'relation_type' => ImportedExistingDocumentRelation::REFERENCES,
-                        'keterangan' => 'Dokumen Acuan Prosedur',
-                        'created_by' => $request->user()->id,
-                    ]);
+                if ($targetColumns = DocumentRelation::targetColumnsForReference($validated['reference'])) {
+                    $document->outgoingRelations()->updateOrCreate(
+                        ['relation_type' => DocumentRelation::REFERENCES],
+                        $targetColumns + [
+                            'keterangan' => 'Dokumen Acuan Prosedur',
+                            'created_by' => $request->user()->id,
+                        ],
+                    );
                 }
             }
         });
@@ -404,10 +615,11 @@ class ImportedExistingDocumentController extends Controller
             'businessFunction',
             'uploader',
             'files.uploader',
-            'outgoingRelations.relatedImportedDocument',
-            'outgoingRelations.relatedDocument.status',
+            'outgoingRelations.targetImportedDocument',
+            'outgoingRelations.targetDocument.status',
             'outgoingRelations.creator',
-            'incomingImportedRelations.sourceDocument',
+            'incomingImportedRelations.sourceImportedDocument',
+            'incomingImportedRelations.sourceDocument.status',
             'incomingImportedRelations.creator',
         ]);
 
@@ -446,22 +658,6 @@ class ImportedExistingDocumentController extends Controller
             $nextRevision = $this->nextImportedExistingRevisionNumber($importedExistingDocument);
             $revisionFormNumber = $this->revisionFormNumberForImportedExisting($importedExistingDocument);
 
-            $relation = $importedExistingDocument->outgoingRelations()
-                ->where('relation_type', ImportedExistingDocumentRelation::REFERENCES)
-                ->first();
-
-            $referenceId = null;
-            if ($relation) {
-                if ($relation->related_document_id) {
-                    $referenceId = $relation->related_document_id;
-                } elseif ($relation->related_imported_existing_document_id) {
-                    $referenceId = Document::query()
-                        ->where('imported_existing_source_id', $relation->related_imported_existing_document_id)
-                        ->whereHas('status', fn ($q) => $q->where('nama_status', StatusDocument::APPROVED))
-                        ->value('id');
-                }
-            }
-
             $document = Document::create([
                 'm_document_level_id' => $importedExistingDocument->m_document_level_id,
                 'm_status_document_id' => $status->id,
@@ -470,7 +666,6 @@ class ImportedExistingDocumentController extends Controller
                 'm_proses_fungsi_id' => $importedExistingDocument->m_proses_fungsi_id,
                 'user_id' => $request->user()->id,
                 'official_preparer_id' => $validated['official_preparer_id'],
-                'reference' => $referenceId,
                 'revised_from' => null,
                 'imported_existing_source_id' => $importedExistingDocument->id,
                 'request_type' => 'revision',
@@ -484,6 +679,9 @@ class ImportedExistingDocumentController extends Controller
                 'created_at' => now(),
             ]);
             $document->departments()->sync($importedExistingDocument->departments->pluck('id')->all());
+            if ($importedExistingDocument->documentLevel?->kode === 'level-3') {
+                DocumentRelation::copyReferenceToDocumentSource($document, $importedExistingDocument, $request->user()->id);
+            }
             $document->snapshotOfficialPreparer();
 
             $this->storeTDocumentFile($document, $request->file('revision_content'), 'revision_content', $request->user()->id);
@@ -547,6 +745,11 @@ class ImportedExistingDocumentController extends Controller
             'document_state' => $request->input('document_state', ImportedExistingDocument::STATE_OBSOLETE),
         ]);
 
+        $resolvedNomorDokumen = $this->resolveImportedDocumentNumber($request);
+        if ($resolvedNomorDokumen !== null) {
+            $request->merge(['nomor_dokumen' => $resolvedNomorDokumen]);
+        }
+
         $validated = $request->validate([
             'document_state' => ['required', Rule::in(ImportedExistingDocument::DOCUMENT_STATES)],
             'obsolete_rule_type' => ['required', Rule::in(ImportedExistingDocument::RULE_TYPES)],
@@ -556,6 +759,7 @@ class ImportedExistingDocumentController extends Controller
             'm_proses_fungsi_id' => ['required_if:obsolete_rule_type,'.ImportedExistingDocument::CURRENT_RULE, 'nullable', 'integer', Rule::exists('m_proses_fungsi', 'id')],
             'nama_dokumen' => ['required', 'string', 'max:255'],
             'nomor_dokumen' => ['nullable', 'string', 'max:255'],
+            'nomor_dokumen_suffix' => ['nullable', 'string', 'max:50', 'regex:/^[A-Za-z0-9]+$/'],
             'nomor_revisi' => ['nullable', 'string', 'max:50'],
             'tanggal_terbit' => ['nullable', 'date'],
             'tanggal_obsolete' => ['nullable', 'date'],
@@ -568,12 +772,14 @@ class ImportedExistingDocumentController extends Controller
             'attachments' => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'mimes:pdf,doc,docx,xls,xlsx', 'max:10240'],
             'replacement_reference' => ['nullable', 'string', 'max:255'],
-            'relations' => ['nullable', 'array', 'max:20'],
+            'relations' => ['nullable', 'array', 'max:2'],
             'relations.*.relation_reference' => ['nullable', 'string', 'max:255'],
             'relations.*.related_imported_existing_document_id' => ['nullable', 'integer', Rule::exists('imported_existing_documents', 'id')],
             'relations.*.related_document_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
-            'relations.*.relation_type' => ['required_with:relations', Rule::in(ImportedExistingDocumentRelation::RELATION_TYPES)],
+            'relations.*.relation_type' => ['required_with:relations', Rule::in(DocumentRelation::RELATION_TYPES)],
             'relations.*.keterangan' => ['nullable', 'string', 'max:1000'],
+        ], [
+            'nomor_dokumen_suffix.regex' => 'Nomor dokumen suffix hanya boleh berupa angka atau huruf.',
         ]);
 
         if (($validated['obsolete_rule_type'] ?? null) === ImportedExistingDocument::CURRENT_RULE) {
@@ -589,6 +795,11 @@ class ImportedExistingDocumentController extends Controller
             ];
             $masterErrors = [];
 
+            $levelRecord = DocumentLevel::query()->find($validated['m_document_level_id'] ?? null);
+            if ($levelRecord?->kode === 'level-3' && ! filled($validated['reference'] ?? null)) {
+                $masterErrors['reference'] = 'Pilih Dokumen Level II: Prosedur terlebih dahulu.';
+            }
+
             foreach ($requiredMasterFields as $field) {
                 if ($field === 'department_ids') {
                     if (count($validated['department_ids'] ?? []) === 0) {
@@ -600,6 +811,9 @@ class ImportedExistingDocumentController extends Controller
 
                 if (! filled($validated[$field] ?? null)) {
                     $masterErrors[$field] = 'Field ini wajib diisi untuk import sesuai ketentuan saat ini.';
+                    if ($field === 'nomor_dokumen') {
+                        $masterErrors['nomor_dokumen_suffix'] = 'Nomor dokumen wajib diisi.';
+                    }
                 }
             }
 
@@ -624,6 +838,16 @@ class ImportedExistingDocumentController extends Controller
             ]);
         }
 
+        if (
+            filled($validated['replacement_reference'] ?? null)
+            && ($validated['obsolete_rule_type'] ?? null) === ImportedExistingDocument::CURRENT_RULE
+            && ! $this->replacementReferenceMatchesCurrentRuleContext($validated)
+        ) {
+            throw ValidationException::withMessages([
+                'replacement_reference' => 'Dokumen pengganti harus memiliki level, proses bisnis, dan proses fungsi yang sama.',
+            ]);
+        }
+
         $relationErrors = [];
 
         foreach ($validated['relations'] ?? [] as $index => $relation) {
@@ -639,16 +863,23 @@ class ImportedExistingDocumentController extends Controller
                     continue;
                 }
 
-                $validated['relations'][$index]['related_imported_existing_document_id'] = $relationAttributes['related_imported_existing_document_id'];
-                $validated['relations'][$index]['related_document_id'] = $relationAttributes['related_document_id'];
+                $validated['relations'][$index]['target_imported_existing_document_id'] = $relationAttributes['target_imported_existing_document_id'];
+                $validated['relations'][$index]['target_document_id'] = $relationAttributes['target_document_id'];
                 $relation = $validated['relations'][$index];
             }
 
-            $hasImportedTarget = filled($relation['related_imported_existing_document_id'] ?? null);
-            $hasExistingDocumentTarget = filled($relation['related_document_id'] ?? null);
+            $hasImportedTarget = filled($relation['target_imported_existing_document_id'] ?? $relation['related_imported_existing_document_id'] ?? null);
+            $hasExistingDocumentTarget = filled($relation['target_document_id'] ?? $relation['related_document_id'] ?? null);
 
             if ($hasImportedTarget === $hasExistingDocumentTarget) {
                 $relationErrors["relations.{$index}.related_imported_existing_document_id"] = 'Pilih tepat satu target relasi.';
+            } else {
+                $validated['relations'][$index]['target_imported_existing_document_id'] = $relation['target_imported_existing_document_id']
+                    ?? $relation['related_imported_existing_document_id']
+                    ?? null;
+                $validated['relations'][$index]['target_document_id'] = $relation['target_document_id']
+                    ?? $relation['related_document_id']
+                    ?? null;
             }
         }
 
@@ -665,7 +896,7 @@ class ImportedExistingDocumentController extends Controller
     private function validateRelationsAgainstSavedDocument(ImportedExistingDocument $document, array $relations): void
     {
         foreach ($relations as $index => $relation) {
-            if ((int) ($relation['related_imported_existing_document_id'] ?? 0) === $document->id) {
+            if ((int) ($relation['target_imported_existing_document_id'] ?? $relation['related_imported_existing_document_id'] ?? 0) === $document->id) {
                 throw ValidationException::withMessages([
                     "relations.{$index}.related_imported_existing_document_id" => 'Dokumen tidak boleh berelasi ke dirinya sendiri.',
                 ]);
@@ -782,7 +1013,18 @@ class ImportedExistingDocumentController extends Controller
 
         if (Document::query()->where('nomor_dokumen', $document->nomor_dokumen)->exists()) {
             throw ValidationException::withMessages([
-                'nomor_dokumen' => 'Nomor dokumen sudah digunakan oleh dokumen V2.',
+                'nomor_dokumen' => 'Nomor dokumen sudah digunakan.',
+            ]);
+        }
+
+        if ($document->document_state === ImportedExistingDocument::STATE_MASTER
+            && ImportedExistingDocument::query()
+                ->where('nomor_dokumen', $document->nomor_dokumen)
+                ->where('id', '!=', $document->id)
+                ->where('document_state', ImportedExistingDocument::STATE_MASTER)
+                ->exists()) {
+            throw ValidationException::withMessages([
+                'nomor_dokumen' => 'Nomor dokumen sudah digunakan.',
             ]);
         }
 
@@ -798,7 +1040,7 @@ class ImportedExistingDocumentController extends Controller
             }
 
             throw ValidationException::withMessages([
-                'nomor_dokumen' => 'Nomor dokumen sudah terdaftar.',
+                'nomor_dokumen' => 'Nomor dokumen sudah digunakan.',
             ]);
         }
 
@@ -810,6 +1052,74 @@ class ImportedExistingDocumentController extends Controller
             'registered_by' => $userId,
             'registered_at' => now(),
         ]);
+    }
+
+    private function updateClaimedImportedExistingNumber(ImportedExistingDocument $document, ?string $newDocumentNumber, int $userId): void
+    {
+        if (! filled($newDocumentNumber)) {
+            return;
+        }
+
+        if (Document::query()->where('nomor_dokumen', $newDocumentNumber)->exists()) {
+            throw ValidationException::withMessages([
+                'nomor_dokumen' => 'Nomor dokumen sudah digunakan.',
+            ]);
+        }
+
+        if ($document->document_state === ImportedExistingDocument::STATE_MASTER
+            && ImportedExistingDocument::query()
+                ->where('nomor_dokumen', $newDocumentNumber)
+                ->where('id', '!=', $document->id)
+                ->where('document_state', ImportedExistingDocument::STATE_MASTER)
+                ->exists()) {
+            throw ValidationException::withMessages([
+                'nomor_dokumen' => 'Nomor dokumen sudah digunakan.',
+            ]);
+        }
+
+        $existingRegistry = DocumentNumberRegistry::query()
+            ->where('document_number', $newDocumentNumber)
+            ->lockForUpdate()
+            ->first();
+
+        if ($existingRegistry !== null) {
+            $isOwnRegistry = $existingRegistry->source_type === DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING
+                && (int) $existingRegistry->source_id === (int) $document->id;
+
+            if (! $isOwnRegistry) {
+                if ($document->document_state === ImportedExistingDocument::STATE_OBSOLETE
+                    && $existingRegistry->source_type === DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING) {
+                    return;
+                }
+
+                throw ValidationException::withMessages([
+                    'nomor_dokumen' => 'Nomor dokumen sudah digunakan.',
+                ]);
+            }
+        }
+
+        $currentRegistry = DocumentNumberRegistry::query()
+            ->where('source_type', DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING)
+            ->where('source_id', $document->id)
+            ->first();
+
+        if ($currentRegistry !== null) {
+            $currentRegistry->update([
+                'document_number' => $newDocumentNumber,
+                'scope_identifier' => $this->scopeIdentifierForNumber($newDocumentNumber),
+                'registered_by' => $userId,
+                'registered_at' => now(),
+            ]);
+        } else {
+            DocumentNumberRegistry::create([
+                'document_number' => $newDocumentNumber,
+                'scope_identifier' => $this->scopeIdentifierForNumber($newDocumentNumber),
+                'source_type' => DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING,
+                'source_id' => $document->id,
+                'registered_by' => $userId,
+                'registered_at' => now(),
+            ]);
+        }
     }
 
     private function scopeIdentifierForNumber(string $documentNumber): ?string
@@ -826,6 +1136,90 @@ class ImportedExistingDocumentController extends Controller
         $segments->pop();
 
         return $segments->implode('-');
+    }
+
+    private function normalizeDocumentNumberSuffix(?string $suffix): ?string
+    {
+        if (! filled($suffix)) {
+            return null;
+        }
+
+        $suffix = Str::upper(trim((string) $suffix));
+
+        if (ctype_digit($suffix) && strlen($suffix) === 1) {
+            return str_pad($suffix, 2, '0', STR_PAD_LEFT);
+        }
+
+        return $suffix;
+    }
+
+    private function procedureNumberSegmentsFromReference(?string $reference): \Illuminate\Support\Collection
+    {
+        if (! filled($reference)) {
+            return collect();
+        }
+
+        $procedureNumber = DocumentRelation::targetDocumentNumber($reference);
+
+        return collect(explode('-', (string) $procedureNumber))
+            ->map(fn (string $segment): string => Str::upper(trim($segment)))
+            ->filter()
+            ->values()
+            ->skip(1)
+            ->values();
+    }
+
+    private function resolveImportedDocumentNumber(Request $request): ?string
+    {
+        $suffix = $this->normalizeDocumentNumberSuffix($request->input('nomor_dokumen_suffix'));
+
+        if (filled($suffix)) {
+            $request->merge(['nomor_dokumen_suffix' => $suffix]);
+            $levelId = $request->input('m_document_level_id');
+            $level = DocumentLevel::query()->find($levelId);
+            $levelKey = $level?->kode;
+
+            if ($levelKey === 'level-1') {
+                return "SM-{$suffix}";
+            }
+
+            if ($levelKey === 'level-2') {
+                $functionCode = BusinessFunction::query()->whereKey($request->input('m_proses_fungsi_id'))->value('kode');
+                if (filled($functionCode)) {
+                    return "PS-{$functionCode}-{$suffix}";
+                }
+            }
+
+            if ($levelKey === 'level-3') {
+                $reference = (string) $request->input('reference');
+                $procedureSegments = $this->procedureNumberSegmentsFromReference($reference);
+                if ($procedureSegments->isNotEmpty()) {
+                    return collect(['IK'])
+                        ->merge($procedureSegments)
+                        ->push($suffix)
+                        ->implode('-');
+                }
+            }
+
+            return $suffix;
+        }
+
+        if ($request->filled('nomor_dokumen')) {
+            $nomorDokumen = trim((string) $request->input('nomor_dokumen'));
+            $segments = collect(explode('-', $nomorDokumen))->map(fn ($s) => trim($s))->filter()->values();
+            if ($segments->isNotEmpty()) {
+                $last = $segments->last();
+                if (ctype_digit($last) && strlen($last) === 1) {
+                    $segments[$segments->count() - 1] = str_pad($last, 2, '0', STR_PAD_LEFT);
+
+                    return $segments->implode('-');
+                }
+            }
+
+            return $nomorDokumen;
+        }
+
+        return null;
     }
 
     private function nextImportedExistingRevisionNumber(ImportedExistingDocument $document): int
@@ -874,18 +1268,36 @@ class ImportedExistingDocumentController extends Controller
         ];
     }
 
-    private function relationDocumentOptions(): array
+    private function relationDocumentOptions(?int $documentLevelId = null): array
     {
         $approvedStatusId = StatusDocument::query()
             ->where('nama_status', StatusDocument::APPROVED)
             ->value('id');
 
-        $workflowDocuments = Document::query()
-            ->select(['id', 'nama_dokumen', 'nomor_dokumen', 'm_document_level_id', 'm_proses_bisnis_id', 'm_proses_fungsi_id', 'm_status_document_id', 'request_type'])
-            ->orderBy('nama_dokumen')
-            ->get();
+        $workflowDocuments = $approvedStatusId === null
+            ? collect()
+            : Document::query()
+                ->select(['id', 'nama_dokumen', 'nomor_dokumen', 'nomor_revisi', 'm_document_level_id', 'm_proses_bisnis_id', 'm_proses_fungsi_id', 'm_status_document_id', 'request_type', 'revised_from', 'approved_at', 'tanggal_terbit'])
+                ->where('m_status_document_id', $approvedStatusId)
+                ->where(function ($query): void {
+                    $query
+                        ->whereNull('request_type')
+                        ->orWhere('request_type', '!=', 'obsolete');
+                })
+                ->get()
+                ->groupBy(fn (Document $document): int => $document->revisionRootId())
+                ->map(fn ($family): Document => $family
+                    ->sortByDesc(fn (Document $document): string => sprintf(
+                        '%010d-%010d-%010d',
+                        $document->nomor_revisi,
+                        $document->approved_at?->timestamp ?? $document->tanggal_terbit?->timestamp ?? 0,
+                        $document->id,
+                    ))
+                    ->first())
+                ->values();
         $importedDocuments = ImportedExistingDocument::query()
-            ->select(['id', 'nama_dokumen', 'nomor_dokumen', 'document_state', 'm_document_level_id', 'm_proses_bisnis_id', 'm_proses_fungsi_id'])
+            ->select(['id', 'nama_dokumen', 'nomor_dokumen', 'nomor_revisi', 'document_state', 'm_document_level_id', 'm_proses_bisnis_id', 'm_proses_fungsi_id'])
+            ->where('document_state', ImportedExistingDocument::STATE_MASTER)
             ->orderBy('nama_dokumen')
             ->get();
 
@@ -894,11 +1306,8 @@ class ImportedExistingDocumentController extends Controller
             ->map(fn (Document $document): array => [
                 'value' => 'existing-'.$document->id,
                 'label' => $this->documentOptionLabel($document),
-                'meta' => 'Dokumen V2',
-                'is_master' => (bool) (
-                    ($approvedStatusId === null || $document->m_status_document_id === $approvedStatusId)
-                    && $document->request_type !== 'obsolete'
-                ),
+                'meta' => 'Dokumen V2 - Revisi '.$document->formatted_revision,
+                'is_master' => true,
                 'document_level_id' => $document->m_document_level_id,
                 'business_process_id' => $document->m_proses_bisnis_id,
                 'business_function_id' => $document->m_proses_fungsi_id,
@@ -909,15 +1318,15 @@ class ImportedExistingDocumentController extends Controller
                     ->map(fn (ImportedExistingDocument $document): array => [
                         'value' => 'imported-'.$document->id,
                         'label' => $this->documentOptionLabel($document),
-                        'meta' => $document->document_state === ImportedExistingDocument::STATE_MASTER
-                            ? 'Imported Master'
-                            : 'Arsip Obsolete',
-                        'is_master' => $document->document_state === ImportedExistingDocument::STATE_MASTER,
+                        'meta' => 'Imported Master - Revisi '.$this->formatImportedRevision($document),
+                        'is_master' => true,
                         'document_level_id' => $document->m_document_level_id,
                         'business_process_id' => $document->m_proses_bisnis_id,
                         'business_function_id' => $document->m_proses_fungsi_id,
                     ]),
             )
+            ->when($documentLevelId !== null, fn ($documents) => $documents
+                ->where('document_level_id', $documentLevelId))
             ->sortBy('label')
             ->values()
             ->all();
@@ -926,6 +1335,10 @@ class ImportedExistingDocumentController extends Controller
     private function replacementRelationAttributes(?string $replacementReference): ?array
     {
         if (! filled($replacementReference)) {
+            return null;
+        }
+
+        if (! $this->replacementReferenceIsMasterCandidate($replacementReference)) {
             return null;
         }
 
@@ -940,19 +1353,36 @@ class ImportedExistingDocumentController extends Controller
 
         if ($type === 'existing' && Document::query()->whereKey($id)->exists()) {
             return [
-                'related_imported_existing_document_id' => null,
-                'related_document_id' => $id,
+                'target_imported_existing_document_id' => null,
+                'target_document_id' => $id,
             ];
         }
 
         if ($type === 'imported' && ImportedExistingDocument::query()->whereKey($id)->exists()) {
             return [
-                'related_imported_existing_document_id' => $id,
-                'related_document_id' => null,
+                'target_imported_existing_document_id' => $id,
+                'target_document_id' => null,
             ];
         }
 
         return null;
+    }
+
+    private function replacementReferenceIsMasterCandidate(string $reference): bool
+    {
+        return collect($this->relationDocumentOptions())
+            ->contains(fn (array $document): bool => $document['value'] === $reference);
+    }
+
+    private function replacementReferenceMatchesCurrentRuleContext(array $validated): bool
+    {
+        $replacementReference = (string) ($validated['replacement_reference'] ?? '');
+
+        return collect($this->relationDocumentOptions())
+            ->contains(fn (array $document): bool => $document['value'] === $replacementReference
+                && (string) $document['document_level_id'] === (string) ($validated['m_document_level_id'] ?? '')
+                && (string) $document['business_process_id'] === (string) ($validated['m_proses_bisnis_id'] ?? '')
+                && (string) $document['business_function_id'] === (string) ($validated['m_proses_fungsi_id'] ?? ''));
     }
 
     private function relationTargetAttributes(?string $relationReference, ?string $relationType): ?array
@@ -961,7 +1391,7 @@ class ImportedExistingDocumentController extends Controller
             return null;
         }
 
-        if ($relationType === ImportedExistingDocumentRelation::SUPERSEDED_BY) {
+        if ($relationType === DocumentRelation::SUPERSEDED_BY) {
             return $this->replacementRelationAttributes($relationReference);
         }
 
@@ -976,15 +1406,15 @@ class ImportedExistingDocumentController extends Controller
 
         if ($type === 'existing' && Document::query()->whereKey($id)->exists()) {
             return [
-                'related_imported_existing_document_id' => null,
-                'related_document_id' => $id,
+                'target_imported_existing_document_id' => null,
+                'target_document_id' => $id,
             ];
         }
 
         if ($type === 'imported' && ImportedExistingDocument::query()->whereKey($id)->exists()) {
             return [
-                'related_imported_existing_document_id' => $id,
-                'related_document_id' => null,
+                'target_imported_existing_document_id' => $id,
+                'target_document_id' => null,
             ];
         }
 
@@ -994,6 +1424,11 @@ class ImportedExistingDocumentController extends Controller
     private function documentOptionLabel(Document|ImportedExistingDocument $document): string
     {
         return trim(($document->nomor_dokumen ? $document->nomor_dokumen.' - ' : '').$document->nama_dokumen);
+    }
+
+    private function formatImportedRevision(ImportedExistingDocument $document): string
+    {
+        return filled($document->nomor_revisi) ? (string) $document->nomor_revisi : '-';
     }
 
     /**
@@ -1014,8 +1449,8 @@ class ImportedExistingDocumentController extends Controller
     private function relationTypeOptions(): array
     {
         return [
-            ImportedExistingDocumentRelation::SUPERSEDED_BY => 'Digantikan Oleh',
-            ImportedExistingDocumentRelation::REFERENCES => 'Referensi',
+            DocumentRelation::SUPERSEDED_BY => 'Digantikan Oleh',
+            DocumentRelation::REFERENCES => 'Referensi',
         ];
     }
 }

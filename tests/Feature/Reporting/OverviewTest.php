@@ -7,6 +7,7 @@ use App\Models\BusinessProcess;
 use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentLevel;
+use App\Models\DocumentRelation;
 use App\Models\DocumentType;
 use App\Models\StatusDocument;
 use App\Models\User;
@@ -143,19 +144,26 @@ class OverviewTest extends TestCase
             'tanggal_terbit' => now()->subDay()->toDateString(),
         ])->departments()->attach($department);
 
-        Document::query()->create([
+        $instruction = Document::query()->create([
             'm_document_level_id' => $instructionLevel->id,
             'm_status_document_id' => $approved->id,
             'm_document_types_id' => $type->id,
             'm_proses_bisnis_id' => $businessProcess->id,
             'm_proses_fungsi_id' => $businessFunction->id,
             'user_id' => $user->id,
-            'reference' => $procedure->id,
             'nama_dokumen' => 'Instruksi Kerja Bongkar Curah',
             'nomor_dokumen' => 'IK-OVR-01',
             'nomor_revisi' => 0,
             'tanggal_terbit' => now()->toDateString(),
-        ])->departments()->attach($department);
+        ]);
+        $instruction->departments()->attach($department);
+
+        $instruction->outgoingRelations()->create([
+            'target_document_id' => $procedure->id,
+            'target_imported_existing_document_id' => null,
+            'relation_type' => DocumentRelation::REFERENCES,
+            'created_by' => $user->id,
+        ]);
 
         Document::query()->create([
             'm_document_level_id' => $procedureLevel->id,

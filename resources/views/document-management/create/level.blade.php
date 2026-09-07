@@ -2,8 +2,10 @@
     @php
         $draft = $draft ?? null;
         $revisionSource = $revisionSource ?? null;
+        $resubmissionSource = $resubmissionSource ?? $draft?->resubmittedFrom;
         $isEditingDraft = $draft !== null;
-        $draftFilesByType = $draft?->files?->groupBy('type_file') ?? collect();
+        $formSource = $draft ?? $resubmissionSource;
+        $draftFilesByType = $formSource?->files?->groupBy('type_file') ?? collect();
         $attachmentNumberSuffix = function (?string $documentNumber): ?int {
             if (! filled($documentNumber)) {
                 return null;
@@ -224,43 +226,34 @@
         $documentNumberPrefix = $revisionSource
             ? ($levelKey === 'level-4' ? $levelFourPrefix : ($revisionPrefixes[$levelKey] ?? 'FM'.$documentPrefixes[$levelKey]))
             : $documentPrefixes[$levelKey];
-        $rejectedRevisionAttempt = $revisionSource
-            ? \App\Models\Document::query()
-                ->where('revised_from', $revisionSource->id)
-                ->where('request_type', 'revision')
-                ->whereNull('approved_at')
-                ->whereHas('status', fn ($query) => $query->where('nama_status', \App\Models\StatusDocument::REJECTED))
-                ->orderByDesc('nomor_revisi')
-                ->orderByDesc('rejected_at')
-                ->orderByDesc('id')
-                ->first()
-            : null;
         $latestRevisionNumber = $revisionSource
-            ? ($rejectedRevisionAttempt?->nomor_revisi ?? (int) $revisionSource->revisionFamily()->max('nomor_revisi'))
+            ? (int) $revisionSource->revisionFamily()->max('nomor_revisi')
             : null;
-        $documentNumberSuffixDefault = $draft?->nomor_dokumen
-            ? \Illuminate\Support\Str::afterLast($draft->nomor_dokumen, '-')
-            : ($revisionDocumentSuffix ?? $nextLevelOneDocumentNumberSuffix);
+        $documentNumberSuffixDefault = $formSource?->nomor_dokumen
+            ? \Illuminate\Support\Str::afterLast($formSource->nomor_dokumen, '-')
+            : $revisionDocumentSuffix;
         $revisionFormDisplayNumber = $revisionSource
-            ? ($draft?->nomor_lembar_revisi ?: app(\App\Support\DocumentFiles\DocumentFileNumbering::class)->revisionFormNumber($revisionSource))
+            ? ($formSource?->nomor_lembar_revisi ?: app(\App\Support\DocumentFiles\DocumentFileNumbering::class)->revisionFormNumber($revisionSource))
             : null;
         $revisionFormDisplaySegments = $revisionFormDisplayNumber
             ? collect(explode('-', $revisionFormDisplayNumber))->filter()->values()
             : collect();
-        $selectedBusinessProcessId = old('m_proses_bisnis_id', $draft?->m_proses_bisnis_id ?? $revisionSource?->m_proses_bisnis_id);
-        $selectedBusinessFunctionId = old('m_proses_fungsi_id', $draft?->m_proses_fungsi_id ?? $revisionSource?->m_proses_fungsi_id);
-        $selectedReferenceId = old('reference', $draft?->reference ?? $revisionSource?->reference);
+        $selectedBusinessProcessId = old('m_proses_bisnis_id', $formSource?->m_proses_bisnis_id ?? $revisionSource?->m_proses_bisnis_id);
+        $selectedBusinessFunctionId = old('m_proses_fungsi_id', $formSource?->m_proses_fungsi_id ?? $revisionSource?->m_proses_fungsi_id);
+        $selectedReferenceId = old('reference', $formSource?->procedureReferenceValue() ?? $revisionSource?->procedureReferenceValue());
         $selectedDepartmentIds = old('department_ids', $draft
             ? $draft->departments->pluck('id')->all()
-            : collect($revisionSource?->departments ?? [])->pluck('id')->all());
+            : ($resubmissionSource
+                ? $resubmissionSource->departments->pluck('id')->all()
+                : collect($revisionSource?->departments ?? [])->pluck('id')->all()));
         $nextRevisionValue = $draft
             ? $draft->formatted_revision
             : ($revisionSource
-            ? \App\Models\Document::formatRevisionNumber($rejectedRevisionAttempt?->nomor_revisi ?? (($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1))
+            ? \App\Models\Document::formatRevisionNumber($resubmissionSource?->nomor_revisi ?? (($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1))
             : '00.00');
         $selectedBusinessFunction = $businessFunctions->firstWhere('id', (int) $selectedBusinessFunctionId);
         $documentNumberFunctionCode = $selectedBusinessFunction?->kode ?: 'SMR';
-        $selectedProcedureReference = $procedureReferences->firstWhere('id', (int) $selectedReferenceId);
+        $selectedProcedureReference = $procedureReferences->firstWhere('reference_value', $selectedReferenceId);
         $procedureReferenceSegments = fn ($procedure) => collect(explode('-', (string) ($procedure?->procedure_reference_number ?: $procedure?->nomor_dokumen)))
             ->filter()
             ->values()
@@ -269,7 +262,7 @@
         $selectedProcedureNumberSegments = $procedureReferenceSegments($selectedProcedureReference);
         $procedureReferenceNumberSegments = $procedureReferences
             ->mapWithKeys(fn ($procedure) => [
-                $procedure->id => $procedureReferenceSegments($procedure)->all(),
+                $procedure->reference_value => $procedureReferenceSegments($procedure)->all(),
             ])
             ->all();
         $documentNumberSegments = match ($levelKey) {
@@ -320,6 +313,9 @@
                 @if ($revisionSource)
                     <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
                 @endif
+                @if ($resubmissionSource)
+                    <input type="hidden" name="resubmitted_from" value="{{ $resubmissionSource->id }}">
+                @endif
 
                 <div class="space-y-6">
                     <section class="overflow-visible rounded-lg border border-slate-200 bg-white shadow-sm">
@@ -333,7 +329,7 @@
                                 <input
                                     type="text"
                                     name="nama_dokumen"
-                                    value="{{ old('nama_dokumen', $draft?->nama_dokumen ?? $revisionSource?->nama_dokumen) }}"
+                                    value="{{ old('nama_dokumen', $formSource?->nama_dokumen ?? $revisionSource?->nama_dokumen) }}"
                                     placeholder="Masukan nama dokumen"
                                     required
                                     @class([
@@ -382,7 +378,7 @@
                                     rows="5"
                                     placeholder="Tambahkan catatan dokumen"
                                     class="w-full resize-none rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
-                                >{{ old('catatan_revisi', $draft?->catatan_revisi) }}</textarea>
+                            >{{ old('catatan_revisi', $formSource?->catatan_revisi) }}</textarea>
                                 @error('catatan_revisi')
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                 @enderror
@@ -402,7 +398,14 @@
                             <div class="grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-4">
                                 <input type="text" value="{{ $documentNumberPrefix }}" readonly class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-3 text-center text-base font-semibold text-slate-600">
                                 <span class="text-lg font-semibold text-slate-500">-</span>
-                                <input type="text" name="nomor_dokumen_suffix" value="{{ old('nomor_dokumen_suffix', $documentNumberSuffixDefault) }}" inputmode="numeric" pattern="[0-9]*" required class="h-14 w-full rounded-lg border border-slate-300 bg-white px-3 text-center text-base font-semibold text-slate-700 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100">
+                                <input
+                                    type="text"
+                                    name="nomor_dokumen_suffix"
+                                    value="{{ old('nomor_dokumen_suffix', $documentNumberSuffixDefault) }}"
+                                    required
+                                    @readonly($resubmissionSource)
+                                    class="h-14 w-full rounded-lg border {{ $resubmissionSource ? 'border-slate-200 bg-slate-50 text-slate-600' : 'border-slate-300 bg-white text-slate-700 focus:border-sky-400 focus:ring-2 focus:ring-sky-100' }} px-3 text-center text-base font-semibold outline-none transition"
+                                >
                             </div>
                             @error('nomor_dokumen_suffix')
                                 <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -414,9 +417,9 @@
                             <input
                                 type="text"
                                 name="nomor_revisi"
-                                value="00.00"
-                                readonly
-                                class="h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none transition"
+                                value="{{ old('nomor_revisi', $formSource?->formatted_revision ?? ($revisionSource ? $nextRevisionValue : null)) }}"
+                                @readonly($revisionSource)
+                                class="h-14 w-full rounded-lg border {{ $revisionSource ? 'border-slate-200 bg-slate-50 text-slate-600' : 'border-slate-300 bg-white text-slate-700 focus:border-sky-400 focus:ring-2 focus:ring-sky-100' }} px-4 text-base font-semibold outline-none transition"
                             >
                             @error('nomor_revisi')
                                 <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -426,7 +429,7 @@
                         <x-ui.date-input
                             label="Tanggal Terbit"
                             name="tanggal_terbit"
-                            :value="old('tanggal_terbit', $draft?->tanggal_terbit?->format('Y-m-d'))"
+                            :value="old('tanggal_terbit', $formSource?->tanggal_terbit?->format('Y-m-d'))"
                         />
                     </div>
 
@@ -452,6 +455,9 @@
                 @if ($revisionSource)
                     <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
                 @endif
+                @if ($resubmissionSource)
+                    <input type="hidden" name="resubmitted_from" value="{{ $resubmissionSource->id }}">
+                @endif
 
                 <div class="space-y-6">
                     @if ($errors->any())
@@ -475,7 +481,7 @@
                                 <input type="hidden" name="department_ids[]" value="{{ $departmentId }}">
                             @endforeach
                             @if ($levelKey === 'level-3')
-                                <input type="hidden" name="reference" value="{{ $revisionSource->reference }}">
+                                <input type="hidden" name="reference" value="{{ $revisionSource->procedureReferenceValue() }}">
                             @endif
 
                             <dl class="divide-y divide-slate-100 px-6 py-4">
@@ -505,11 +511,11 @@
                                         {{ $revisionSource->departments->map(fn ($department) => ($department->kode_department ? $department->kode_department.' - ' : '').$department->nama_department)->implode(', ') ?: '-' }}
                                     </dd>
                                 </div>
-                                @if ($revisionSource->referenceDocument)
+                                @if ($revisionReference = $revisionSource->procedureReferenceRelation()?->target())
                                     <div class="grid gap-1 py-3 md:grid-cols-[220px_minmax(0,1fr)]">
                                         <dt class="text-sm font-semibold text-slate-500">Dokumen Acuan</dt>
                                         <dd class="text-sm font-bold text-slate-900">
-                                            {{ $revisionSource->referenceDocument->nomor_dokumen ?: '-' }} - {{ $revisionSource->referenceDocument->nama_dokumen }}
+                                            {{ $revisionReference->nomor_dokumen ?: '-' }} - {{ $revisionReference->nama_dokumen }}
                                         </dd>
                                     </div>
                                 @endif
@@ -521,7 +527,7 @@
                                     <input
                                         type="text"
                                         name="nama_dokumen"
-                                        value="{{ old('nama_dokumen', $draft?->nama_dokumen) }}"
+                                        value="{{ old('nama_dokumen', $formSource?->nama_dokumen) }}"
                                         placeholder="Masukan nama dokumen"
                                         required
                                         @class([
@@ -591,12 +597,12 @@
                                             <option value="">-Pilih-</option>
                                             @foreach ($procedureReferences as $procedureReference)
                                                 <option
-                                                    value="{{ $procedureReference->id }}"
+                                                    value="{{ $procedureReference->reference_value }}"
                                                     data-business-process-id="{{ $procedureReference->m_proses_bisnis_id }}"
                                                     data-business-function-id="{{ $procedureReference->m_proses_fungsi_id }}"
-                                                    @selected((string) $selectedReferenceId === (string) $procedureReference->id)
+                                                    @selected((string) $selectedReferenceId === (string) $procedureReference->reference_value)
                                                 >
-                                                    {{ $procedureReference->procedure_reference_number ?: $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }}
+                                                    {{ $procedureReference->procedure_reference_number ?: $procedureReference->nomor_dokumen ?: '-' }} - {{ $procedureReference->nama_dokumen }} ({{ $procedureReference->reference_source_label }})
                                                 </option>
                                             @endforeach
                                         </select>
@@ -612,7 +618,7 @@
                     <x-documents.official-preparer
                         :label="$ownerLabel"
                         :users="$assignableUsers"
-                        :selected-user="$draft?->officialPreparer"
+                        :selected-user="$formSource?->officialPreparer"
                     />
 
                     <x-documents.form-section :title="$levelKey === 'level-4' ? 'Dokumen Revisi' : 'Isi Dokumen'" icon="cloud-arrow-up">
@@ -839,7 +845,7 @@
                                 :prefix="$documentNumberPrefix"
                                 :segments="$documentNumberSegments"
                                 :default-value="$documentNumberSuffixDefault"
-                                :readonly-suffix="(bool) $revisionSource"
+                                :readonly-suffix="(bool) ($revisionSource || $resubmissionSource)"
                             />
 
                             <label class="block">

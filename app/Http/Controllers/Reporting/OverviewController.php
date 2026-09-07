@@ -7,6 +7,7 @@ use App\Models\BusinessFunction;
 use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentLevel;
+use App\Models\DocumentRelation;
 use App\Models\StatusDocument;
 use Illuminate\Contracts\View\View;
 use Illuminate\Database\Eloquent\Builder;
@@ -147,7 +148,9 @@ class OverviewController extends Controller
                     $query
                         ->selectRaw('1')
                         ->from('t_document as instructions')
-                        ->whereColumn('instructions.reference', 't_document.id')
+                        ->join('document_relations', 'document_relations.source_document_id', '=', 'instructions.id')
+                        ->whereColumn('document_relations.target_document_id', 't_document.id')
+                        ->where('document_relations.relation_type', DocumentRelation::REFERENCES)
                         ->where('instructions.m_document_level_id', $instructionLevelId)
                         ->whereIn('instructions.m_status_document_id', $this->publishedStatusIds())
                         ->where(function ($query): void {
@@ -168,15 +171,18 @@ class OverviewController extends Controller
         $procedureIds = $procedures->getCollection()->pluck('id');
         $instructions = Document::query()
             ->with(['businessFunction', 'departments'])
-            ->whereIn('reference', $procedureIds)
+            ->join('document_relations', 'document_relations.source_document_id', '=', 't_document.id')
+            ->whereIn('document_relations.target_document_id', $procedureIds)
+            ->where('document_relations.relation_type', DocumentRelation::REFERENCES)
             ->where('m_document_level_id', $instructionLevelId)
             ->where($this->publishedDocumentScope())
             ->when($filters['instruction'] !== '', fn (Builder $query) => $query->where('nama_dokumen', 'like', '%'.$filters['instruction'].'%'))
+            ->select('t_document.*', 'document_relations.target_document_id as procedure_reference_id')
             ->orderBy('nomor_dokumen')
             ->orderByDesc('nomor_revisi')
             ->orderBy('nama_dokumen')
             ->get()
-            ->groupBy('reference');
+            ->groupBy('procedure_reference_id');
 
         $procedures->setCollection(
             $procedures->getCollection()->map(fn (Document $procedure): array => $this->formatProcedureRow(
@@ -193,15 +199,18 @@ class OverviewController extends Controller
         $procedureIds = $procedures->pluck('id');
         $instructions = Document::query()
             ->with(['businessFunction', 'departments', 'status'])
-            ->whereIn('reference', $procedureIds)
+            ->join('document_relations', 'document_relations.source_document_id', '=', 't_document.id')
+            ->whereIn('document_relations.target_document_id', $procedureIds)
+            ->where('document_relations.relation_type', DocumentRelation::REFERENCES)
             ->where('m_document_level_id', $instructionLevelId)
             ->where($this->publishedDocumentScope())
             ->when($filters['instruction'] !== '', fn (Builder $query) => $query->where('nama_dokumen', 'like', '%'.$filters['instruction'].'%'))
+            ->select('t_document.*', 'document_relations.target_document_id as procedure_reference_id')
             ->orderBy('nomor_dokumen')
             ->orderByDesc('nomor_revisi')
             ->orderBy('nama_dokumen')
             ->get()
-            ->groupBy('reference');
+            ->groupBy('procedure_reference_id');
         $counter = 1;
 
         return $procedures->flatMap(function (Document $procedure) use ($instructions, &$counter): array {
