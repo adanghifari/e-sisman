@@ -86,6 +86,7 @@ class DocumentApprovalController extends Controller
             'approvalFlowDocumentLevel' => $this->approvalFlowDocumentLevel($document),
             'canManageApproverAssignment' => $this->canManageApproverAssignment($request, $document),
             'canUpdateSubmittedDocument' => $this->canUpdateSubmittedDocument($request, $document),
+            'canResubmitRejectedDocument' => $this->canResubmitRejectedDocument($request, $document),
             'assignableUsers' => User::query()->with('department')->orderBy('name')->get(),
             'businessProcesses' => BusinessProcess::query()->active()->orderBy('nama_proses_bisnis')->get(),
             'businessFunctions' => BusinessFunction::query()->active()->orderBy('nama_proses_fungsi')->get(),
@@ -727,6 +728,15 @@ class DocumentApprovalController extends Controller
         }
 
         return $request->user()->isDeveloper() || $request->user()->canUpdateSubmittedDocument($document);
+    }
+
+    private function canResubmitRejectedDocument(Request $request, Document $document): bool
+    {
+        return $document->status?->nama_status === StatusDocument::REJECTED
+            && in_array($request->user()->id, array_filter([
+                $document->user_id,
+                $document->official_preparer_id,
+            ]), true);
     }
 
     private function hasAssignedApprovalFlowApprovers(Document $document): bool

@@ -1201,7 +1201,7 @@ class CreateDocumentTest extends TestCase
             ->exists());
     }
 
-    public function test_rejected_revision_resubmission_rewrites_rejected_attempt_and_reuses_revision_number_and_form_number(): void
+    public function test_rejected_revision_resubmission_creates_new_attempt_and_reuses_revision_number_and_form_number(): void
     {
         Storage::fake('local');
 
@@ -1230,6 +1230,7 @@ class CreateDocumentTest extends TestCase
         $this->actingAs($submitter)
             ->post(route('documents.store', 'level-4'), $this->revisionSubmitPayload($source, $officialPreparer, [
                 'nama_dokumen' => 'Prosedur Revisi Setelah Ditolak',
+                'resubmitted_from' => $rejectedRevision->id,
             ]))
             ->assertRedirect(route('documents.create'));
 
@@ -1237,8 +1238,9 @@ class CreateDocumentTest extends TestCase
             ->where('nama_dokumen', 'Prosedur Revisi Setelah Ditolak')
             ->firstOrFail();
 
-        $this->assertSame($rejectedRevision->id, $revision->id);
-        $this->assertNull($revision->resubmitted_from);
+        $this->assertNotSame($rejectedRevision->id, $revision->id);
+        $this->assertSame($rejectedRevision->id, $revision->resubmitted_from);
+        $this->assertSame(StatusDocument::REJECTED, $rejectedRevision->refresh()->status->nama_status);
         $this->assertSame(StatusDocument::PROPOSED, $revision->status->nama_status);
         $this->assertNull($revision->rejected_at);
         $this->assertSame(1, $revision->nomor_revisi);
@@ -1291,7 +1293,7 @@ class CreateDocumentTest extends TestCase
         ]);
 
         $this->actingAs($submitter)
-            ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
+            ->get(route('documents.create.level', ['level-4', 'resubmitted_from' => $secondAttempt->id]))
             ->assertOk()
             ->assertSee('00.01')
             ->assertDontSee('00.02');
@@ -1299,6 +1301,7 @@ class CreateDocumentTest extends TestCase
         $this->actingAs($submitter)
             ->post(route('documents.store', 'level-4'), $this->revisionSubmitPayload($source, $officialPreparer, [
                 'nama_dokumen' => 'Revisi Setelah Ditolak Dua Kali',
+                'resubmitted_from' => $secondAttempt->id,
             ]))
             ->assertRedirect(route('documents.create'));
 
@@ -1306,8 +1309,9 @@ class CreateDocumentTest extends TestCase
             ->where('nama_dokumen', 'Revisi Setelah Ditolak Dua Kali')
             ->firstOrFail();
 
-        $this->assertSame($secondAttempt->id, $revision->id);
-        $this->assertNull($revision->resubmitted_from);
+        $this->assertNotSame($secondAttempt->id, $revision->id);
+        $this->assertSame($secondAttempt->id, $revision->resubmitted_from);
+        $this->assertSame(StatusDocument::REJECTED, $secondAttempt->refresh()->status->nama_status);
         $this->assertSame(StatusDocument::PROPOSED, $revision->status->nama_status);
         $this->assertNull($revision->rejected_at);
         $this->assertSame($source->id, $revision->revised_from);
@@ -1317,7 +1321,7 @@ class CreateDocumentTest extends TestCase
         $this->assertSame('FMPS-SMR-010-01', $revision->nomor_lembar_revisi);
     }
 
-    public function test_rewritten_rejected_revision_reuses_new_attachment_numbers(): void
+    public function test_rejected_revision_resubmission_copies_previous_files_and_keeps_new_attachment_numbers_sequential(): void
     {
         Storage::fake('local');
 
@@ -1406,7 +1410,8 @@ class CreateDocumentTest extends TestCase
 
         $this->actingAs($submitter)
             ->post(route('documents.store', 'level-4'), $this->revisionSubmitPayload($source, $officialPreparer, [
-                'nama_dokumen' => 'Revisi Rewrite Dengan Lampiran',
+                'nama_dokumen' => 'Revisi Resubmit Dengan Lampiran',
+                'resubmitted_from' => $rejectedRevision->id,
                 'included_attachment_ids' => $source->files()->where('type_file', 'attachment')->pluck('id')->all(),
                 'attachment_titles' => ['Invoice', 'Ringkasan ETA'],
                 'attachment_orders' => [3, 4],
@@ -1417,7 +1422,9 @@ class CreateDocumentTest extends TestCase
             ]))
             ->assertRedirect(route('documents.create'));
 
-        $revision = $rejectedRevision->refresh();
+        $revision = Document::query()
+            ->where('nama_dokumen', 'Revisi Resubmit Dengan Lampiran')
+            ->firstOrFail();
         $newAttachments = $revision->files()
             ->where('type_file', 'attachment')
             ->whereNull('source_file_id')
@@ -1426,14 +1433,17 @@ class CreateDocumentTest extends TestCase
             ->get();
 
         $this->assertSame(StatusDocument::PROPOSED, $revision->status->nama_status);
-        $this->assertSame(['FMPS-SMR-010-04', 'FMPS-SMR-010-05'], $newAttachments->pluck('document_number')->all());
+        $this->assertSame($rejectedRevision->id, $revision->resubmitted_from);
+        $this->assertSame(StatusDocument::REJECTED, $rejectedRevision->refresh()->status->nama_status);
+        $this->assertSame(['FMPS-SMR-010-05', 'FMPS-SMR-010-06'], $newAttachments->pluck('document_number')->all());
         $this->assertSame(['Invoice', 'Ringkasan ETA'], $newAttachments->pluck('attachment_title')->all());
         $this->assertSame([
             ['number' => 1, 'title' => 'Lembar Revisi', 'document_number' => 'FMPS-SMR-010-01'],
             ['number' => 2, 'title' => 'Lampiran BAPP', 'document_number' => 'FMPS-SMR-010-02'],
             ['number' => 3, 'title' => 'Lampiran Sketsa', 'document_number' => 'FMPS-SMR-010-03'],
-            ['number' => 4, 'title' => 'Invoice', 'document_number' => 'FMPS-SMR-010-04'],
-            ['number' => 5, 'title' => 'Ringkasan ETA', 'document_number' => 'FMPS-SMR-010-05'],
+            ['number' => 4, 'title' => 'Invoice Ditolak', 'document_number' => 'FMPS-SMR-010-04'],
+            ['number' => 5, 'title' => 'Invoice', 'document_number' => 'FMPS-SMR-010-05'],
+            ['number' => 6, 'title' => 'Ringkasan ETA', 'document_number' => 'FMPS-SMR-010-06'],
         ], collect(app(FinalArtifactGenerator::class)->collectAttachments($revision))->map(
             fn (array $attachment): array => [
                 'number' => $attachment['number'],
@@ -1441,8 +1451,8 @@ class CreateDocumentTest extends TestCase
                 'document_number' => $attachment['document_number'],
             ],
         )->all());
-        $this->assertFalse(Storage::disk('local')->exists("documents/{$rejectedRevision->id}/invoice-ditolak.pdf"));
-        $this->assertSame(2, Document::query()->where('revised_from', $source->id)->where('request_type', 'revision')->count());
+        $this->assertTrue(Storage::disk('local')->exists("documents/{$rejectedRevision->id}/invoice-ditolak.pdf"));
+        $this->assertSame(3, Document::query()->where('revised_from', $source->id)->where('request_type', 'revision')->count());
     }
 
     public function test_revision_submit_with_new_attachment_compacts_active_attachment_numbers(): void
@@ -1911,6 +1921,66 @@ class CreateDocumentTest extends TestCase
 
         $this->assertSame($previous->id, $newDocument->resubmitted_from);
         $this->assertSame(StatusDocument::REJECTED, $previous->refresh()->status->nama_status);
+    }
+
+    public function test_rejected_initial_submission_resubmit_prefills_and_copies_previous_file(): void
+    {
+        Storage::fake('local');
+
+        [$user, $businessProcess, $businessFunction, $department, $level, $documentType] = $this->initialResubmissionFixture();
+        $previous = $this->createRejectedInitialAttempt($user, $level, $documentType, $businessProcess, $businessFunction, 'PS-QA-013', [
+            'nama_dokumen' => 'Prosedur Ditolak Perlu Revisi',
+        ]);
+        $previousFile = $previous->files()->create([
+            'type_file' => 'filled_template',
+            'path_file' => "documents/{$previous->id}/template-ditolak.pdf",
+            'uploaded_by' => $user->id,
+            'updated_at' => now(),
+            'original_file_name' => 'template-ditolak.pdf',
+            'stored_file_name' => 'template-ditolak.pdf',
+            'file_size' => 24,
+        ]);
+        Storage::disk('local')->put($previousFile->path_file, 'PDF test content');
+
+        $this->actingAs($user)
+            ->get(route('documents.rejected.resubmit', $previous))
+            ->assertRedirect(route('documents.create.level', [
+                'level' => 'level-2',
+                'resubmitted_from' => $previous->id,
+            ]));
+
+        $this->actingAs($user)
+            ->get(route('documents.create.level', [
+                'level' => 'level-2',
+                'resubmitted_from' => $previous->id,
+            ]))
+            ->assertOk()
+            ->assertSee('Prosedur Ditolak Perlu Revisi')
+            ->assertSee('template-ditolak.pdf');
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-2'), [
+                'nama_dokumen' => 'Prosedur Ditolak Perlu Revisi',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'nomor_dokumen_suffix' => '999',
+                'resubmitted_from' => $previous->id,
+                'submit_action' => 'submit',
+            ])
+            ->assertRedirect(route('documents.create'));
+
+        $resubmission = Document::query()
+            ->where('nomor_dokumen', 'PS-QA-013')
+            ->whereKeyNot($previous->id)
+            ->firstOrFail();
+        $copiedFile = $resubmission->files()->where('source_file_id', $previousFile->id)->firstOrFail();
+
+        $this->assertSame($previous->id, $resubmission->resubmitted_from);
+        $this->assertSame('template-ditolak.pdf', $copiedFile->original_file_name);
+        Storage::disk('local')->assertExists($copiedFile->path_file);
+        Storage::disk('local')->assertExists($previousFile->path_file);
     }
 
     public function test_rejected_initial_submission_clears_file_numbers_before_resubmission(): void

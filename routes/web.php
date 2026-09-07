@@ -46,6 +46,8 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::get('documents/drafts', [DocumentController::class, 'drafts'])->name('documents.create.drafts');
     Route::get('documents/drafts/{document}/edit', [DocumentController::class, 'editDraft'])
         ->name('documents.create.drafts.edit');
+    Route::get('documents/rejected/{document}/resubmit', [DocumentController::class, 'resubmitRejected'])
+        ->name('documents.rejected.resubmit');
     Route::delete('documents/drafts/{document}', [DocumentController::class, 'destroyDraft'])
         ->name('documents.create.drafts.destroy');
     Route::get('documents/create/{level}', [DocumentController::class, 'create'])

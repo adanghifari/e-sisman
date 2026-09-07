@@ -691,6 +691,87 @@ class DocumentInboxTest extends TestCase
         $this->assertTrue($historyDescriptions->contains('Memasuki tahap approval Diperiksa Oleh'));
     }
 
+    public function test_rejected_initial_submission_history_shows_resubmit_action_for_submitter_and_official_preparer(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create(['name' => 'Pengisi Form Rejected']);
+        $officialPreparer = User::factory()->create(['name' => 'Penyusun Resmi Rejected']);
+        $rejectedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::REJECTED]);
+        $document = $this->createDocument($submitter, [
+            'm_status_document_id' => $rejectedStatus->id,
+            'official_preparer_id' => $officialPreparer->id,
+            'nama_dokumen' => 'Prosedur Initial Ditolak',
+            'rejected_at' => now(),
+        ]);
+        $this->createApproval($document, User::factory()->create(), ApprovalStatus::REJECTED, [
+            'responded_at' => now(),
+            'catatan' => 'Perlu diperbaiki.',
+        ]);
+
+        foreach ([$submitter, $officialPreparer] as $user) {
+            $this->actingAs($user)
+                ->get(route('documents.inbox', ['tab' => 'processed-history']))
+                ->assertOk()
+                ->assertSee('Prosedur Initial Ditolak')
+                ->assertDontSee('Ajukan Ulang Dokumen')
+                ->assertDontSee(route('documents.rejected.resubmit', $document), false);
+
+            $this->actingAs($user)
+                ->get(route('documents.approval.show', $document))
+                ->assertOk()
+                ->assertSee('Ajukan Ulang Dokumen')
+                ->assertSee(route('documents.rejected.resubmit', $document), false);
+        }
+    }
+
+    public function test_rejected_revision_history_shows_resubmit_action_for_submitter_and_official_preparer(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        $submitter = User::factory()->create(['name' => 'Pengisi Revisi Rejected']);
+        $officialPreparer = User::factory()->create(['name' => 'Penyusun Revisi Rejected']);
+        $approvedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        $rejectedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::REJECTED]);
+        $master = $this->createDocument($submitter, [
+            'm_status_document_id' => $approvedStatus->id,
+            'official_preparer_id' => $officialPreparer->id,
+            'nama_dokumen' => 'Master Untuk Revisi',
+            'nomor_dokumen' => 'PS-SMR-091',
+            'approved_at' => now(),
+        ]);
+        $revision = $this->createDocument($submitter, [
+            'm_status_document_id' => $rejectedStatus->id,
+            'official_preparer_id' => $officialPreparer->id,
+            'revised_from' => $master->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Revisi Ditolak Untuk History',
+            'nomor_dokumen' => 'PS-SMR-091',
+            'nomor_lembar_revisi' => 'FMPS-SMR-091-01',
+            'nomor_revisi' => 1,
+            'rejected_at' => now(),
+        ]);
+        $this->createApproval($revision, User::factory()->create(), ApprovalStatus::REJECTED, [
+            'responded_at' => now(),
+            'catatan' => 'Revisi perlu diperbaiki.',
+        ]);
+
+        foreach ([$submitter, $officialPreparer] as $user) {
+            $this->actingAs($user)
+                ->get(route('documents.inbox', ['tab' => 'processed-history']))
+                ->assertOk()
+                ->assertSee('Revisi Ditolak Untuk History')
+                ->assertDontSee('Ajukan Ulang Revisi')
+                ->assertDontSee(route('documents.rejected.resubmit', $revision), false);
+
+            $this->actingAs($user)
+                ->get(route('documents.approval.show', $revision))
+                ->assertOk()
+                ->assertSee('Ajukan Ulang Revisi')
+                ->assertSee(route('documents.rejected.resubmit', $revision), false);
+        }
+    }
+
     public function test_submitter_history_shows_revision_form_number_after_work_instruction_revision_is_approved(): void
     {
         $submitter = User::factory()->create(['name' => 'Pengaju Revisi IK']);
