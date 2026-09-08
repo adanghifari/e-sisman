@@ -158,6 +158,8 @@ class FinalArtifactGenerator
             'approvals.status',
             'revisedFrom.documentLevel',
             'revisedFrom.documentType',
+            'importedExistingSource.documentLevel',
+            'importedExistingSource.documentType',
         ]);
         $coverDocumentLevel = $this->coverDocumentLevel($document);
         $coverDocumentType = $this->coverDocumentType($document);
@@ -209,7 +211,9 @@ class FinalArtifactGenerator
     private function coverDocumentLevel(Document $document): ?DocumentLevel
     {
         if ($document->request_type === 'revision' && $document->documentLevel?->kode === 'level-4') {
-            return $document->revisedFrom?->documentLevel ?: $document->documentLevel;
+            return $document->revisedFrom?->documentLevel
+                ?: $document->importedExistingSource?->documentLevel
+                ?: $document->documentLevel;
         }
 
         return $document->documentLevel;
@@ -218,7 +222,9 @@ class FinalArtifactGenerator
     private function coverDocumentType(Document $document): ?DocumentType
     {
         if ($document->request_type === 'revision' && $document->documentLevel?->kode === 'level-4') {
-            return $document->revisedFrom?->documentType ?: $document->documentType;
+            return $document->revisedFrom?->documentType
+                ?: $document->importedExistingSource?->documentType
+                ?: $document->documentType;
         }
 
         return $document->documentType;
@@ -409,10 +415,11 @@ class FinalArtifactGenerator
         $document->loadMissing([
             'documentLevel.approvalFlows.stages',
             'revisedFrom.documentLevel.approvalFlows.stages',
+            'importedExistingSource.documentLevel.approvalFlows.stages',
         ]);
 
-        $documentLevel = $document->documentLevel?->kode === 'level-4' && $document->revisedFrom?->documentLevel !== null
-            ? $document->revisedFrom->documentLevel
+        $documentLevel = $document->documentLevel?->kode === 'level-4'
+            ? ($document->revisedFrom?->documentLevel ?: $document->importedExistingSource?->documentLevel ?: $document->documentLevel)
             : $document->documentLevel;
 
         return $documentLevel

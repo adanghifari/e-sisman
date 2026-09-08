@@ -1381,7 +1381,14 @@ class DocumentController extends Controller
             ->lockForUpdate()
             ->first();
 
-        if ($registry !== null && $registry->source_type !== DocumentNumberRegistry::SOURCE_T_DOCUMENT) {
+        $isRevisingThisImportedMaster = $document->imported_existing_source_id !== null
+            && $registry?->source_type === DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING;
+
+        if (
+            $registry !== null
+            && $registry->source_type !== DocumentNumberRegistry::SOURCE_T_DOCUMENT
+            && ! $isRevisingThisImportedMaster
+        ) {
             throw ValidationException::withMessages([
                 'nomor_dokumen_suffix' => 'Nomor dokumen sudah terdaftar sebagai imported existing.',
             ]);

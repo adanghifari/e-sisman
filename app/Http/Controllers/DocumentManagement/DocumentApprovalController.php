@@ -62,6 +62,9 @@ class DocumentApprovalController extends Controller
             'revisedFrom.documentLevel.approvalFlows.stages',
             'revisedFrom.creator',
             'revisedFrom.files.uploader',
+            'importedExistingSource.documentLevel.approvalFlows.stages',
+            'importedExistingSource.uploader',
+            'importedExistingSource.files.uploader',
         ]);
 
         $this->normalizeSubmittedSourceAttachmentLineage($document);
@@ -601,10 +604,17 @@ class DocumentApprovalController extends Controller
         $document->loadMissing([
             'documentLevel.approvalFlows.stages',
             'revisedFrom.documentLevel.approvalFlows.stages',
+            'importedExistingSource.documentLevel.approvalFlows.stages',
         ]);
 
-        if ($document->documentLevel?->kode === 'level-4' && $document->revisedFrom?->documentLevel !== null) {
-            return $document->revisedFrom->documentLevel;
+        if ($document->documentLevel?->kode === 'level-4') {
+            if ($document->revisedFrom?->documentLevel !== null) {
+                return $document->revisedFrom->documentLevel;
+            }
+
+            if ($document->importedExistingSource?->documentLevel !== null) {
+                return $document->importedExistingSource->documentLevel;
+            }
         }
 
         return $document->documentLevel;
@@ -612,8 +622,14 @@ class DocumentApprovalController extends Controller
 
     private function masterDisplayNumber(Document $document): string
     {
-        if ($document->revised_from === null) {
+        if ($document->revised_from === null && $document->imported_existing_source_id === null) {
             return $document->nomor_dokumen ?: '-';
+        }
+
+        if ($document->imported_existing_source_id !== null) {
+            return $document->importedExistingSource?->nomor_dokumen
+                ?: $document->nomor_dokumen
+                ?: '-';
         }
 
         $rootDocument = Document::query()
@@ -628,7 +644,7 @@ class DocumentApprovalController extends Controller
 
     private function revisionRequestDisplayNumber(Document $document): ?string
     {
-        if ($document->revised_from === null) {
+        if ($document->revised_from === null && $document->imported_existing_source_id === null) {
             return null;
         }
 

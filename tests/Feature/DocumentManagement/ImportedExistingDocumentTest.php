@@ -2,6 +2,8 @@
 
 namespace Tests\Feature\DocumentManagement;
 
+use App\Models\ApprovalFlow;
+use App\Models\ApprovalFlowStage;
 use App\Models\ApprovalStatus;
 use App\Models\BusinessFunction;
 use App\Models\BusinessProcess;
@@ -513,6 +515,14 @@ class ImportedExistingDocumentTest extends TestCase
             'relation_type' => DocumentRelation::SUPERSEDED_BY,
             'created_by' => $user->id,
         ]);
+        DocumentNumberRegistry::create([
+            'document_number' => 'PS-SMR-120',
+            'scope_identifier' => 'PS-SMR',
+            'source_type' => DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING,
+            'source_id' => $source->id,
+            'registered_by' => $user->id,
+            'registered_at' => now(),
+        ]);
 
         $response = $this->actingAs($user)
             ->post(route('documents.store', 'level-4'), [
@@ -532,6 +542,12 @@ class ImportedExistingDocumentTest extends TestCase
         $revision = Document::query()
             ->where('imported_existing_source_id', $source->id)
             ->firstOrFail();
+
+        $this->assertDatabaseHas('document_number_registry', [
+            'document_number' => 'PS-SMR-120',
+            'source_type' => DocumentNumberRegistry::SOURCE_T_DOCUMENT,
+            'source_id' => $revision->id,
+        ]);
 
         $this->assertSame($proposedStatus->id, $revision->m_status_document_id);
         $this->assertNull($revision->revised_from);
@@ -1441,6 +1457,100 @@ class ImportedExistingDocumentTest extends TestCase
             ->assertDontSee('file1.pdf');
 
         $this->assertCount(1, $importedMaster->files()->where('type_file', ImportedExistingDocumentFile::EXISTING_DOCUMENT)->get());
+    }
+
+    public function test_imported_existing_master_revision_can_display_stages_and_be_assigned_approvers(): void
+    {
+        Storage::fake('local');
+
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.existing.imports.revision',
+            'documents.approval.assign',
+            'documents.approval.show',
+        ]);
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::PROPOSED]);
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::OBSOLETE]);
+        ApprovalStatus::query()->firstOrCreate(['kode_status' => ApprovalStatus::PENDING], ['nama_status' => 'Menunggu']);
+        ApprovalStatus::query()->firstOrCreate(['kode_status' => ApprovalStatus::WAITING], ['nama_status' => 'Menunggu Giliran']);
+        ApprovalStatus::query()->firstOrCreate(['kode_status' => ApprovalStatus::APPROVED], ['nama_status' => 'Disetujui']);
+        ApprovalStatus::query()->firstOrCreate(['kode_status' => ApprovalStatus::REJECTED], ['nama_status' => 'Ditolak']);
+        ApprovalStatus::query()->firstOrCreate(['kode_status' => ApprovalStatus::TERMINATED], ['nama_status' => 'Dihentikan']);
+
+        $flow = ApprovalFlow::create([
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'nama_flow' => 'Flow Level 2',
+        ]);
+        $stage = ApprovalFlowStage::create([
+            'm_approval_flow_id' => $flow->id,
+            'stage_order' => 1,
+            'nama_tahap' => 'Tahap Pemeriksaan',
+            'display_label' => 'Tahap Pemeriksaan',
+        ]);
+
+        $source = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Master Source For Assign',
+            'nomor_dokumen' => 'PS-SMR-130',
+            'nomor_revisi' => '00.00',
+        ]);
+        $source->departments()->sync([$department->id]);
+        DocumentNumberRegistry::create([
+            'document_number' => 'PS-SMR-130',
+            'scope_identifier' => 'PS-SMR',
+            'source_type' => DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING,
+            'source_id' => $source->id,
+            'registered_by' => $user->id,
+            'registered_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-4'), [
+                'imported_source' => $source->id,
+                'submit_action' => 'submit',
+                'nama_dokumen' => 'Imported Master Revision Assign Test',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'revision_content' => UploadedFile::fake()->create('revision-content.pdf', 100, 'application/pdf'),
+                'revision_form' => UploadedFile::fake()->create('revision-form.pdf', 100, 'application/pdf'),
+            ])
+            ->assertRedirect();
+
+        $revision = Document::query()
+            ->where('imported_existing_source_id', $source->id)
+            ->firstOrFail();
+
+        $approver = User::factory()->create();
+
+        $this->actingAs($user)
+            ->get(route('documents.approval.show', $revision))
+            ->assertOk()
+            ->assertSee('Tahap Pemeriksaan')
+            ->assertDontSee('Belum ada aturan tahap approval.');
+
+        $response = $this->actingAs($user)
+            ->post(route('documents.approval.assign', $revision), [
+                'stage_approvers' => [
+                    $stage->id => [$approver->id],
+                ],
+            ]);
+        $response->assertRedirect(route('documents.approval.show', $revision));
+
+        $this->assertDatabaseHas('t_approval', [
+            't_document_id' => $revision->id,
+            'user_id' => $approver->id,
+            'm_approval_flow_stage_id' => $stage->id,
+            'stages' => 'Tahap Pemeriksaan',
+        ]);
     }
 
     private function existingMasterFixture(array $permissionCodes): array
