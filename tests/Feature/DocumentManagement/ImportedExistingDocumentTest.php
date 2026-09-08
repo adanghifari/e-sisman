@@ -767,6 +767,122 @@ class ImportedExistingDocumentTest extends TestCase
             ->assertSee('value="'.$source->id.'"', false);
     }
 
+    public function test_rejected_imported_existing_master_revision_can_be_accessed_and_resubmitted_without_404(): void
+    {
+        Storage::fake('local');
+
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.existing.imports.revision',
+            'documents.create.create',
+        ]);
+        $proposedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::PROPOSED]);
+        $rejectedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::REJECTED]);
+        ApprovalStatus::query()->firstOrCreate(['kode_status' => ApprovalStatus::APPROVED], ['nama_status' => 'Disetujui']);
+        ApprovalStatus::query()->firstOrCreate(['kode_status' => ApprovalStatus::PENDING], ['nama_status' => 'Menunggu']);
+        ApprovalStatus::query()->firstOrCreate(['kode_status' => ApprovalStatus::REJECTED], ['nama_status' => 'Ditolak']);
+        $formLevel = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $formType = DocumentType::query()->where('nama_types', 'Form')->firstOrFail();
+
+        $source = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Master Resubmit Test',
+            'nomor_dokumen' => 'PS-SMR-RESUBMIT',
+            'nomor_revisi' => '00.01',
+        ]);
+        $source->departments()->sync([$department->id]);
+
+        $rejectedRevision = Document::create([
+            'm_document_level_id' => $formLevel->id,
+            'm_status_document_id' => $rejectedStatus->id,
+            'm_document_types_id' => $formType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'imported_existing_source_id' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Imported Master Revisi Ditolak',
+            'nomor_dokumen' => 'PS-SMR-RESUBMIT',
+            'nomor_lembar_revisi' => 'FMPS-SMR-RESUBMIT-02',
+            'nomor_revisi' => 2,
+            'rejected_at' => now(),
+        ]);
+        $rejectedRevision->departments()->sync([$department->id]);
+
+        $rejectedRevision->files()->create([
+            'path_file' => 'documents/rev-content.pdf',
+            'original_file_name' => 'rev-content.pdf',
+            'stored_file_name' => 'rev-content.pdf',
+            'file_size' => 1024,
+            'type_file' => 'revision_content',
+            'uploaded_by' => $user->id,
+        ]);
+        $rejectedRevision->files()->create([
+            'path_file' => 'documents/rev-form.pdf',
+            'original_file_name' => 'rev-form.pdf',
+            'stored_file_name' => 'rev-form.pdf',
+            'file_size' => 1024,
+            'type_file' => 'revision_form',
+            'uploaded_by' => $user->id,
+        ]);
+
+        // 1. Tombol Ajukan Ulang mengarah ke documents.rejected.resubmit
+        $this->actingAs($user)
+            ->get(route('documents.rejected.resubmit', $rejectedRevision))
+            ->assertRedirect(route('documents.create.level', [
+                'level' => 'level-4',
+                'resubmitted_from' => $rejectedRevision->id,
+            ]));
+
+        // 2. Akses halaman create level-4 dengan resubmitted_from tidak boleh 404
+        $this->actingAs($user)
+            ->get(route('documents.create.level', [
+                'level' => 'level-4',
+                'resubmitted_from' => $rejectedRevision->id,
+            ]))
+            ->assertOk()
+            ->assertSee('PS-SMR-RESUBMIT')
+            ->assertSee('Imported Master Revisi Ditolak')
+            ->assertSee('name="resubmitted_from"', false)
+            ->assertSee('value="'.$rejectedRevision->id.'"', false);
+
+        // 3. Submit pengajuan ulang revisi
+        $response = $this->actingAs($user)
+            ->post(route('documents.store', 'level-4'), [
+                'resubmitted_from' => $rejectedRevision->id,
+                'submit_action' => 'submit',
+                'nama_dokumen' => 'Imported Master Revisi Diajukan Ulang',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'revision_content' => UploadedFile::fake()->create('new-revision-content.pdf', 100, 'application/pdf'),
+                'revision_form' => UploadedFile::fake()->create('new-revision-form.pdf', 100, 'application/pdf'),
+            ]);
+
+        $response->assertRedirect(route('documents.create'));
+
+        $resubmittedDoc = Document::query()
+            ->where('nama_dokumen', 'Imported Master Revisi Diajukan Ulang')
+            ->firstOrFail();
+
+        $this->assertSame($rejectedRevision->id, $resubmittedDoc->resubmitted_from);
+        $this->assertSame($source->id, $resubmittedDoc->imported_existing_source_id);
+        $this->assertSame(StatusDocument::PROPOSED, $resubmittedDoc->status->nama_status);
+        $this->assertSame(StatusDocument::REJECTED, $rejectedRevision->fresh()->status->nama_status);
+        $this->assertSame(2, $resubmittedDoc->nomor_revisi);
+        $this->assertSame('00.02', $resubmittedDoc->formatted_revision);
+        $this->assertSame('PS-SMR-RESUBMIT', $resubmittedDoc->nomor_dokumen);
+        $this->assertSame('FMPS-SMR-RESUBMIT-02', $resubmittedDoc->nomor_lembar_revisi);
+        $this->assertNull($resubmittedDoc->rejected_at);
+    }
+
     public function test_current_rule_requires_all_modern_master_data(): void
     {
         Storage::fake('local');

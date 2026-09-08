@@ -51,7 +51,9 @@ class DocumentController extends Controller
     public function create(Request $request, string $level): View
     {
         $resubmissionSource = $this->resubmissionSourceForRequest($request, $level);
-        $revisionSource = $resubmissionSource?->revisedFrom ?: $this->revisionSourceForRequest($request, $level);
+        $revisionSource = $resubmissionSource?->revisedFrom
+            ?: $resubmissionSource?->importedExistingSource
+            ?: $this->revisionSourceForRequest($request, $level);
 
         abort_if($level === 'level-4' && $revisionSource === null, 404);
 
@@ -170,6 +172,7 @@ class DocumentController extends Controller
         $revisionSource = $draft?->revisedFrom
             ?: $draft?->importedExistingSource
             ?: $resubmissionSource?->revisedFrom
+            ?: $resubmissionSource?->importedExistingSource
             ?: $this->revisionSourceForRequest($request, $level);
 
         abort_if($level === 'level-4' && $revisionSource === null, 404);
@@ -250,10 +253,12 @@ class DocumentController extends Controller
 
                     $currentDocumentRevision = match (true) {
                         $draft !== null && $draft->imported_existing_source_id !== null => (int) $draft->nomor_revisi,
+                        $resubmissionSource !== null && $resubmissionSource->imported_existing_source_id !== null => (int) $resubmissionSource->nomor_revisi,
                         default => $this->nextImportedExistingRevisionNumber($lockedRevisionSource),
                     };
                     $currentDocumentNumber = $lockedRevisionSource->nomor_dokumen;
                     $currentRevisionFormNumber = $draft?->nomor_lembar_revisi
+                        ?: $resubmissionSource?->nomor_lembar_revisi
                         ?: app(DocumentFileNumbering::class)->revisionFormNumber($lockedRevisionSource);
 
                     $documentAttributes['m_proses_bisnis_id'] = $lockedRevisionSource->m_proses_bisnis_id;
@@ -480,7 +485,9 @@ class DocumentController extends Controller
             ->firstOrFail();
         $validated = $request->validate($this->autosaveValidationRulesForLevel($level));
         $resubmissionSource = $this->resubmissionSourceForRequest($request, $level);
-        $revisionSource = $resubmissionSource?->revisedFrom ?: $this->autosaveRevisionSourceForRequest($request, $level);
+        $revisionSource = $resubmissionSource?->revisedFrom
+            ?: $resubmissionSource?->importedExistingSource
+            ?: $this->autosaveRevisionSourceForRequest($request, $level);
 
         if (! $this->hasAutosavePayload($request, $validated)) {
             return response()->json([
@@ -655,8 +662,8 @@ class DocumentController extends Controller
                 'revised_attachments' => ['nullable', 'array', 'max:20'],
                 'revised_attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
                 'submit_action' => ['required', Rule::in(['draft', 'submit'])],
-                'revised_from' => ['required_without:imported_source', 'nullable', 'integer', Rule::exists('t_document', 'id')],
-                'imported_source' => ['required_without:revised_from', 'nullable', 'integer', Rule::exists('imported_existing_documents', 'id')],
+                'revised_from' => [$draft !== null || $resubmissionSource !== null ? 'nullable' : 'required_without:imported_source', 'nullable', 'integer', Rule::exists('t_document', 'id')],
+                'imported_source' => [$draft !== null || $resubmissionSource !== null ? 'nullable' : 'required_without:revised_from', 'nullable', 'integer', Rule::exists('imported_existing_documents', 'id')],
                 'resubmitted_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'remove_existing_files' => ['nullable', 'array'],
@@ -1212,6 +1219,11 @@ class DocumentController extends Controller
                 'revisedFrom.businessFunction',
                 'revisedFrom.departments',
                 'revisedFrom.outgoingRelations',
+                'importedExistingSource.documentLevel',
+                'importedExistingSource.businessProcess',
+                'importedExistingSource.businessFunction',
+                'importedExistingSource.departments',
+                'importedExistingSource.outgoingRelations',
             ])
             ->findOrFail((int) $sourceId);
 
@@ -1220,6 +1232,10 @@ class DocumentController extends Controller
 
         if ($source->revised_from !== null) {
             abort_unless($source->revisedFrom?->status?->nama_status === StatusDocument::APPROVED, 404);
+        }
+
+        if ($source->imported_existing_source_id !== null) {
+            abort_unless($source->importedExistingSource?->document_state === ImportedExistingDocument::STATE_MASTER, 404);
         }
 
         return $source;
