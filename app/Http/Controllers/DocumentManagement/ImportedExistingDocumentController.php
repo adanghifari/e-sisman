@@ -636,6 +636,12 @@ class ImportedExistingDocumentController extends Controller
 
         abort_unless($importedExistingDocument->document_state === ImportedExistingDocument::STATE_MASTER, 404);
 
+        if ($this->hasActiveRevisionRequest($importedExistingDocument)) {
+            throw ValidationException::withMessages([
+                'revision' => 'Dokumen ini masih memiliki pengajuan revisi aktif. Selesaikan approval revisi tersebut terlebih dahulu.',
+            ]);
+        }
+
         $validated = $request->validate([
             'nama_dokumen' => ['nullable', 'string', 'max:255'],
             'official_preparer_id' => ['required', 'integer', Rule::exists('users', 'id')],
@@ -1230,6 +1236,15 @@ class ImportedExistingDocumentController extends Controller
             ->max('nomor_revisi');
 
         return max($baseRevision, $latestWorkflowRevision) + 1;
+    }
+
+    private function hasActiveRevisionRequest(ImportedExistingDocument $document): bool
+    {
+        return Document::query()
+            ->where('imported_existing_source_id', $document->id)
+            ->where('request_type', 'revision')
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED))
+            ->exists();
     }
 
     private function normalizeImportedExistingRevision(?string $revision): int

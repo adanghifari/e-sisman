@@ -34,10 +34,17 @@
                         </a>
                     @endif
                     @if ($canRequestRevision)
-                        <button type="button" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-imported-revision-modal-open>
-                            <flux:icon name="arrow-path" class="size-4" />
-                            Ajukan Revisi
-                        </button>
+                        @if ($hasActiveRevisionRequest ?? false)
+                            <button type="button" class="inline-flex h-11 w-full cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-4 text-sm font-semibold text-slate-400 shadow-sm" disabled>
+                                <flux:icon name="clock" class="size-4" />
+                                Revisi dalam Pengajuan
+                            </button>
+                        @else
+                            <button type="button" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-imported-revision-modal-open>
+                                <flux:icon name="arrow-path" class="size-4" />
+                                Ajukan Revisi
+                            </button>
+                        @endif
                     @endif
                     @if ($canRequestObsolete)
                         <button type="button" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-50" data-imported-obsolete-modal-open>
@@ -51,7 +58,7 @@
     </x-slot:actions>
 
     <x-slot:modals>
-        @if ($canRequestRevision)
+        @if ($canRequestRevision && ! ($hasActiveRevisionRequest ?? false))
             <div class="fixed inset-0 z-50 hidden items-center justify-center overflow-y-auto bg-slate-950/40 px-4 py-6" data-imported-revision-modal>
                 <form method="POST" action="{{ route('documents.existing.imports.revisions.store', $document) }}" enctype="multipart/form-data" class="my-auto w-full max-w-3xl overflow-hidden rounded-lg bg-white shadow-xl">
                     @csrf

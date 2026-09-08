@@ -184,6 +184,7 @@ class DocumentMasterController extends Controller
             'masterDisplayNumber' => $this->masterDisplayNumber($document),
             'revisionRequestDisplayNumber' => $this->revisionRequestDisplayNumber($document),
             'canRequestRevision' => $this->canRequestRevision($request, $document),
+            'hasActiveRevisionRequest' => $this->hasActiveRevisionRequest($document),
             'canRequestObsolete' => $this->canRequestObsolete($request, $document),
             'canRestoreMaster' => $this->canRestoreMaster($request, $document),
             'approvalFlowStages' => $document->documentLevel
@@ -251,6 +252,7 @@ class DocumentMasterController extends Controller
             'revisionRequestDisplayNumber' => null,
             'canEdit' => $request->user()?->isAdmin() ?? false,
             'canRequestRevision' => $request->user()?->hasPermission('documents.existing.imports.revision') ?? false,
+            'hasActiveRevisionRequest' => $this->hasActiveImportedExistingRevisionRequest($importedExistingDocument),
             'canRequestObsolete' => $this->canRequestImportedObsolete($request, $importedExistingDocument),
             'approvalFlowStages' => collect(),
             'contentFiles' => $contentFiles,
@@ -533,6 +535,29 @@ class DocumentMasterController extends Controller
 
         return $document->departments()
             ->whereKey($user->m_department_id)
+            ->exists();
+    }
+
+    private function hasActiveRevisionRequest(Document $document): bool
+    {
+        return Document::query()
+            ->whereIn('id', $document->revisionFamily()->pluck('id'))
+            ->whereNotNull('revised_from')
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('request_type')
+                    ->orWhere('request_type', 'revision');
+            })
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED))
+            ->exists();
+    }
+
+    private function hasActiveImportedExistingRevisionRequest(ImportedExistingDocument $document): bool
+    {
+        return Document::query()
+            ->where('imported_existing_source_id', $document->id)
+            ->where('request_type', 'revision')
+            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED))
             ->exists();
     }
 

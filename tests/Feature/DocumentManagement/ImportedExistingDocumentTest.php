@@ -571,6 +571,63 @@ class ImportedExistingDocumentTest extends TestCase
             ->assertSee('Imported Master Source Versi Lama');
     }
 
+    public function test_imported_existing_master_cannot_start_revision_when_revision_is_still_proposed(): void
+    {
+        Storage::fake('local');
+
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.existing.imports.revision',
+        ]);
+        $source = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Master Revisi Aktif',
+            'nomor_dokumen' => 'PS-SMR-ACTIVE-IMPORT',
+            'nomor_revisi' => '00.00',
+        ]);
+        $source->departments()->sync([$department->id]);
+
+        $proposedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::PROPOSED]);
+        Document::create([
+            'm_document_level_id' => $level->id,
+            'm_status_document_id' => $proposedStatus->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'user_id' => $user->id,
+            'official_preparer_id' => $user->id,
+            'imported_existing_source_id' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Imported Master Revisi Aktif Rev 1',
+            'nomor_dokumen' => 'PS-SMR-ACTIVE-IMPORT',
+            'nomor_lembar_revisi' => 'FMPS-SMR-ACTIVE-IMPORT-01',
+            'nomor_revisi' => 1,
+            'submitted_at' => now(),
+            'created_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->from(route('documents.master.imported.show', $source))
+            ->post(route('documents.existing.imports.revisions.store', $source), [
+                'nama_dokumen' => 'Imported Master Revisi Aktif Rev 2',
+                'official_preparer_id' => $user->id,
+                'revision_content' => UploadedFile::fake()->create('revision-content.pdf', 100, 'application/pdf'),
+                'revision_form' => UploadedFile::fake()->create('revision-form.pdf', 100, 'application/pdf'),
+            ])
+            ->assertRedirect(route('documents.master.imported.show', $source))
+            ->assertSessionHasErrors(['revision']);
+
+        $this->assertSame(1, Document::query()
+            ->where('imported_existing_source_id', $source->id)
+            ->where('request_type', 'revision')
+            ->count());
+    }
+
     public function test_current_rule_requires_all_modern_master_data(): void
     {
         Storage::fake('local');

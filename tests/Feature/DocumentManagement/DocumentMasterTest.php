@@ -1303,6 +1303,64 @@ class DocumentMasterTest extends TestCase
             ->assertDontSee('Ajukan Revisi');
     }
 
+    public function test_revision_button_is_disabled_when_revision_request_is_proposed(): void
+    {
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        $proposedStatus = StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        $owner = User::factory()->create();
+        $document = $this->createDocument($owner, $approvedStatus, [
+            'nama_dokumen' => 'Master Dengan Revisi Berjalan',
+            'nomor_dokumen' => 'PS-SMR-ACTIVE-REV',
+        ]);
+        $documentDepartment = $document->departments()->firstOrFail();
+        $sameDepartmentUser = $this->userWithoutPermission('documents.obsolete.create', [
+            'm_department_id' => $documentDepartment->id,
+        ]);
+
+        $this->createDocument($owner, $proposedStatus, [
+            'nama_dokumen' => 'Master Dengan Revisi Berjalan Rev 1',
+            'nomor_dokumen' => 'PS-SMR-ACTIVE-REV',
+            'nomor_revisi' => 1,
+            'revised_from' => $document->id,
+            'request_type' => 'revision',
+            'submitted_at' => now(),
+        ]);
+
+        $this->actingAs($sameDepartmentUser)
+            ->get(route('documents.master.show', $document))
+            ->assertOk()
+            ->assertSee('Revisi dalam Pengajuan')
+            ->assertSee('disabled', false)
+            ->assertDontSee(route('documents.create.level', ['level-4', 'revised_from' => $document->id]), false);
+    }
+
+    public function test_imported_master_revision_button_is_disabled_when_revision_request_is_proposed(): void
+    {
+        $proposedStatus = StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        $user = $this->userWithPermission('documents.master.imported.detail');
+        $importedMaster = $this->createImportedExistingMaster($user, [
+            'nama_dokumen' => 'Imported Master Dengan Revisi Berjalan',
+            'nomor_dokumen' => 'PS-SMR-IMP-ACT',
+        ]);
+
+        $this->createDocument($user, $proposedStatus, [
+            'nama_dokumen' => 'Imported Master Dengan Revisi Berjalan Rev 1',
+            'nomor_dokumen' => 'PS-SMR-IMP-ACT',
+            'nomor_revisi' => 1,
+            'imported_existing_source_id' => $importedMaster->id,
+            'request_type' => 'revision',
+            'submitted_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.master.imported.show', $importedMaster))
+            ->assertOk()
+            ->assertSee('Revisi dalam Pengajuan')
+            ->assertSee('disabled', false)
+            ->assertDontSee('data-imported-revision-modal-open', false)
+            ->assertDontSee('data-imported-revision-modal', false);
+    }
+
     public function test_obsolete_button_only_shows_for_user_from_document_department(): void
     {
         $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);

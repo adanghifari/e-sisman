@@ -23,14 +23,25 @@
             <div class="border-t border-dashed border-slate-200 px-6 py-5">
                 <div class="grid gap-3">
                     @if ($canRequestRevision)
-                        <a
-                            href="{{ route('documents.create.level', ['level-4', 'revised_from' => $document->id]) }}"
-                            class="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
-                            wire:navigate
-                        >
-                            <flux:icon name="arrow-path" class="size-4" />
-                            Ajukan Revisi
-                        </a>
+                        @if ($hasActiveRevisionRequest ?? false)
+                            <button
+                                type="button"
+                                class="inline-flex h-11 cursor-not-allowed items-center justify-center gap-2 rounded-lg border border-slate-200 bg-slate-100 px-4 text-sm font-semibold text-slate-400 shadow-sm"
+                                disabled
+                            >
+                                <flux:icon name="clock" class="size-4" />
+                                Revisi dalam Pengajuan
+                            </button>
+                        @else
+                            <a
+                                href="{{ route('documents.create.level', ['level-4', 'revised_from' => $document->id]) }}"
+                                class="inline-flex h-11 items-center justify-center gap-2 rounded-lg border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700"
+                                wire:navigate
+                            >
+                                <flux:icon name="arrow-path" class="size-4" />
+                                Ajukan Revisi
+                            </a>
+                        @endif
                     @endif
                     @if ($canRequestObsolete)
                         <button type="button" class="inline-flex h-11 w-full items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 shadow-sm transition hover:border-red-300 hover:bg-red-50" data-obsolete-modal-open>
