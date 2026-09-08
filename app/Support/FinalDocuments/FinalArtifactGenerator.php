@@ -158,8 +158,6 @@ class FinalArtifactGenerator
             'approvals.status',
             'revisedFrom.documentLevel',
             'revisedFrom.documentType',
-            'importedExistingSource.documentLevel',
-            'importedExistingSource.documentType',
         ]);
         $coverDocumentLevel = $this->coverDocumentLevel($document);
         $coverDocumentType = $this->coverDocumentType($document);
@@ -212,7 +210,6 @@ class FinalArtifactGenerator
     {
         if ($document->request_type === 'revision' && $document->documentLevel?->kode === 'level-4') {
             return $document->revisedFrom?->documentLevel
-                ?: $document->importedExistingSource?->documentLevel
                 ?: $document->documentLevel;
         }
 
@@ -223,7 +220,6 @@ class FinalArtifactGenerator
     {
         if ($document->request_type === 'revision' && $document->documentLevel?->kode === 'level-4') {
             return $document->revisedFrom?->documentType
-                ?: $document->importedExistingSource?->documentType
                 ?: $document->documentType;
         }
 
@@ -415,11 +411,10 @@ class FinalArtifactGenerator
         $document->loadMissing([
             'documentLevel.approvalFlows.stages',
             'revisedFrom.documentLevel.approvalFlows.stages',
-            'importedExistingSource.documentLevel.approvalFlows.stages',
         ]);
 
         $documentLevel = $document->documentLevel?->kode === 'level-4'
-            ? ($document->revisedFrom?->documentLevel ?: $document->importedExistingSource?->documentLevel ?: $document->documentLevel)
+            ? ($document->revisedFrom?->documentLevel ?: $document->documentLevel)
             : $document->documentLevel;
 
         return $documentLevel

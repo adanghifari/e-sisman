@@ -10,7 +10,6 @@ use App\Models\Document;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
-use App\Models\ImportedExistingDocument;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\FinalDocuments\FinalArtifactGenerator;
@@ -139,14 +138,18 @@ class OfficialPreparerSnapshotTest extends TestCase
             'kode' => 'REV',
             'nama_proses_fungsi' => 'Revision Function',
         ]);
-        $source = ImportedExistingDocument::query()->create([
-            'document_state' => ImportedExistingDocument::STATE_MASTER,
-            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+        $approvedStatus = StatusDocument::query()->firstOrCreate(
+            ['nama_status' => StatusDocument::APPROVED],
+            ['is_active' => true],
+        );
+        $source = Document::query()->create([
+            'origin' => Document::ORIGIN_IMPORTED_CURRENT,
+            'm_status_document_id' => $approvedStatus->id,
             'm_document_level_id' => $this->documentLevel()->id,
             'm_document_types_id' => $documentType->id,
             'm_proses_bisnis_id' => $businessProcess->id,
             'm_proses_fungsi_id' => $businessFunction->id,
-            'uploaded_by' => $submitter->id,
+            'user_id' => $submitter->id,
             'nama_dokumen' => 'Imported Existing Master',
             'nomor_dokumen' => 'PS-IMP-001',
             'nomor_revisi' => '00.00',
@@ -156,7 +159,7 @@ class OfficialPreparerSnapshotTest extends TestCase
 
         $response = $this->actingAs($submitter)
             ->post(route('documents.store', 'level-4'), [
-                'imported_source' => $source->id,
+                'revised_from' => $source->id,
                 'submit_action' => 'submit',
                 'nama_dokumen' => 'Imported Existing Master Revision',
                 'm_proses_bisnis_id' => $businessProcess->id,
@@ -171,7 +174,7 @@ class OfficialPreparerSnapshotTest extends TestCase
 
         $response->assertRedirect();
 
-        $document = Document::query()->where('imported_existing_source_id', $source->id)->firstOrFail();
+        $document = Document::query()->where('revised_from', $source->id)->firstOrFail();
 
         $this->assertSame($officialPreparer->id, $document->official_preparer_id);
         $this->assertSame('Imported Revision Preparer', $document->official_preparer_name_snapshot);

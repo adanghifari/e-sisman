@@ -50,7 +50,7 @@
                     <col class="w-[10%]">
                     <col class="w-[18%]">
                     <col class="w-[14%]">
-                    <col class="w-[8%]">
+                    <col class="w-[10%]">
                 </colgroup>
                 <thead class="bg-slate-50 text-xs uppercase text-slate-500">
                     <tr>
@@ -74,7 +74,27 @@
                             <td class="px-3 py-4 text-slate-600">{{ $ruleOptions[$document->obsolete_rule_type] ?? $document->obsolete_rule_type }}</td>
                             <td class="px-3 py-4 text-slate-600">{{ $document->tanggal_obsolete?->format('d/m/Y') ?: '-' }}</td>
                             <td class="px-2 py-4">
-                                <x-ui.icon-button :href="route('documents.existing.imports.show', $document)" icon="eye" label="Lihat detail" size="sm" />
+                                <div class="flex items-center gap-2">
+                                    <x-ui.icon-button :href="route('documents.existing.imports.show', $document)" icon="eye" label="Lihat detail" size="sm" />
+                                    @if ($canDeleteImportedExisting)
+                                        <form
+                                            method="POST"
+                                            action="{{ route('documents.existing.imports.destroy', $document) }}"
+                                            onsubmit="return confirm('Hapus dokumen imported ini dari sistem?')"
+                                        >
+                                            @csrf
+                                            @method('DELETE')
+                                            <button
+                                                type="submit"
+                                                class="inline-flex size-9 items-center justify-center rounded-lg border border-red-200 bg-white text-red-600 transition hover:bg-red-50"
+                                                aria-label="Hapus dokumen imported"
+                                                title="Hapus dokumen imported"
+                                            >
+                                                <flux:icon name="trash" class="size-4" />
+                                            </button>
+                                        </form>
+                                    @endif
+                                </div>
                             </td>
                         </tr>
                     @empty

@@ -12,7 +12,6 @@ use App\Models\DocumentNumberingSetup;
 use App\Models\DocumentNumberRegistry;
 use App\Models\DocumentRelation;
 use App\Models\DocumentType;
-use App\Models\ImportedExistingDocument;
 use App\Models\StatusDocument;
 use App\Support\DocumentFiles\DocumentFileNumbering;
 use App\Support\FinalDocuments\AutoGenerateApprovalPreview;
@@ -52,7 +51,6 @@ class DocumentController extends Controller
     {
         $resubmissionSource = $this->resubmissionSourceForRequest($request, $level);
         $revisionSource = $resubmissionSource?->revisedFrom
-            ?: $resubmissionSource?->importedExistingSource
             ?: $this->revisionSourceForRequest($request, $level);
 
         abort_if($level === 'level-4' && $revisionSource === null, 404);
@@ -103,17 +101,12 @@ class DocumentController extends Controller
             'revisedFrom.businessFunction',
             'revisedFrom.departments',
             'revisedFrom.outgoingRelations',
-            'importedExistingSource.documentLevel',
-            'importedExistingSource.businessProcess',
-            'importedExistingSource.businessFunction',
-            'importedExistingSource.departments',
-            'importedExistingSource.outgoingRelations',
         ]);
 
         $level = $document->documentLevel?->kode;
         abort_unless(filled($level) && array_key_exists($level, config('document-levels')), 404);
 
-        $revisionSource = $document->revisedFrom ?: $document->importedExistingSource;
+        $revisionSource = $document->revisedFrom;
 
         return view('document-management.create.level', [
             'levelKey' => $level,
@@ -170,9 +163,7 @@ class DocumentController extends Controller
 
         $validated = $request->validate($this->validationRulesForLevel($level, $draft, $resubmissionSource));
         $revisionSource = $draft?->revisedFrom
-            ?: $draft?->importedExistingSource
             ?: $resubmissionSource?->revisedFrom
-            ?: $resubmissionSource?->importedExistingSource
             ?: $this->revisionSourceForRequest($request, $level);
 
         abort_if($level === 'level-4' && $revisionSource === null, 404);
@@ -196,7 +187,7 @@ class DocumentController extends Controller
         $documentRevision = $revisionSource !== null
             ? null
             : ($resubmissionSource !== null
-                ? (int) $resubmissionSource->nomor_revisi
+                ? $resubmissionSource->numeric_revision
                 : $this->normalizeRevision($validated['nomor_revisi'] ?? null));
         $documentNumber = $revisionSource !== null
             ? null
@@ -221,52 +212,7 @@ class DocumentController extends Controller
                 $currentDocumentRevision = $documentRevision;
                 $resubmittedFromId = $resubmissionSource?->id;
 
-                if ($revisionSource instanceof ImportedExistingDocument) {
-                    $lockedRevisionSource = ImportedExistingDocument::query()
-                        ->whereKey($revisionSource->id)
-                        ->lockForUpdate()
-                        ->firstOrFail();
-                    $lockedRevisionSource->load([
-                        'documentLevel',
-                        'businessProcess',
-                        'businessFunction',
-                        'departments',
-                        'files',
-                        'outgoingRelations',
-                    ]);
-
-                    if ($lockedRevisionSource->document_state !== ImportedExistingDocument::STATE_MASTER) {
-                        throw ValidationException::withMessages([
-                            'imported_source' => 'Master sumber sudah berubah. Muat ulang halaman sebelum membuat revisi.',
-                        ]);
-                    }
-
-                    if (! $this->userCanRequestRevision($request, $lockedRevisionSource)) {
-                        abort(403);
-                    }
-
-                    if ($draft === null && $this->hasActiveImportedRevisionRequest($lockedRevisionSource)) {
-                        throw ValidationException::withMessages([
-                            'imported_source' => 'Dokumen ini masih memiliki pengajuan revisi aktif. Selesaikan atau batalkan revisi tersebut terlebih dahulu.',
-                        ]);
-                    }
-
-                    $currentDocumentRevision = match (true) {
-                        $draft !== null && $draft->imported_existing_source_id !== null => (int) $draft->nomor_revisi,
-                        $resubmissionSource !== null && $resubmissionSource->imported_existing_source_id !== null => (int) $resubmissionSource->nomor_revisi,
-                        default => $this->nextImportedExistingRevisionNumber($lockedRevisionSource),
-                    };
-                    $currentDocumentNumber = $lockedRevisionSource->nomor_dokumen;
-                    $currentRevisionFormNumber = $draft?->nomor_lembar_revisi
-                        ?: $resubmissionSource?->nomor_lembar_revisi
-                        ?: app(DocumentFileNumbering::class)->revisionFormNumber($lockedRevisionSource);
-
-                    $documentAttributes['m_proses_bisnis_id'] = $lockedRevisionSource->m_proses_bisnis_id;
-                    $documentAttributes['m_proses_fungsi_id'] = $lockedRevisionSource->m_proses_fungsi_id;
-                    $documentAttributes['department_ids'] = $lockedRevisionSource->departments->pluck('id')->all();
-                    $documentAttributes['reference'] = $lockedRevisionSource->procedureReferenceValue();
-                    $documentAttributes['nama_dokumen'] = $documentAttributes['nama_dokumen'] ?? $lockedRevisionSource->nama_dokumen;
-                } elseif ($revisionSource !== null) {
+                if ($revisionSource !== null) {
                     $lockedRevisionSource = Document::query()
                         ->whereKey($revisionSource->id)
                         ->lockForUpdate()
@@ -299,8 +245,8 @@ class DocumentController extends Controller
                     }
 
                     $currentDocumentRevision = match (true) {
-                        $draft !== null && $draft->revised_from !== null => (int) $draft->nomor_revisi,
-                        $resubmissionSource !== null && $resubmissionSource->revised_from !== null => (int) $resubmissionSource->nomor_revisi,
+                        $draft !== null && $draft->revised_from !== null => $draft->numeric_revision,
+                        $resubmissionSource !== null && $resubmissionSource->revised_from !== null => $resubmissionSource->numeric_revision,
                         default => $this->nextRevisionNumber($lockedRevisionSource),
                     };
                     $currentDocumentNumber = $this->revisionSourceMasterNumber($lockedRevisionSource);
@@ -337,14 +283,13 @@ class DocumentController extends Controller
                     'm_proses_fungsi_id' => $documentAttributes['m_proses_fungsi_id'] ?? null,
                     'user_id' => $request->user()->id,
                     'official_preparer_id' => $documentAttributes['official_preparer_id'] ?? null,
-                    'revised_from' => $lockedRevisionSource instanceof Document ? $lockedRevisionSource->id : null,
-                    'imported_existing_source_id' => $lockedRevisionSource instanceof ImportedExistingDocument ? $lockedRevisionSource->id : null,
+                    'revised_from' => $lockedRevisionSource?->id,
                     'resubmitted_from' => $resubmittedFromId,
                     'request_type' => $revisionSource !== null ? 'revision' : null,
                     'nama_dokumen' => $documentAttributes['nama_dokumen'],
                     'nomor_dokumen' => $currentDocumentNumber,
                     'nomor_lembar_revisi' => $currentRevisionFormNumber,
-                    'nomor_revisi' => $currentDocumentRevision,
+                    'nomor_revisi' => Document::formatRevisionNumber($currentDocumentRevision),
                     'catatan_revisi' => $documentAttributes['catatan_revisi'] ?? null,
                     'tanggal_terbit' => $documentAttributes['tanggal_terbit'] ?? null,
                     'submitted_at' => $submittedAt ?? $draft?->submitted_at,
@@ -451,9 +396,7 @@ class DocumentController extends Controller
         }
 
         $redirectParameters = $revisionSource !== null
-            ? ($revisionSource instanceof ImportedExistingDocument
-                ? [$level, 'imported_source' => $revisionSource->id]
-                : [$level, 'revised_from' => $revisionSource->id])
+            ? [$level, 'revised_from' => $revisionSource->id]
             : [$level];
 
         if ($savedDocument !== null) {
@@ -486,7 +429,6 @@ class DocumentController extends Controller
         $validated = $request->validate($this->autosaveValidationRulesForLevel($level));
         $resubmissionSource = $this->resubmissionSourceForRequest($request, $level);
         $revisionSource = $resubmissionSource?->revisedFrom
-            ?: $resubmissionSource?->importedExistingSource
             ?: $this->autosaveRevisionSourceForRequest($request, $level);
 
         if (! $this->hasAutosavePayload($request, $validated)) {
@@ -514,17 +456,15 @@ class DocumentController extends Controller
         $validated['department_ids'] = $validated['department_ids'] ?? [];
 
         $documentNumber = $revisionSource !== null
-            ? ($revisionSource instanceof ImportedExistingDocument
-                ? $revisionSource->nomor_dokumen
-                : $this->revisionSourceMasterNumber($revisionSource))
+            ? $this->revisionSourceMasterNumber($revisionSource)
             : ($resubmissionSource?->nomor_dokumen ?: $this->buildDocumentNumber($documentLevel, $validated));
         $draft = $this->autosaveDraftForRequest($request, $documentLevel, $revisionSource, $documentNumber, $resubmissionSource);
         $documentRevision = $revisionSource !== null
             ? ($resubmissionSource !== null
-                ? (int) $resubmissionSource->nomor_revisi
+                ? $resubmissionSource->numeric_revision
                 : $this->autosaveRevisionNumber($draft, $revisionSource))
             : ($resubmissionSource !== null
-                ? (int) $resubmissionSource->nomor_revisi
+                ? $resubmissionSource->numeric_revision
                 : $this->normalizeRevision($validated['nomor_revisi'] ?? null));
         $revisionFormNumber = $revisionSource !== null
             ? ($draft?->nomor_lembar_revisi ?: $this->buildRevisionFormNumber($revisionSource, (int) $documentRevision))
@@ -541,14 +481,13 @@ class DocumentController extends Controller
                 'm_proses_fungsi_id' => $validated['m_proses_fungsi_id'] ?? null,
                 'user_id' => $request->user()->id,
                 'official_preparer_id' => $validated['official_preparer_id'] ?? null,
-                'revised_from' => $revisionSource instanceof Document ? $revisionSource->id : null,
-                'imported_existing_source_id' => $revisionSource instanceof ImportedExistingDocument ? $revisionSource->id : null,
+                'revised_from' => $revisionSource?->id,
                 'resubmitted_from' => $draft?->resubmitted_from ?: $resubmissionSource?->id,
                 'request_type' => $revisionSource !== null ? 'revision' : null,
                 'nama_dokumen' => $validated['nama_dokumen'],
                 'nomor_dokumen' => $documentNumber,
                 'nomor_lembar_revisi' => $revisionFormNumber,
-                'nomor_revisi' => $documentRevision,
+                'nomor_revisi' => Document::formatRevisionNumber($documentRevision),
                 'catatan_revisi' => $validated['catatan_revisi'] ?? null,
                 'tanggal_terbit' => $validated['tanggal_terbit'] ?? null,
                 'submitted_at' => null,
@@ -663,7 +602,7 @@ class DocumentController extends Controller
                 'revised_attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
                 'submit_action' => ['required', Rule::in(['draft', 'submit'])],
                 'revised_from' => [$draft !== null || $resubmissionSource !== null ? 'nullable' : 'required_without:imported_source', 'nullable', 'integer', Rule::exists('t_document', 'id')],
-                'imported_source' => [$draft !== null || $resubmissionSource !== null ? 'nullable' : 'required_without:revised_from', 'nullable', 'integer', Rule::exists('imported_existing_documents', 'id')],
+                'imported_source' => [$draft !== null || $resubmissionSource !== null ? 'nullable' : 'required_without:revised_from', 'nullable', 'integer', Rule::exists('t_document', 'id')],
                 'resubmitted_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
                 'remove_existing_files' => ['nullable', 'array'],
@@ -723,7 +662,7 @@ class DocumentController extends Controller
             'tanggal_terbit' => ['nullable', 'date'],
             'catatan_revisi' => ['nullable', 'string', 'max:1000'],
             'revised_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
-            'imported_source' => ['nullable', 'integer', Rule::exists('imported_existing_documents', 'id')],
+            'imported_source' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'resubmitted_from' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'imported_document' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
@@ -748,7 +687,7 @@ class DocumentController extends Controller
 
         if ($level === 'level-4') {
             $rules['revised_from'] = ['required_without:imported_source', 'nullable', 'integer', Rule::exists('t_document', 'id')];
-            $rules['imported_source'] = ['required_without:revised_from', 'nullable', 'integer', Rule::exists('imported_existing_documents', 'id')];
+            $rules['imported_source'] = ['required_without:revised_from', 'nullable', 'integer', Rule::exists('t_document', 'id')];
         }
 
         if ($level === 'level-1') {
@@ -811,9 +750,9 @@ class DocumentController extends Controller
             ->isNotEmpty();
     }
 
-    private function autosaveRevisionSourceForRequest(Request $request, string $level): Document|ImportedExistingDocument|null
+    private function autosaveRevisionSourceForRequest(Request $request, string $level): ?Document
     {
-        if (! filled($request->input('revised_from')) && ! filled($request->input('imported_source')) && ! filled($request->input('imported_existing_source_id'))) {
+        if (! filled($request->input('revised_from')) && ! filled($request->input('imported_source'))) {
             return null;
         }
 
@@ -823,7 +762,7 @@ class DocumentController extends Controller
     private function autosaveDraftForRequest(
         Request $request,
         DocumentLevel $documentLevel,
-        Document|ImportedExistingDocument|null $revisionSource,
+        ?Document $revisionSource,
         ?string $documentNumber,
         ?Document $resubmissionSource,
     ): ?Document {
@@ -840,15 +779,8 @@ class DocumentController extends Controller
         $query = $this->draftQuery($request)
             ->where('m_document_level_id', $documentLevel->id)
             ->where('resubmitted_from', $resubmissionSource?->id)
-            ->where('request_type', $revisionSource !== null ? 'revision' : null);
-
-        if ($revisionSource instanceof ImportedExistingDocument) {
-            $query->where('imported_existing_source_id', $revisionSource->id)
-                ->whereNull('revised_from');
-        } else {
-            $query->where('revised_from', $revisionSource?->id)
-                ->whereNull('imported_existing_source_id');
-        }
+            ->where('request_type', $revisionSource !== null ? 'revision' : null)
+            ->where('revised_from', $revisionSource?->id);
 
         if (filled($documentNumber)) {
             $matchingNumberDraft = (clone $query)
@@ -867,14 +799,10 @@ class DocumentController extends Controller
             ->first();
     }
 
-    private function autosaveRevisionNumber(?Document $draft, Document|ImportedExistingDocument $revisionSource): int
+    private function autosaveRevisionNumber(?Document $draft, Document $revisionSource): int
     {
-        if ($draft !== null && ($draft->revised_from !== null || $draft->imported_existing_source_id !== null)) {
-            return (int) $draft->nomor_revisi;
-        }
-
-        if ($revisionSource instanceof ImportedExistingDocument) {
-            return $this->nextImportedExistingRevisionNumber($revisionSource);
+        if ($draft !== null && $draft->revised_from !== null) {
+            return $draft->numeric_revision;
         }
 
         return $this->nextRevisionNumber($revisionSource);
@@ -897,7 +825,7 @@ class DocumentController extends Controller
             $request->input('existing_attachment_orders', []),
         );
 
-        $syncSource = $document->revisedFrom ?: $document->importedExistingSource;
+        $syncSource = $document->revisedFrom;
         if ($syncSource !== null) {
             $this->syncRevisionSourceAttachments(
                 $request,
@@ -950,7 +878,7 @@ class DocumentController extends Controller
         }
     }
 
-    private function syncRevisionSourceAttachments(Request $request, Document $document, Document|ImportedExistingDocument $source): void
+    private function syncRevisionSourceAttachments(Request $request, Document $document, Document $source): void
     {
         $allSourceAttachments = $source->availableRevisionSourceAttachments();
 
@@ -1219,11 +1147,6 @@ class DocumentController extends Controller
                 'revisedFrom.businessFunction',
                 'revisedFrom.departments',
                 'revisedFrom.outgoingRelations',
-                'importedExistingSource.documentLevel',
-                'importedExistingSource.businessProcess',
-                'importedExistingSource.businessFunction',
-                'importedExistingSource.departments',
-                'importedExistingSource.outgoingRelations',
             ])
             ->findOrFail((int) $sourceId);
 
@@ -1232,10 +1155,6 @@ class DocumentController extends Controller
 
         if ($source->revised_from !== null) {
             abort_unless($source->revisedFrom?->status?->nama_status === StatusDocument::APPROVED, 404);
-        }
-
-        if ($source->imported_existing_source_id !== null) {
-            abort_unless($source->importedExistingSource?->document_state === ImportedExistingDocument::STATE_MASTER, 404);
         }
 
         return $source;
@@ -1397,13 +1316,9 @@ class DocumentController extends Controller
             ->lockForUpdate()
             ->first();
 
-        $isRevisingThisImportedMaster = $document->imported_existing_source_id !== null
-            && $registry?->source_type === DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING;
-
         if (
             $registry !== null
             && $registry->source_type !== DocumentNumberRegistry::SOURCE_T_DOCUMENT
-            && ! $isRevisingThisImportedMaster
         ) {
             throw ValidationException::withMessages([
                 'nomor_dokumen_suffix' => 'Nomor dokumen sudah terdaftar sebagai imported existing.',
@@ -1490,9 +1405,12 @@ class DocumentController extends Controller
         abort_unless($document->status?->nama_status === StatusDocument::DRAFT, 404);
     }
 
-    private function revisionSourceForRequest(Request $request, string $level): Document|ImportedExistingDocument|null
+    private function revisionSourceForRequest(Request $request, string $level): ?Document
     {
-        $sourceId = $request->input('revised_from') ?: $request->query('revised_from');
+        $sourceId = $request->input('revised_from')
+            ?: $request->query('revised_from')
+            ?: $request->input('imported_source')
+            ?: $request->query('imported_source');
 
         if (filled($sourceId)) {
             $source = Document::query()
@@ -1510,28 +1428,10 @@ class DocumentController extends Controller
             return $source;
         }
 
-        $importedSourceId = $request->input('imported_source')
-            ?: $request->query('imported_source')
-            ?: $request->input('imported_existing_source_id')
-            ?: $request->query('imported_existing_source_id');
-
-        if (filled($importedSourceId)) {
-            $source = ImportedExistingDocument::query()
-                ->with(['documentLevel', 'businessProcess', 'businessFunction', 'departments', 'outgoingRelations'])
-                ->whereKey($importedSourceId)
-                ->firstOrFail();
-
-            abort_unless($level === 'level-4' || $source->documentLevel?->kode === $level, 404);
-            abort_unless($source->document_state === ImportedExistingDocument::STATE_MASTER, 404);
-            abort_unless($this->userCanRequestRevision($request, $source), 403);
-
-            return $source;
-        }
-
         return null;
     }
 
-    private function userCanRequestRevision(Request $request, Document|ImportedExistingDocument $document): bool
+    private function userCanRequestRevision(Request $request, Document $document): bool
     {
         $user = $request->user();
 
@@ -1539,7 +1439,7 @@ class DocumentController extends Controller
             return true;
         }
 
-        if ($document instanceof ImportedExistingDocument && ($user?->hasPermission('documents.existing.imports.revision') ?? false)) {
+        if ($document->origin !== Document::ORIGIN_WORKFLOW && ($user?->hasPermission('documents.existing.imports.revision') ?? false)) {
             return true;
         }
 
@@ -1597,7 +1497,7 @@ class DocumentController extends Controller
             return collect();
         }
 
-        $workflowProcedures = Document::query()
+        return Document::query()
             ->with(['documentLevel'])
             ->where('m_status_document_id', $approvedStatusId)
             ->where(function ($query) use ($procedureLevelId): void {
@@ -1624,7 +1524,7 @@ class DocumentController extends Controller
             ->map(fn (Collection $family): Document => $family
                 ->sortByDesc(fn (Document $document): string => sprintf(
                     '%010d-%010d-%010d',
-                    $document->nomor_revisi,
+                    $document->numeric_revision,
                     $document->approved_at?->timestamp ?? 0,
                     $document->id,
                 ))
@@ -1634,30 +1534,11 @@ class DocumentController extends Controller
                 $displayNumber = $rootDocument?->nomor_dokumen ?: $document->nomor_dokumen;
 
                 $document->setAttribute('procedure_reference_number', $displayNumber);
-                $document->setAttribute('reference_value', DocumentRelation::referenceValue($document->id, null));
-                $document->setAttribute('reference_source_label', 'Workflow');
+                $document->setAttribute('reference_value', DocumentRelation::referenceValue($document->id));
+                $document->setAttribute('reference_source_label', $document->origin === Document::ORIGIN_WORKFLOW ? 'Workflow' : 'Imported');
 
                 return $document;
             })
-            ->values();
-
-        $importedProcedures = ImportedExistingDocument::query()
-            ->with(['documentLevel'])
-            ->where('document_state', ImportedExistingDocument::STATE_MASTER)
-            ->where('m_document_level_id', $procedureLevelId)
-            ->when($businessProcessId, fn ($query) => $query->where('m_proses_bisnis_id', $businessProcessId))
-            ->when($businessFunctionId, fn ($query) => $query->where('m_proses_fungsi_id', $businessFunctionId))
-            ->get()
-            ->map(function (ImportedExistingDocument $document): ImportedExistingDocument {
-                $document->setAttribute('procedure_reference_number', $document->nomor_dokumen);
-                $document->setAttribute('reference_value', DocumentRelation::referenceValue(null, $document->id));
-                $document->setAttribute('reference_source_label', 'Imported');
-
-                return $document;
-            });
-
-        return $workflowProcedures
-            ->concat($importedProcedures)
             ->sortBy('procedure_reference_number')
             ->values();
     }
@@ -1757,60 +1638,22 @@ class DocumentController extends Controller
             ->values();
     }
 
-    protected function buildRevisionFormNumber(Document|ImportedExistingDocument $source, int $revision): string
+    protected function buildRevisionFormNumber(Document $source, int $revision): string
     {
-        if ($source instanceof Document) {
-            $source->nomor_dokumen = $this->revisionSourceMasterNumber($source);
-        }
+        $source->nomor_dokumen = $this->revisionSourceMasterNumber($source);
 
         return (string) app(DocumentFileNumbering::class)->revisionFormNumber($source);
     }
 
-    protected function effectiveRevisionSourceLevelKey(Document|ImportedExistingDocument $source): ?string
+    protected function effectiveRevisionSourceLevelKey(Document $source): ?string
     {
-        $source->loadMissing('documentLevel');
+        $source->loadMissing(['documentLevel', 'revisedFrom.documentLevel']);
 
-        if ($source instanceof Document) {
-            $source->loadMissing('revisedFrom.documentLevel');
-
-            if ($source->documentLevel?->kode === 'level-4' && $source->revisedFrom !== null) {
-                return $source->revisedFrom->documentLevel?->kode;
-            }
+        if ($source->documentLevel?->kode === 'level-4' && $source->revisedFrom !== null) {
+            return $source->revisedFrom->documentLevel?->kode;
         }
 
         return $source->documentLevel?->kode;
-    }
-
-    protected function nextImportedExistingRevisionNumber(ImportedExistingDocument $document): int
-    {
-        $baseRevision = $this->normalizeImportedExistingRevision($document->nomor_revisi);
-        $latestWorkflowRevision = (int) Document::query()
-            ->where('imported_existing_source_id', $document->id)
-            ->max('nomor_revisi');
-
-        return max($baseRevision, $latestWorkflowRevision) + 1;
-    }
-
-    protected function hasActiveImportedRevisionRequest(ImportedExistingDocument $document): bool
-    {
-        return Document::query()
-            ->where('imported_existing_source_id', $document->id)
-            ->where('request_type', 'revision')
-            ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::PROPOSED))
-            ->exists();
-    }
-
-    protected function normalizeImportedExistingRevision(?string $revision): int
-    {
-        if (! filled($revision)) {
-            return 0;
-        }
-
-        $parts = explode('.', $revision, 2);
-        $major = (int) preg_replace('/\D+/', '', $parts[0] ?? '0');
-        $minor = (int) preg_replace('/\D+/', '', $parts[1] ?? '0');
-
-        return ($major * 100) + $minor;
     }
 
     protected function revisionSourceMasterNumber(Document $source): ?string
@@ -1913,9 +1756,15 @@ class DocumentController extends Controller
             ->where('t_document.nomor_dokumen', $document->nomor_dokumen)
             ->where('t_document.id', '!=', $document->id)
             ->where('t_document_files.type_file', 'revision_form')
-            ->orderByDesc('t_document.nomor_revisi')
+            ->select('t_document_files.id', 't_document.nomor_revisi')
             ->orderByDesc('t_document_files.id')
-            ->value('t_document_files.id');
+            ->get()
+            ->sortByDesc(fn (object $row): string => sprintf(
+                '%010d-%010d',
+                Document::normalizeRevisionNumber($row->nomor_revisi),
+                $row->id,
+            ))
+            ->value('id');
     }
 
     private function replaceSingleDocumentFile(Document $document, string $type): void

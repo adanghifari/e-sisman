@@ -11,8 +11,8 @@
     $selectedBusinessProcessId = old('m_proses_bisnis_id');
     $selectedBusinessFunctionId = old('m_proses_fungsi_id');
     $selectedDepartmentIds = $selectedDepartmentIds ?? [];
-    $documentState ??= \App\Models\ImportedExistingDocument::STATE_MASTER;
-    $isObsoleteImport = $documentState === \App\Models\ImportedExistingDocument::STATE_OBSOLETE;
+    $documentState ??= \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::STATE_MASTER;
+    $isObsoleteImport = $documentState === \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::STATE_OBSOLETE;
     $pageTitle = $isObsoleteImport ? 'Import Dokumen Obsolete' : 'Import Dokumen Master';
     $sectionTitle = $isObsoleteImport ? 'Dokumen Obsolete' : 'Dokumen Master';
     $indexRoute = $isObsoleteImport ? route('documents.obsolete.imports.create') : route('documents.master.imports.create');
@@ -70,10 +70,14 @@
             action="{{ $storeRoute }}"
             enctype="multipart/form-data"
             class="grid gap-6 xl:grid-cols-[minmax(0,1fr)_420px]"
+            @unless ($isObsoleteImport)
+                data-import-master-number-check-url="{{ route('documents.existing.imports.number-reuse-check') }}"
+            @endunless
         >
             @csrf
             <input type="hidden" name="document_state" value="{{ $documentState }}">
-            <input type="hidden" name="obsolete_rule_type" value="{{ \App\Models\ImportedExistingDocument::CURRENT_RULE }}">
+            <input type="hidden" name="obsolete_rule_type" value="{{ \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::CURRENT_RULE }}">
+            <input type="hidden" name="confirm_imported_master_number_reuse" value="0">
 
             <div class="space-y-6">
                 @if ($errors->any())
@@ -498,19 +502,95 @@
                 });
             };
 
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+            const checkImportedMasterNumberReuse = async (form) => {
+                const url = form.dataset.importMasterNumberCheckUrl;
+
+                if (!url) {
+                    return true;
+                }
+
+                const confirmationInput = form.querySelector('input[name="confirm_imported_master_number_reuse"]');
+
+                if (confirmationInput?.value === '1') {
+                    return true;
+                }
+
+                const payloadData = new FormData();
+                [
+                    'document_state',
+                    'obsolete_rule_type',
+                    'm_document_level_id',
+                    'm_proses_bisnis_id',
+                    'm_proses_fungsi_id',
+                    'reference',
+                    'nomor_dokumen',
+                    'nomor_dokumen_suffix',
+                ].forEach((name) => {
+                    const field = form.querySelector(`[name="${name}"]`);
+                    if (field) {
+                        payloadData.append(name, field.value || '');
+                    }
+                });
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                    },
+                    body: payloadData,
+                });
+
+                if (!response.ok) {
+                    return true;
+                }
+
+                const payload = await response.json();
+
+                if (!payload.conflict) {
+                    return true;
+                }
+
+                if (window.confirm(payload.message || 'Nomor dokumen sudah digunakan. Apakah Anda yakin ingin melanjutkan?')) {
+                    if (confirmationInput) {
+                        confirmationInput.value = '1';
+                    }
+
+                    return true;
+                }
+
+                return false;
+            };
+
             document.querySelectorAll('form').forEach((form) => {
                 syncProcedureReferenceOptions(form);
                 syncDocumentSearchOptions(form);
                 syncDocumentNumberFunctionSegment(form);
                 syncProcedureReferenceNumberSegments(form);
 
-                form.addEventListener('submit', () => {
+                form.addEventListener('submit', async (event) => {
                     const suffixInput = form.querySelector('input[name="nomor_dokumen_suffix"]');
                     if (suffixInput) {
                         const val = suffixInput.value.trim();
                         if (/^\d{1}$/.test(val)) {
                             suffixInput.value = val.padStart(2, '0');
                         }
+                    }
+
+                    if (!form.dataset.importMasterNumberCheckUrl) {
+                        return;
+                    }
+
+                    if (form.querySelector('input[name="confirm_imported_master_number_reuse"]')?.value === '1') {
+                        return;
+                    }
+
+                    event.preventDefault();
+
+                    if (await checkImportedMasterNumberReuse(form)) {
+                        form.requestSubmit();
                     }
                 });
             });

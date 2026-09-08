@@ -10,6 +10,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Support\Collection;
 
 #[Fillable([
+    'origin',
     'm_status_document_id',
     'm_document_level_id',
     'm_document_types_id',
@@ -21,7 +22,6 @@ use Illuminate\Support\Collection;
     'official_preparer_position_snapshot',
     'official_preparer_department_snapshot',
     'revised_from',
-    'imported_existing_source_id',
     'resubmitted_from',
     'request_type',
     'nama_dokumen',
@@ -29,6 +29,7 @@ use Illuminate\Support\Collection;
     'nomor_lembar_revisi',
     'nomor_revisi',
     'catatan_revisi',
+    'catatan',
     'created_at',
     'tanggal_terbit',
     'submitted_at',
@@ -39,6 +40,10 @@ use Illuminate\Support\Collection;
 ])]
 class Document extends Model
 {
+    public const ORIGIN_WORKFLOW = 'workflow';
+    public const ORIGIN_IMPORTED_CURRENT = 'imported_current';
+    public const ORIGIN_IMPORTED_LEGACY = 'imported_legacy';
+
     protected $table = 't_document';
 
     public $timestamps = false;
@@ -46,7 +51,6 @@ class Document extends Model
     protected function casts(): array
     {
         return [
-            'nomor_revisi' => 'integer',
             'created_at' => 'datetime',
             'tanggal_terbit' => 'date',
             'submitted_at' => 'datetime',
@@ -120,11 +124,6 @@ class Document extends Model
         return $this->belongsTo(self::class, 'revised_from');
     }
 
-    public function importedExistingSource(): BelongsTo
-    {
-        return $this->belongsTo(ImportedExistingDocument::class, 'imported_existing_source_id');
-    }
-
     public function resubmittedFrom(): BelongsTo
     {
         return $this->belongsTo(self::class, 'resubmitted_from');
@@ -138,6 +137,46 @@ class Document extends Model
     public function revisions(): HasMany
     {
         return $this->hasMany(self::class, 'revised_from');
+    }
+
+    public function outgoingRelations(): HasMany
+    {
+        return $this->hasMany(DocumentRelation::class, 'source_document_id');
+    }
+
+    public function incomingRelations(): HasMany
+    {
+        return $this->hasMany(DocumentRelation::class, 'target_document_id');
+    }
+
+    public function uploader(): BelongsTo
+    {
+        return $this->belongsTo(User::class, 'user_id');
+    }
+
+    public function getObsoleteRuleTypeAttribute(): string
+    {
+        return $this->origin === self::ORIGIN_IMPORTED_LEGACY ? 'legacy_rule' : 'current_rule';
+    }
+
+    public function getTanggalObsoleteAttribute(): ?\Carbon\Carbon
+    {
+        return $this->obsolete_at;
+    }
+
+    public function getDocumentStateAttribute(): string
+    {
+        return $this->status?->nama_status === StatusDocument::APPROVED ? 'master' : 'obsolete';
+    }
+
+    public function isMaster(): bool
+    {
+        return $this->status?->nama_status === StatusDocument::APPROVED;
+    }
+
+    public function isObsolete(): bool
+    {
+        return $this->status?->nama_status === StatusDocument::OBSOLETE;
     }
 
     public function revisionRootId(): int
@@ -184,13 +223,13 @@ class Document extends Model
         $family = $this->revisionFamily();
 
         if ($eligibleStatusIds->isEmpty()) {
-            return (int) $family->max('nomor_revisi');
+            return (int) $family->max(fn (self $doc) => $doc->numeric_revision);
         }
 
         return (int) $family
             ->filter(fn (self $document): bool => $eligibleStatusIds->contains($document->m_status_document_id))
             ->filter(fn (self $document): bool => $document->request_type !== 'obsolete')
-            ->max('nomor_revisi');
+            ->max(fn (self $doc) => $doc->numeric_revision);
     }
 
     public function obsoleteRevisions(): HasMany
@@ -199,46 +238,75 @@ class Document extends Model
             ->whereHas('status', fn ($query) => $query->where('nama_status', StatusDocument::OBSOLETE));
     }
 
-    public function outgoingRelations(): HasMany
-    {
-        return $this->hasMany(DocumentRelation::class, 'source_document_id');
-    }
-
-    public function incomingRelations(): HasMany
-    {
-        return $this->hasMany(DocumentRelation::class, 'target_document_id');
-    }
-
     public function procedureReferenceRelation(): ?DocumentRelation
     {
         return $this->outgoingRelations()
-            ->with(['targetDocument', 'targetImportedDocument'])
+            ->with('targetDocument')
             ->where('relation_type', DocumentRelation::REFERENCES)
             ->first();
     }
 
     public function procedureReferenceValue(): ?string
     {
-        $relation = $this->procedureReferenceRelation();
+        return $this->procedureReferenceRelation()?->target_document_id !== null
+            ? (string) $this->procedureReferenceRelation()->target_document_id
+            : null;
+    }
 
-        return DocumentRelation::referenceValue(
-            $relation?->target_document_id,
-            $relation?->target_imported_existing_document_id,
-        );
+    public function supersededByRelation(): ?DocumentRelation
+    {
+        return $this->outgoingRelations()
+            ->with('targetDocument')
+            ->where('relation_type', DocumentRelation::SUPERSEDED_BY)
+            ->first();
     }
 
     public function getFormattedRevisionAttribute(): string
     {
-        return self::formatRevisionNumber((int) $this->nomor_revisi);
+        return self::formatRevisionNumber($this->nomor_revisi);
     }
 
-    public static function formatRevisionNumber(int $revision): string
+    public function getNumericRevisionAttribute(): int
     {
-        $revision = max(0, $revision);
+        return self::normalizeRevisionNumber($this->nomor_revisi);
+    }
 
-        return str_pad((string) intdiv($revision, 100), 2, '0', STR_PAD_LEFT)
-            .'.'
-            .str_pad((string) ($revision % 100), 2, '0', STR_PAD_LEFT);
+    public static function formatRevisionNumber(int|string|null $revision): string
+    {
+        if ($revision === null || $revision === '') {
+            return '00.00';
+        }
+
+        if (is_string($revision) && preg_match('/^\d{2}\.\d{2}$/', $revision)) {
+            return $revision;
+        }
+
+        if (is_numeric($revision)) {
+            $num = max(0, (int) $revision);
+
+            return str_pad((string) intdiv($num, 100), 2, '0', STR_PAD_LEFT)
+                .'.'
+                .str_pad((string) ($num % 100), 2, '0', STR_PAD_LEFT);
+        }
+
+        return (string) $revision;
+    }
+
+    public static function normalizeRevisionNumber(int|string|null $revision): int
+    {
+        if (! filled($revision)) {
+            return 0;
+        }
+
+        if (is_int($revision)) {
+            return $revision;
+        }
+
+        $parts = explode('.', (string) $revision, 2);
+        $major = (int) preg_replace('/\D+/', '', $parts[0] ?? '0');
+        $minor = (int) preg_replace('/\D+/', '', $parts[1] ?? '0');
+
+        return ($major * 100) + $minor;
     }
 
     public function departments(): BelongsToMany
@@ -269,7 +337,7 @@ class Document extends Model
             ->pluck('id');
 
         $family = $this->revisionFamily()
-            ->filter(fn (self $document): bool => (int) $document->nomor_revisi <= (int) $this->nomor_revisi)
+            ->filter(fn (self $document): bool => $document->numeric_revision <= $this->numeric_revision)
             ->filter(fn (self $document): bool => $document->is($this) || $eligibleStatusIds->contains($document->m_status_document_id))
             ->sortBy([
                 ['nomor_revisi', 'asc'],
@@ -282,7 +350,7 @@ class Document extends Model
         }
 
         $revisionByDocumentId = $family
-            ->mapWithKeys(fn (self $document): array => [$document->id => (int) $document->nomor_revisi]);
+            ->mapWithKeys(fn (self $document): array => [$document->id => $document->numeric_revision]);
 
         $attachments = DocumentFile::query()
             ->whereIn('t_document_id', $family->pluck('id'))

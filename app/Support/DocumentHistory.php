@@ -152,15 +152,15 @@ class DocumentHistory
     {
         $approvedRevisions = $family
             ->filter(fn (Document $document): bool => $document->request_type !== 'obsolete' && $document->approved_at !== null)
-            ->sortBy('nomor_revisi')
+            ->sortBy(fn (Document $document): int => $document->numeric_revision)
             ->values();
 
         return $approvedRevisions
             ->filter(fn (Document $document): bool => $approvedRevisions
-                ->contains(fn (Document $revision): bool => $revision->nomor_revisi > $document->nomor_revisi))
+                ->contains(fn (Document $revision): bool => $revision->numeric_revision > $document->numeric_revision))
             ->map(function (Document $document) use ($approvedRevisions): array {
                 $nextRevision = $approvedRevisions
-                    ->first(fn (Document $revision): bool => $revision->nomor_revisi > $document->nomor_revisi);
+                    ->first(fn (Document $revision): bool => $revision->numeric_revision > $document->numeric_revision);
 
                 return $this->event(
                     $document,

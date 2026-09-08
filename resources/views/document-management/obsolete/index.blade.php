@@ -15,6 +15,7 @@
 
             <x-ui.select label="Dok Level" name="type" :value="$filters['type']" :options="$typeOptions" />
             <x-ui.select label="Proses Bisnis" name="process" :value="$filters['process']" :options="$processOptions" />
+            <x-ui.select label="Asal Dokumen" name="origin" :value="$filters['origin']" :options="$originOptions" />
             <x-ui.select label="Urutkan" name="sort" :value="$filters['sort']" :options="$sortOptions" />
 
             <div class="flex items-end gap-2">

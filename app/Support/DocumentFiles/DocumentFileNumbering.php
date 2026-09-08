@@ -4,7 +4,6 @@ namespace App\Support\DocumentFiles;
 
 use App\Models\Document;
 use App\Models\DocumentFile;
-use App\Models\ImportedExistingDocument;
 use App\Models\StatusDocument;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
@@ -48,7 +47,7 @@ class DocumentFileNumbering
         return filled($document->nomor_dokumen) ? $document->nomor_dokumen : null;
     }
 
-    public function revisionFormNumber(Document|ImportedExistingDocument $document): ?string
+    public function revisionFormNumber(Document $document): ?string
     {
         if (! filled($document->nomor_dokumen)) {
             return null;
@@ -190,33 +189,22 @@ class DocumentFileNumbering
             ->pluck('id');
     }
 
-    private function fileFamilyPrefix(Document|ImportedExistingDocument $document): string
+    private function fileFamilyPrefix(Document $document): string
     {
-        if ($document instanceof ImportedExistingDocument) {
-            $document->loadMissing('documentLevel');
-            $level = $document->documentLevel;
-        } else {
-            $document->loadMissing('documentLevel', 'revisedFrom.documentLevel', 'importedExistingSource.documentLevel');
-            $levelSource = $document;
+        $document->loadMissing('documentLevel', 'revisedFrom.documentLevel');
+        $levelSource = $document;
 
-            while ($levelSource instanceof Document && $levelSource->documentLevel?->kode === 'level-4') {
-                if ($levelSource->revisedFrom !== null) {
-                    $levelSource = $levelSource->revisedFrom;
-                    $levelSource->loadMissing('documentLevel', 'revisedFrom.documentLevel');
-                    continue;
-                }
-
-                if ($levelSource->importedExistingSource !== null) {
-                    $levelSource = $levelSource->importedExistingSource;
-                    $levelSource->loadMissing('documentLevel');
-                    break;
-                }
-
-                break;
+        while ($levelSource instanceof Document && $levelSource->documentLevel?->kode === 'level-4') {
+            if ($levelSource->revisedFrom !== null) {
+                $levelSource = $levelSource->revisedFrom;
+                $levelSource->loadMissing('documentLevel', 'revisedFrom.documentLevel');
+                continue;
             }
 
-            $level = $levelSource->documentLevel;
+            break;
         }
+
+        $level = $levelSource->documentLevel;
 
         $prefix = match ($level?->kode) {
             'level-1' => 'FMSM',

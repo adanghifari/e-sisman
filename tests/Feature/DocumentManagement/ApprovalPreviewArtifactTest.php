@@ -13,7 +13,6 @@ use App\Models\DocumentFile;
 use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
-use App\Models\ImportedExistingDocument;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\FinalDocuments\AutoGenerateApprovalPreview;
@@ -305,7 +304,7 @@ class ApprovalPreviewArtifactTest extends TestCase
 
         $this->actingAs($user)
             ->post(route('documents.store', 'level-4'), [
-                'imported_source' => $source->id,
+                'revised_from' => $source->id,
                 'submit_action' => 'submit',
                 'nama_dokumen' => 'Imported Revision Preview',
                 'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
@@ -404,24 +403,24 @@ class ApprovalPreviewArtifactTest extends TestCase
     }
 
     /**
-     * @return array{0: User, 1: ImportedExistingDocument}
+     * @return array{0: User, 1: Document}
      */
     private function importedExistingFixture(): array
     {
         [$user, $businessProcess, $businessFunction, $department] = $this->submitFixture();
-        $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
-        $type = DocumentType::query()->where('nama_types', 'Prosedur')->firstOrFail();
-        $source = ImportedExistingDocument::query()->create([
-            'document_state' => ImportedExistingDocument::STATE_MASTER,
-            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
-            'm_document_level_id' => $level->id,
-            'm_document_types_id' => $type->id,
+        $base = $this->documentBase();
+        $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
+        $source = Document::query()->create([
+            'origin' => Document::ORIGIN_IMPORTED_CURRENT,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_level_id' => $base['level']->id,
+            'm_document_types_id' => $base['type']->id,
             'm_proses_bisnis_id' => $businessProcess->id,
             'm_proses_fungsi_id' => $businessFunction->id,
-            'uploaded_by' => $user->id,
+            'user_id' => $user->id,
             'nama_dokumen' => 'Imported Existing Preview Source',
             'nomor_dokumen' => 'PS-SMR-IMP-PREV',
-            'nomor_revisi' => 0,
+            'nomor_revisi' => '00.00',
             'tanggal_terbit' => now()->subYear()->toDateString(),
         ]);
         $source->departments()->sync([$department->id]);

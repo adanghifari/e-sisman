@@ -290,8 +290,6 @@ class DocumentInboxController extends Controller
             'departments',
             'revisedFrom.documentLevel',
             'revisedFrom.documentType',
-            'importedExistingSource.documentLevel',
-            'importedExistingSource.documentType',
             'approvals' => function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
                 $query->where(function ($query) use ($approvalScope, $assignedMonitorApprovalScope): void {
                     $query
@@ -316,8 +314,6 @@ class DocumentInboxController extends Controller
             'departments',
             'revisedFrom.documentLevel',
             'revisedFrom.documentType',
-            'importedExistingSource.documentLevel',
-            'importedExistingSource.documentType',
             'approvals' => function ($query) use ($approvalScope, $assignedApprovalScope): void {
                 $query->where(function ($query) use ($approvalScope, $assignedApprovalScope): void {
                     $query->where($approvalScope)
@@ -895,7 +891,7 @@ class DocumentInboxController extends Controller
 
     private function revisionRequestNumber(Document $document): ?string
     {
-        if ($document->request_type !== 'revision' || ($document->revised_from === null && $document->imported_existing_source_id === null)) {
+        if ($document->request_type !== 'revision' || $document->revised_from === null) {
             return null;
         }
 
@@ -903,7 +899,7 @@ class DocumentInboxController extends Controller
             return $document->nomor_lembar_revisi;
         }
 
-        $source = $document->revisedFrom ?: $document->importedExistingSource;
+        $source = $document->revisedFrom;
 
         if ($source === null) {
             return null;

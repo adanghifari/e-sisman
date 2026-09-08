@@ -39,7 +39,6 @@ class OverviewController extends Controller
         $procedures = $this->procedureQuery($filters, $procedureLevelId, $instructionLevelId)
             ->with(['businessFunction', 'departments'])
             ->orderBy('nomor_dokumen')
-            ->orderByDesc('nomor_revisi')
             ->orderBy('nama_dokumen')
             ->paginate(10)
             ->withQueryString();
@@ -73,7 +72,6 @@ class OverviewController extends Controller
         $procedures = $this->procedureQuery($filters, $procedureLevelId, $instructionLevelId)
             ->with(['businessFunction', 'departments', 'status'])
             ->orderBy('nomor_dokumen')
-            ->orderByDesc('nomor_revisi')
             ->orderBy('nama_dokumen')
             ->get();
         $rows = $this->exportRows($procedures, $filters, $instructionLevelId);
@@ -179,9 +177,13 @@ class OverviewController extends Controller
             ->when($filters['instruction'] !== '', fn (Builder $query) => $query->where('nama_dokumen', 'like', '%'.$filters['instruction'].'%'))
             ->select('t_document.*', 'document_relations.target_document_id as procedure_reference_id')
             ->orderBy('nomor_dokumen')
-            ->orderByDesc('nomor_revisi')
             ->orderBy('nama_dokumen')
             ->get()
+            ->sortByDesc(fn (Document $document): string => sprintf(
+                '%010d-%010d',
+                $document->numeric_revision,
+                $document->id,
+            ))
             ->groupBy('procedure_reference_id');
 
         $procedures->setCollection(
@@ -207,9 +209,13 @@ class OverviewController extends Controller
             ->when($filters['instruction'] !== '', fn (Builder $query) => $query->where('nama_dokumen', 'like', '%'.$filters['instruction'].'%'))
             ->select('t_document.*', 'document_relations.target_document_id as procedure_reference_id')
             ->orderBy('nomor_dokumen')
-            ->orderByDesc('nomor_revisi')
             ->orderBy('nama_dokumen')
             ->get()
+            ->sortByDesc(fn (Document $document): string => sprintf(
+                '%010d-%010d',
+                $document->numeric_revision,
+                $document->id,
+            ))
             ->groupBy('procedure_reference_id');
         $counter = 1;
 
@@ -392,7 +398,7 @@ class OverviewController extends Controller
             'id' => $procedure->id,
             'procedure' => $procedure->nama_dokumen,
             'number' => $procedure->nomor_dokumen,
-            'revision' => Document::formatRevisionNumber((int) $procedure->nomor_revisi),
+            'revision' => $procedure->formatted_revision,
             'departments' => $procedure->departments->pluck('nama_department')->values(),
             'business_function' => $procedure->businessFunction?->nama_proses_fungsi ?? '-',
             'published_at' => $procedure->tanggal_terbit?->format('d M Y') ?? '-',
@@ -402,7 +408,7 @@ class OverviewController extends Controller
                     'id' => $instruction->id,
                     'name' => $instruction->nama_dokumen,
                     'number' => $instruction->nomor_dokumen,
-                    'revision' => Document::formatRevisionNumber((int) $instruction->nomor_revisi),
+                    'revision' => $instruction->formatted_revision,
                     'departments' => $instruction->departments->pluck('nama_department')->values(),
                     'business_function' => $instruction->businessFunction?->nama_proses_fungsi ?? '-',
                     'published_at' => $instruction->tanggal_terbit?->format('d M Y') ?? '-',
@@ -417,7 +423,7 @@ class OverviewController extends Controller
             $category,
             $document->nama_dokumen,
             $document->nomor_dokumen ?: '-',
-            Document::formatRevisionNumber((int) $document->nomor_revisi),
+            $document->formatted_revision,
             $parentProcedure,
             $document->departments->pluck('nama_department')->join(', ') ?: '-',
             $document->businessFunction?->nama_proses_fungsi ?? '-',

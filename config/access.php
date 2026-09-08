@@ -265,11 +265,25 @@ return [
             'action' => 'create',
         ],
         [
+            'code' => 'documents.existing.imports.number-reuse-check',
+            'name' => 'Cek Penggunaan Nomor Dokumen Import',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.existing.imports.number-reuse-check',
+            'action' => 'view',
+        ],
+        [
             'code' => 'documents.existing.imports.detail',
             'name' => 'Lihat Detail Arsip Dokumen Existing',
             'module' => 'Manajemen Dokumen',
             'route' => 'documents.existing.imports.show',
             'action' => 'view',
+        ],
+        [
+            'code' => 'documents.existing.imports.delete',
+            'name' => 'Hapus Dokumen Imported Existing',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.existing.imports.destroy',
+            'action' => 'delete',
         ],
         [
             'code' => 'documents.existing.imports.revision',

@@ -13,7 +13,6 @@ use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
 use App\Models\DocumentRelation;
 use App\Models\DocumentType;
-use App\Models\ImportedExistingDocument;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\DocumentFiles\DocumentFileNumbering;
@@ -62,9 +61,6 @@ class DocumentApprovalController extends Controller
             'revisedFrom.documentLevel.approvalFlows.stages',
             'revisedFrom.creator',
             'revisedFrom.files.uploader',
-            'importedExistingSource.documentLevel.approvalFlows.stages',
-            'importedExistingSource.uploader',
-            'importedExistingSource.files.uploader',
         ]);
 
         $this->normalizeSubmittedSourceAttachmentLineage($document);
@@ -604,16 +600,11 @@ class DocumentApprovalController extends Controller
         $document->loadMissing([
             'documentLevel.approvalFlows.stages',
             'revisedFrom.documentLevel.approvalFlows.stages',
-            'importedExistingSource.documentLevel.approvalFlows.stages',
         ]);
 
         if ($document->documentLevel?->kode === 'level-4') {
             if ($document->revisedFrom?->documentLevel !== null) {
                 return $document->revisedFrom->documentLevel;
-            }
-
-            if ($document->importedExistingSource?->documentLevel !== null) {
-                return $document->importedExistingSource->documentLevel;
             }
         }
 
@@ -622,14 +613,8 @@ class DocumentApprovalController extends Controller
 
     private function masterDisplayNumber(Document $document): string
     {
-        if ($document->revised_from === null && $document->imported_existing_source_id === null) {
+        if ($document->revised_from === null) {
             return $document->nomor_dokumen ?: '-';
-        }
-
-        if ($document->imported_existing_source_id !== null) {
-            return $document->importedExistingSource?->nomor_dokumen
-                ?: $document->nomor_dokumen
-                ?: '-';
         }
 
         $rootDocument = Document::query()
@@ -644,7 +629,7 @@ class DocumentApprovalController extends Controller
 
     private function revisionRequestDisplayNumber(Document $document): ?string
     {
-        if ($document->revised_from === null && $document->imported_existing_source_id === null) {
+        if ($document->revised_from === null) {
             return null;
         }
 
@@ -1255,10 +1240,6 @@ class DocumentApprovalController extends Controller
 
         $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
 
-        if ($document->imported_existing_source_id !== null && $document->request_type === 'revision') {
-            return $this->finalizeImportedExistingRevisionApproval($document, $approvedStatus);
-        }
-
         if ($document->revised_from !== null && $document->request_type !== 'obsolete') {
             return $this->finalizeRevisionApproval($document, $approvedStatus);
         }
@@ -1332,7 +1313,7 @@ class DocumentApprovalController extends Controller
                 && $revision->id !== $lockedDocument->id
                 && $revision->m_status_document_id === $approvedStatus->id
                 && $revision->request_type !== 'obsolete'
-                && (int) $revision->nomor_revisi >= (int) $lockedDocument->nomor_revisi);
+                && $revision->numeric_revision >= $lockedDocument->numeric_revision);
 
         if ($conflictingMaster !== null) {
             throw new ConflictHttpException('Family dokumen sudah memiliki master aktif lain.');
@@ -1350,7 +1331,7 @@ class DocumentApprovalController extends Controller
             'official_preparer_id' => $document->official_preparer_id,
             'nomor_dokumen' => $source->nomor_dokumen,
             'nomor_lembar_revisi' => $lockedDocument->nomor_lembar_revisi
-                ?: $this->revisionFormNumber($source, (int) $lockedDocument->nomor_revisi),
+                ?: $this->revisionFormNumber($source, $lockedDocument->numeric_revision),
             'tanggal_terbit' => $lockedDocument->tanggal_terbit ?? $approvedAt->toDateString(),
             'approved_at' => $approvedAt,
             'rejected_at' => null,
@@ -1379,48 +1360,6 @@ class DocumentApprovalController extends Controller
         return $lockedDocument->refresh();
     }
 
-    private function finalizeImportedExistingRevisionApproval(Document $document, StatusDocument $approvedStatus): ?Document
-    {
-        if ($document->imported_existing_source_id === null || $document->request_type !== 'revision') {
-            return null;
-        }
-
-        $lockedDocument = Document::query()
-            ->whereKey($document->id)
-            ->lockForUpdate()
-            ->firstOrFail();
-        $source = ImportedExistingDocument::query()
-            ->whereKey($document->imported_existing_source_id)
-            ->lockForUpdate()
-            ->firstOrFail();
-
-        if ($source->document_state !== ImportedExistingDocument::STATE_MASTER) {
-            throw new ConflictHttpException('Imported existing master sumber sudah berubah.');
-        }
-
-        $approvedAt = now();
-
-        $lockedDocument->update([
-            'm_document_level_id' => $source->m_document_level_id,
-            'm_status_document_id' => $approvedStatus->id,
-            'm_document_types_id' => $source->m_document_types_id,
-            'm_proses_bisnis_id' => $document->m_proses_bisnis_id,
-            'm_proses_fungsi_id' => $document->m_proses_fungsi_id,
-            'nomor_dokumen' => $source->nomor_dokumen,
-            'tanggal_terbit' => $lockedDocument->tanggal_terbit ?? $approvedAt->toDateString(),
-            'approved_at' => $approvedAt,
-            'rejected_at' => null,
-        ]);
-
-        $source->update([
-            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
-            'tanggal_obsolete' => $lockedDocument->tanggal_terbit ?? now()->toDateString(),
-        ]);
-
-        DocumentRelation::supersedeImportedSourceWithDocument($source, $lockedDocument, $lockedDocument->user_id);
-
-        return $lockedDocument->refresh();
-    }
 
     private function autoGenerateFinalDocumentAfterCommit(Document $document, ?User $generatedBy): void
     {

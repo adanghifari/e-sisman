@@ -31,6 +31,10 @@ class EnsureRoutePermission
             return $next($request);
         }
 
+        if ($this->canAccessImportedNumberReuseCheck($request, $routeName)) {
+            return $next($request);
+        }
+
         $routeHasConfiguredPermission = collect(config('access.permissions', []))
             ->contains(fn (array $permission): bool => ($permission['route'] ?? null) === $routeName);
 
@@ -62,5 +66,24 @@ class EnsureRoutePermission
 
         return $permissionCodes !== []
             && ($request->user()?->hasAnyPermission($permissionCodes) ?? false);
+    }
+
+    private function canAccessImportedNumberReuseCheck(Request $request, ?string $routeName): bool
+    {
+        if ($routeName !== 'documents.existing.imports.number-reuse-check') {
+            return false;
+        }
+
+        return $request->user()?->hasAnyPermission([
+            'documents.master.imports.create',
+            'documents.master.imports.create-level',
+            'documents.master.imports.store',
+            'documents.master.imports.store-level',
+            'documents.obsolete.imports.create',
+            'documents.obsolete.imports.create-level',
+            'documents.obsolete.imports.store',
+            'documents.obsolete.imports.store-level',
+            'documents.existing.imports.view',
+        ]) ?? false;
     }
 }

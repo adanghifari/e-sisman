@@ -190,6 +190,14 @@
             />
         @endif
 
+        @if (session('delete_warning'))
+            <x-ui.success-dialog
+                variant="warning"
+                :title="session('delete_warning.title')"
+                :message="session('delete_warning.message')"
+            />
+        @endif
+
         @persist('toast')
             <flux:toast.group>
                 <flux:toast />

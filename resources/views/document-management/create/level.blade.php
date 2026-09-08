@@ -361,11 +361,7 @@
                 @csrf
                 <input type="hidden" name="draft_id" value="{{ $draft?->id }}" data-autosave-draft-id>
                 @if ($revisionSource)
-                    @if ($revisionSource instanceof \App\Models\ImportedExistingDocument || ($draft && $draft->imported_existing_source_id))
-                        <input type="hidden" name="imported_source" value="{{ $revisionSource->id }}">
-                    @else
-                        <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
-                    @endif
+                    <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
                 @endif
                 @if ($resubmissionSource)
                     <input type="hidden" name="resubmitted_from" value="{{ $resubmissionSource->id }}">
@@ -507,11 +503,7 @@
                 @csrf
                 <input type="hidden" name="draft_id" value="{{ $draft?->id }}" data-autosave-draft-id>
                 @if ($revisionSource)
-                    @if ($revisionSource instanceof \App\Models\ImportedExistingDocument || ($draft && $draft->imported_existing_source_id))
-                        <input type="hidden" name="imported_source" value="{{ $revisionSource->id }}">
-                    @else
-                        <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
-                    @endif
+                    <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
                 @endif
                 @if ($resubmissionSource)
                     <input type="hidden" name="resubmitted_from" value="{{ $resubmissionSource->id }}">
