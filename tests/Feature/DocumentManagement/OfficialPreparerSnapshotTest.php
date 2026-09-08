@@ -154,16 +154,22 @@ class OfficialPreparerSnapshotTest extends TestCase
         ]);
         $source->departments()->sync([$documentDepartment->id]);
 
-        $this->actingAs($submitter)
-            ->post(route('documents.existing.imports.revisions.store', $source), [
+        $response = $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-4'), [
+                'imported_source' => $source->id,
+                'submit_action' => 'submit',
                 'nama_dokumen' => 'Imported Existing Master Revision',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$documentDepartment->id],
                 'official_preparer_id' => $officialPreparer->id,
                 'catatan_revisi' => 'Update revision',
                 'tanggal_terbit' => '2026-08-29',
                 'revision_content' => UploadedFile::fake()->create('revision-content.pdf', 12, 'application/pdf'),
                 'revision_form' => UploadedFile::fake()->create('revision-form.pdf', 12, 'application/pdf'),
-            ])
-            ->assertRedirect();
+            ]);
+
+        $response->assertRedirect();
 
         $document = Document::query()->where('imported_existing_source_id', $source->id)->firstOrFail();
 
@@ -392,5 +398,21 @@ class OfficialPreparerSnapshotTest extends TestCase
                 ['nama_status' => $status],
             );
         }
+
+        DocumentLevel::query()->firstOrCreate(
+            ['kode' => 'level-4'],
+            [
+                'nama_level' => 'Level IV',
+                'nama_dokumen' => 'Form / Lembar Revisi',
+                'prefix' => 'FM',
+                'is_active' => true,
+                'sort_order' => 4,
+            ],
+        );
+
+        DocumentType::query()->firstOrCreate(
+            ['nama_types' => 'Form'],
+            ['is_active' => true],
+        );
     }
 }

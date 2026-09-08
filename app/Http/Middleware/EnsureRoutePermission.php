@@ -22,7 +22,7 @@ class EnsureRoutePermission
 
         if (
             in_array($routeName, ['documents.create.level', 'documents.store'], true)
-            && $request->filled('revised_from')
+            && ($request->filled('revised_from') || $request->filled('imported_source'))
         ) {
             return $next($request);
         }

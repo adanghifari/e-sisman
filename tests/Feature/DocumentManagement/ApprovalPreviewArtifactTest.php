@@ -304,8 +304,13 @@ class ApprovalPreviewArtifactTest extends TestCase
         [$user, $source] = $this->importedExistingFixture();
 
         $this->actingAs($user)
-            ->post(route('documents.existing.imports.revisions.store', $source), [
+            ->post(route('documents.store', 'level-4'), [
+                'imported_source' => $source->id,
+                'submit_action' => 'submit',
                 'nama_dokumen' => 'Imported Revision Preview',
+                'm_proses_bisnis_id' => $source->m_proses_bisnis_id,
+                'm_proses_fungsi_id' => $source->m_proses_fungsi_id,
+                'department_ids' => $source->departments->pluck('id')->all(),
                 'official_preparer_id' => $user->id,
                 'catatan_revisi' => 'Update content.',
                 'tanggal_terbit' => '2026-08-29',
@@ -596,6 +601,11 @@ class ApprovalPreviewArtifactTest extends TestCase
         DocumentLevel::query()->firstOrCreate(
             ['kode' => 'level-4'],
             ['nama_level' => 'Level IV', 'nama_dokumen' => 'Form', 'prefix' => 'FM', 'is_active' => true, 'sort_order' => 4],
+        );
+
+        DocumentType::query()->firstOrCreate(
+            ['nama_types' => 'Form'],
+            ['is_active' => true],
         );
     }
 }

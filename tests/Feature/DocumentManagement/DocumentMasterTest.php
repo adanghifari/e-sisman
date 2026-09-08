@@ -161,7 +161,7 @@ class DocumentMasterTest extends TestCase
             ->assertSee('Download Printout PDF')
             ->assertDontSee('lampiran-master-detail.pdf')
             ->assertSee('Ajukan Revisi')
-            ->assertSee('data-imported-revision-modal', false);
+            ->assertSee(route('documents.create.level', ['level-4', 'imported_source' => $importedMaster->id]), false);
 
         $this->actingAs($user)
             ->get(route('documents.existing.imports.files.preview', [$importedMaster, $file]))
@@ -1357,8 +1357,45 @@ class DocumentMasterTest extends TestCase
             ->assertOk()
             ->assertSee('Revisi dalam Pengajuan')
             ->assertSee('disabled', false)
-            ->assertDontSee('data-imported-revision-modal-open', false)
-            ->assertDontSee('data-imported-revision-modal', false);
+            ->assertDontSee(route('documents.create.level', ['level-4', 'imported_source' => $importedMaster->id]), false);
+    }
+
+    public function test_imported_master_revision_button_shows_for_regular_user_from_document_department(): void
+    {
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $otherDepartment = Department::create([
+            'kode_department' => 'FIN',
+            'nama_department' => 'Finance',
+        ]);
+
+        $owner = User::factory()->create();
+        $importedMaster = $this->createImportedExistingMaster($owner, [
+            'nama_dokumen' => 'Imported Master Dept Test',
+            'nomor_dokumen' => 'PS-QA-001',
+        ]);
+        $importedMaster->departments()->sync([$department->id]);
+
+        $regularUserSameDept = $this->userWithPermission('documents.master.detail');
+        $regularUserSameDept->update(['m_department_id' => $department->id]);
+
+        $regularUserOtherDept = $this->userWithPermission('documents.master.detail');
+        $regularUserOtherDept->update(['m_department_id' => $otherDepartment->id]);
+
+        // Same department user should see "Ajukan Revisi"
+        $this->actingAs($regularUserSameDept)
+            ->get(route('documents.master.imported.show', $importedMaster))
+            ->assertOk()
+            ->assertSee('Ajukan Revisi')
+            ->assertSee(route('documents.create.level', ['level-4', 'imported_source' => $importedMaster->id]), false);
+
+        // Other department user should NOT see "Ajukan Revisi"
+        $this->actingAs($regularUserOtherDept)
+            ->get(route('documents.master.imported.show', $importedMaster))
+            ->assertOk()
+            ->assertDontSee(route('documents.create.level', ['level-4', 'imported_source' => $importedMaster->id]), false);
     }
 
     public function test_obsolete_button_only_shows_for_user_from_document_department(): void

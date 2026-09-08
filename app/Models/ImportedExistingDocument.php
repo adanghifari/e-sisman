@@ -115,4 +115,47 @@ class ImportedExistingDocument extends Model
     {
         return $this->hasMany(Document::class, 'imported_existing_source_id');
     }
+
+    public function procedureReferenceRelation(): ?DocumentRelation
+    {
+        return $this->outgoingRelations()
+            ->with(['targetDocument', 'targetImportedDocument'])
+            ->where('relation_type', DocumentRelation::REFERENCES)
+            ->first();
+    }
+
+    public function procedureReferenceValue(): ?string
+    {
+        $relation = $this->procedureReferenceRelation();
+
+        return DocumentRelation::referenceValue(
+            $relation?->target_document_id,
+            $relation?->target_imported_existing_document_id,
+        );
+    }
+
+    public function latestApprovedRevisionNumber(): int
+    {
+        return $this->normalizeRevisionNumber($this->nomor_revisi);
+    }
+
+    public function normalizeRevisionNumber(?string $revision): int
+    {
+        if (! filled($revision)) {
+            return 0;
+        }
+
+        $parts = explode('.', $revision, 2);
+        $major = (int) preg_replace('/\D+/', '', $parts[0] ?? '0');
+        $minor = (int) preg_replace('/\D+/', '', $parts[1] ?? '0');
+
+        return ($major * 100) + $minor;
+    }
+
+    public function availableRevisionSourceAttachments(): \Illuminate\Support\Collection
+    {
+        return $this->files()
+            ->where('type_file', ImportedExistingDocumentFile::ATTACHMENT)
+            ->get();
+    }
 }

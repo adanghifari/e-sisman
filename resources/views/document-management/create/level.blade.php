@@ -361,7 +361,11 @@
                 @csrf
                 <input type="hidden" name="draft_id" value="{{ $draft?->id }}" data-autosave-draft-id>
                 @if ($revisionSource)
-                    <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
+                    @if ($revisionSource instanceof \App\Models\ImportedExistingDocument || ($draft && $draft->imported_existing_source_id))
+                        <input type="hidden" name="imported_source" value="{{ $revisionSource->id }}">
+                    @else
+                        <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
+                    @endif
                 @endif
                 @if ($resubmissionSource)
                     <input type="hidden" name="resubmitted_from" value="{{ $resubmissionSource->id }}">
@@ -503,7 +507,11 @@
                 @csrf
                 <input type="hidden" name="draft_id" value="{{ $draft?->id }}" data-autosave-draft-id>
                 @if ($revisionSource)
-                    <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
+                    @if ($revisionSource instanceof \App\Models\ImportedExistingDocument || ($draft && $draft->imported_existing_source_id))
+                        <input type="hidden" name="imported_source" value="{{ $revisionSource->id }}">
+                    @else
+                        <input type="hidden" name="revised_from" value="{{ $revisionSource->id }}">
+                    @endif
                 @endif
                 @if ($resubmissionSource)
                     <input type="hidden" name="resubmitted_from" value="{{ $resubmissionSource->id }}">
@@ -1022,7 +1030,7 @@
 
                 const hasMeaningfulPayload = (form) => {
                     const fields = Array.from(form.querySelectorAll('input, select, textarea'))
-                        .filter((field) => !['_token', 'draft_id', 'revised_from'].includes(field.name || ''))
+                        .filter((field) => !['_token', 'draft_id', 'revised_from', 'imported_source'].includes(field.name || ''))
                         .filter((field) => field.type !== 'file')
                         .filter((field) => field.type !== 'hidden' || field.value);
 

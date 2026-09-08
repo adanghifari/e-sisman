@@ -359,8 +359,13 @@ class DocumentAttachmentLifecycleTest extends TestCase
         $source->departments()->sync([$department->id]);
 
         $this->actingAs($user)
-            ->post(route('documents.existing.imports.revisions.store', $source), [
+            ->post(route('documents.store', 'level-4'), [
+                'imported_source' => $source->id,
+                'submit_action' => 'submit',
                 'nama_dokumen' => 'Imported Master Numbering Rev',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
                 'official_preparer_id' => $user->id,
                 'revision_content' => UploadedFile::fake()->create('revision-content.pdf', 24, 'application/pdf'),
                 'revision_form' => UploadedFile::fake()->create('revision-form.pdf', 24, 'application/pdf'),

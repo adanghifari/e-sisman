@@ -115,7 +115,7 @@ class DocumentMasterController extends Controller
 
         $importedRows = $this->importedMasterQuery($filters)
             ->get()
-            ->map(fn (ImportedExistingDocument $document) => $this->presentImportedMasterRow($document));
+            ->map(fn (ImportedExistingDocument $document) => $this->presentImportedMasterRow($request, $document));
 
         $documents = $this->sortPresentedMasterRows(
             collect($workflowRows->all())->merge($importedRows->all()),
@@ -251,7 +251,7 @@ class DocumentMasterController extends Controller
             'masterDisplayNumber' => $importedExistingDocument->nomor_dokumen ?: '-',
             'revisionRequestDisplayNumber' => null,
             'canEdit' => $request->user()?->isAdmin() ?? false,
-            'canRequestRevision' => $request->user()?->hasPermission('documents.existing.imports.revision') ?? false,
+            'canRequestRevision' => $this->canRequestRevision($request, $importedExistingDocument),
             'hasActiveRevisionRequest' => $this->hasActiveImportedExistingRevisionRequest($importedExistingDocument),
             'canRequestObsolete' => $this->canRequestImportedObsolete($request, $importedExistingDocument),
             'approvalFlowStages' => collect(),
@@ -264,7 +264,6 @@ class DocumentMasterController extends Controller
                 : null,
             'relatedObsoleteDocuments' => $this->relatedImportedObsoleteForImportedMaster($importedExistingDocument),
             'importNote' => $this->importedMasterNote($importedExistingDocument),
-            'users' => User::query()->orderBy('name')->get(),
         ]);
     }
 
@@ -513,15 +512,23 @@ class DocumentMasterController extends Controller
         return $document->request_type !== 'obsolete';
     }
 
-    private function canRequestRevision(Request $request, Document $document): bool
+    private function canRequestRevision(Request $request, Document|ImportedExistingDocument $document): bool
     {
-        if ($document->status?->nama_status !== StatusDocument::APPROVED) {
+        if ($document instanceof Document && $document->status?->nama_status !== StatusDocument::APPROVED) {
+            return false;
+        }
+
+        if ($document instanceof ImportedExistingDocument && $document->document_state !== ImportedExistingDocument::STATE_MASTER) {
             return false;
         }
 
         $user = $request->user();
 
         if ($user?->isDeveloper() || $user?->isAdmin()) {
+            return true;
+        }
+
+        if ($document instanceof ImportedExistingDocument && ($user?->hasPermission('documents.existing.imports.revision') ?? false)) {
             return true;
         }
 
@@ -761,7 +768,7 @@ class DocumentMasterController extends Controller
         ];
     }
 
-    private function presentImportedMasterRow(ImportedExistingDocument $document): object
+    private function presentImportedMasterRow(Request $request, ImportedExistingDocument $document): object
     {
         return (object) [
             'source_type' => 'imported_existing',
@@ -776,7 +783,7 @@ class DocumentMasterController extends Controller
             'proses_fungsi' => $document->businessFunction?->nama_proses_fungsi,
             'tanggal_terbit' => $document->tanggal_terbit,
             'detail_url' => route('documents.master.imported.show', $document),
-            'can_request_revision' => true,
+            'can_request_revision' => $this->canRequestRevision($request, $document),
             'obsolete_documents' => $this->relatedImportedObsoleteForImportedMaster($document),
         ];
     }

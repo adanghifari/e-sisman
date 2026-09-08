@@ -515,8 +515,13 @@ class ImportedExistingDocumentTest extends TestCase
         ]);
 
         $response = $this->actingAs($user)
-            ->post(route('documents.existing.imports.revisions.store', $source), [
+            ->post(route('documents.store', 'level-4'), [
+                'imported_source' => $source->id,
+                'submit_action' => 'submit',
                 'nama_dokumen' => 'Imported Master Source Rev 1',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
                 'official_preparer_id' => $user->id,
                 'revision_content' => UploadedFile::fake()->create('revision-content.pdf', 100, 'application/pdf'),
                 'revision_form' => UploadedFile::fake()->create('revision-form.pdf', 100, 'application/pdf'),
@@ -612,20 +617,138 @@ class ImportedExistingDocumentTest extends TestCase
         ]);
 
         $this->actingAs($user)
-            ->from(route('documents.master.imported.show', $source))
-            ->post(route('documents.existing.imports.revisions.store', $source), [
+            ->from(route('documents.create.level', ['level-4', 'imported_source' => $source->id]))
+            ->post(route('documents.store', 'level-4'), [
+                'imported_source' => $source->id,
+                'submit_action' => 'submit',
                 'nama_dokumen' => 'Imported Master Revisi Aktif Rev 2',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
                 'official_preparer_id' => $user->id,
                 'revision_content' => UploadedFile::fake()->create('revision-content.pdf', 100, 'application/pdf'),
                 'revision_form' => UploadedFile::fake()->create('revision-form.pdf', 100, 'application/pdf'),
             ])
-            ->assertRedirect(route('documents.master.imported.show', $source))
-            ->assertSessionHasErrors(['revision']);
+            ->assertRedirect(route('documents.create.level', ['level-4', 'imported_source' => $source->id]))
+            ->assertSessionHasErrors(['imported_source']);
 
         $this->assertSame(1, Document::query()
             ->where('imported_existing_source_id', $source->id)
             ->where('request_type', 'revision')
             ->count());
+    }
+
+    public function test_imported_existing_master_revision_can_be_saved_as_draft_edited_and_submitted(): void
+    {
+        Storage::fake('local');
+
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.existing.imports.revision',
+            'documents.create.drafts',
+            'documents.create.drafts.edit',
+        ]);
+        $draftStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::DRAFT]);
+        $proposedStatus = StatusDocument::query()->firstOrCreate(['nama_status' => StatusDocument::PROPOSED]);
+        ApprovalStatus::query()->firstOrCreate(['kode_status' => ApprovalStatus::APPROVED], ['nama_status' => 'Disetujui']);
+        ApprovalStatus::query()->firstOrCreate(['kode_status' => ApprovalStatus::PENDING], ['nama_status' => 'Menunggu']);
+
+        $source = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Master For Draft',
+            'nomor_dokumen' => 'PS-SMR-DRAFT-01',
+            'nomor_revisi' => '00.00',
+        ]);
+        $source->departments()->sync([$department->id]);
+
+        // 1. Simpan Draft
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-4'), [
+                'imported_source' => $source->id,
+                'submit_action' => 'draft',
+                'nama_dokumen' => 'Draft Revisi Imported Master',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+            ])
+            ->assertRedirect(route('documents.create.drafts'));
+
+        $draft = Document::query()
+            ->where('imported_existing_source_id', $source->id)
+            ->firstOrFail();
+
+        $this->assertSame($draftStatus->id, $draft->m_status_document_id);
+        $this->assertSame('revision', $draft->request_type);
+        $this->assertSame('PS-SMR-DRAFT-01', $draft->nomor_dokumen);
+        $this->assertNull($draft->submitted_at);
+
+        // 2. Akses halaman Draft Saya
+        $this->actingAs($user)
+            ->get(route('documents.create.drafts'))
+            ->assertOk()
+            ->assertSee('Draft Revisi Imported Master')
+            ->assertSee('PS-SMR-DRAFT-01');
+
+        // 3. Edit Draft
+        $this->actingAs($user)
+            ->get(route('documents.create.drafts.edit', $draft))
+            ->assertOk()
+            ->assertSee('Draft Revisi Imported Master')
+            ->assertSee('PS-SMR-DRAFT-01');
+
+        // 4. Submit dari Draft
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-4'), [
+                'draft_id' => $draft->id,
+                'imported_source' => $source->id,
+                'submit_action' => 'submit',
+                'nama_dokumen' => 'Revisi Final Imported Master',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'revision_content' => UploadedFile::fake()->create('rev-content.pdf', 100, 'application/pdf'),
+                'revision_form' => UploadedFile::fake()->create('rev-form.pdf', 100, 'application/pdf'),
+            ])
+            ->assertRedirect(route('documents.create'));
+
+        $draft->refresh();
+        $this->assertSame($proposedStatus->id, $draft->m_status_document_id);
+        $this->assertSame('Revisi Final Imported Master', $draft->nama_dokumen);
+        $this->assertNotNull($draft->submitted_at);
+    }
+
+    public function test_imported_existing_master_revision_page_renders_with_prefilled_metadata(): void
+    {
+        [$user, $level, $documentType, $businessProcess, $businessFunction, $department] = $this->existingMasterFixture([
+            'documents.existing.imports.revision',
+        ]);
+        $source = ImportedExistingDocument::create([
+            'document_state' => ImportedExistingDocument::STATE_MASTER,
+            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+            'm_document_level_id' => $level->id,
+            'm_document_types_id' => $documentType->id,
+            'm_proses_bisnis_id' => $businessProcess->id,
+            'm_proses_fungsi_id' => $businessFunction->id,
+            'uploaded_by' => $user->id,
+            'nama_dokumen' => 'Imported Master Page Test',
+            'nomor_dokumen' => 'PS-SMR-PAGE-TEST',
+            'nomor_revisi' => '00.01',
+        ]);
+        $source->departments()->sync([$department->id]);
+
+        $this->actingAs($user)
+            ->get(route('documents.create.level', ['level-4', 'imported_source' => $source->id]))
+            ->assertOk()
+            ->assertSee('PS-SMR-PAGE-TEST')
+            ->assertSee('Imported Master Page Test')
+            ->assertSee('name="imported_source"', false)
+            ->assertSee('value="'.$source->id.'"', false);
     }
 
     public function test_current_rule_requires_all_modern_master_data(): void
@@ -1324,7 +1447,18 @@ class ImportedExistingDocumentTest extends TestCase
     {
         $user = $this->userWithPermissions($permissionCodes);
         $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
+        DocumentLevel::query()->firstOrCreate(
+            ['kode' => 'level-4'],
+            [
+                'nama_level' => 'Level IV',
+                'nama_dokumen' => 'Form / Lembar Revisi',
+                'prefix' => 'FM',
+                'is_active' => true,
+                'sort_order' => 4,
+            ],
+        );
         $documentType = DocumentType::query()->firstOrCreate(['nama_types' => 'Prosedur']);
+        DocumentType::query()->firstOrCreate(['nama_types' => 'Form']);
         $businessProcess = BusinessProcess::create([
             'kode' => 'SMR',
             'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
@@ -1338,6 +1472,7 @@ class ImportedExistingDocumentTest extends TestCase
             'kode_department' => 'QA',
             'nama_department' => 'Quality Assurance',
         ]);
+        $user->update(['m_department_id' => $department->id]);
 
         return [$user, $level, $documentType, $businessProcess, $businessFunction, $department];
     }

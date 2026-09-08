@@ -83,7 +83,6 @@ Route::middleware(['auth', 'verified', EnsureRoutePermission::class])->group(fun
     Route::get('documents/existing/imports', [ImportedExistingDocumentController::class, 'index'])->name('documents.existing.imports.index');
     Route::post('documents/existing/imports/numbering-setups', [ImportedExistingDocumentController::class, 'storeNumberingSetup'])->name('documents.existing.imports.numbering-setups.store');
     Route::get('documents/existing/imports/{importedExistingDocument}', [ImportedExistingDocumentController::class, 'show'])->name('documents.existing.imports.show');
-    Route::post('documents/existing/imports/{importedExistingDocument}/revision', [ImportedExistingDocumentController::class, 'storeRevision'])->name('documents.existing.imports.revisions.store');
     Route::get('documents/existing/imports/{importedExistingDocument}/files/{file}', [ImportedExistingDocumentController::class, 'file'])->name('documents.existing.imports.files.show');
     Route::get('documents/existing/imports/{importedExistingDocument}/files/{file}/preview', [ImportedExistingDocumentController::class, 'preview'])->name('documents.existing.imports.files.preview');
     Route::get('documents/obsolete/{document}', [DocumentObsoleteController::class, 'show'])->name('documents.obsolete.show');
