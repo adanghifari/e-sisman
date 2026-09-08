@@ -92,6 +92,39 @@ class DocumentInboxController extends Controller
         ]);
     }
 
+    public function needsProcessCount(Request|User|null $userOrRequest = null): int
+    {
+        if ($userOrRequest instanceof Request) {
+            $request = $userOrRequest;
+            $user = $request->user();
+        } elseif ($userOrRequest instanceof User) {
+            $user = $userOrRequest;
+            $request = request();
+            if ($request->user()?->id !== $user->id) {
+                $request = (clone $request)->setUserResolver(fn () => $user);
+            }
+        } else {
+            $user = auth()->user();
+            $request = request();
+        }
+
+        if (! $user) {
+            return 0;
+        }
+
+        return once(function () use ($request): int {
+            $filters = [
+                'search' => '',
+                'type' => '',
+                'status' => '',
+                'stage' => '',
+                'sort' => 'newest',
+            ];
+
+            return $this->myTasksQuery($request, $filters)->count();
+        });
+    }
+
     /**
      * @return array{needs_process: int, processed_history: int}
      */
@@ -106,7 +139,7 @@ class DocumentInboxController extends Controller
         ];
 
         return [
-            'needs_process' => $this->myTasksQuery($request, $filters)->count(),
+            'needs_process' => $this->needsProcessCount($request),
             'processed_history' => $this->myProcessedHistoryQuery($request, $filters)->count(),
         ];
     }

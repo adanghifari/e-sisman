@@ -20,20 +20,35 @@
 
                 return $permission === null && $route === null;
             };
+            $resolveBadge = function (array $item) use ($user): ?int {
+                if (! $user) {
+                    return null;
+                }
+
+                $badgeKey = $item['badge'] ?? null;
+                $route = $item['route'] ?? null;
+
+                if ($badgeKey === 'needs_process' || $route === 'documents.inbox') {
+                    return app(\App\Http\Controllers\DocumentManagement\DocumentInboxController::class)->needsProcessCount($user);
+                }
+
+                return is_numeric($badgeKey) ? (int) $badgeKey : null;
+            };
             $menuGroups = collect(config('navigation'))
-                ->map(function (array $items) use ($canSeeMenuItem): array {
+                ->map(function (array $items) use ($canSeeMenuItem, $resolveBadge): array {
                     return collect($items)
-                        ->map(function (array $item) use ($canSeeMenuItem): ?array {
+                        ->map(function (array $item) use ($canSeeMenuItem, $resolveBadge): ?array {
                             if (isset($item['children'])) {
                                 $children = collect($item['children'])
                                     ->filter($canSeeMenuItem)
+                                    ->map(fn (array $child): array => [...$child, 'badge' => $resolveBadge($child)])
                                     ->values()
                                     ->all();
 
                                 return count($children) > 0 ? [...$item, 'children' => $children] : null;
                             }
 
-                            return $canSeeMenuItem($item) ? $item : null;
+                            return $canSeeMenuItem($item) ? [...$item, 'badge' => $resolveBadge($item)] : null;
                         })
                         ->filter()
                         ->values()

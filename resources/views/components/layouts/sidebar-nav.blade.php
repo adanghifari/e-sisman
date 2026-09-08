@@ -40,6 +40,18 @@
                                 >
                                     <flux:icon :name="$child['icon']" class="size-4 {{ $childActive ? 'text-sky-700' : 'text-white' }}" />
                                     <span @class(['sidebar-label' => ! $mobile])>{{ $child['label'] }}</span>
+
+                                    @if (isset($child['badge']) && $child['badge'] !== null)
+                                        <span @class([
+                                            'ml-auto inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold leading-none',
+                                            $childActive
+                                                ? 'bg-sky-100 text-sky-800'
+                                                : ((int) $child['badge'] > 0 ? 'bg-sky-600 text-white' : 'bg-sky-900 text-sky-300 border border-sky-700/70'),
+                                            'sidebar-label' => ! $mobile,
+                                        ])>
+                                            {{ $child['badge'] }}
+                                        </span>
+                                    @endif
                                 </a>
                             @endforeach
                         </div>
@@ -53,6 +65,18 @@
                     >
                         <flux:icon :name="$item['icon']" class="size-5 {{ $active ? 'text-sky-700' : 'text-white' }}" />
                         <span @class(['sidebar-label' => ! $mobile])>{{ $item['label'] }}</span>
+
+                        @if (isset($item['badge']) && $item['badge'] !== null)
+                            <span @class([
+                                'ml-auto inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold leading-none',
+                                $active
+                                    ? 'bg-sky-100 text-sky-800'
+                                    : ((int) $item['badge'] > 0 ? 'bg-sky-600 text-white' : 'bg-sky-900 text-sky-300 border border-sky-700/70'),
+                                'sidebar-label' => ! $mobile,
+                            ])>
+                                {{ $item['badge'] }}
+                            </span>
+                        @endif
                     </a>
                 @endif
             @endforeach

@@ -223,4 +223,9 @@ class User extends Authenticatable implements PasskeyUser
             ? Str::substr($initials, 0, 1).Str::substr($initials, -1)
             : $initials;
     }
+
+    public function needsProcessDocumentCount(): int
+    {
+        return app(\App\Http\Controllers\DocumentManagement\DocumentInboxController::class)->needsProcessCount($this);
+    }
 }
