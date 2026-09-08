@@ -14,9 +14,8 @@ use App\Models\DocumentNumberRegistry;
 use App\Models\DocumentRelation;
 use App\Models\DocumentType;
 use App\Models\StatusDocument;
-use App\Support\DocumentFiles\DocumentFileNumbering;
-use App\Support\FinalDocuments\AutoGenerateApprovalPreview;
 use Illuminate\Contracts\View\View;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
@@ -339,8 +338,7 @@ class ImportedExistingDocumentController extends Controller
 
     public function editMaster(Request $request, Document $document): View
     {
-        abort_unless($request->user()?->isAdmin(), 403);
-        abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
+        abort_unless($request->user()?->hasPermission('documents.master.imports.edit'), 403);
         abort_unless($document->origin !== Document::ORIGIN_WORKFLOW, 404);
 
         $document->loadMissing([
@@ -454,19 +452,19 @@ class ImportedExistingDocumentController extends Controller
 
     public function updateMaster(Request $request, Document $document): RedirectResponse
     {
-        abort_unless($request->user()?->isAdmin(), 403);
-        abort_unless($document->status?->nama_status === StatusDocument::APPROVED, 404);
+        abort_unless($request->user()?->hasPermission('documents.master.imports.update'), 403);
         abort_unless($document->origin !== Document::ORIGIN_WORKFLOW, 404);
 
         $level = $document->documentLevel?->kode ?? 'level-2';
+        $isLegacyImport = $document->origin === Document::ORIGIN_IMPORTED_LEGACY;
 
         $validated = $request->validate([
             'nama_dokumen' => ['required', 'string', 'max:255'],
-            'm_proses_bisnis_id' => ['required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
-            'm_proses_fungsi_id' => [$level === 'level-1' ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
-            'department_ids' => ['required', 'array', 'min:1'],
+            'm_proses_bisnis_id' => [$isLegacyImport ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
+            'm_proses_fungsi_id' => [$isLegacyImport || $level === 'level-1' ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
+            'department_ids' => [$isLegacyImport ? 'nullable' : 'required', 'array', $isLegacyImport ? 'max:50' : 'min:1'],
             'department_ids.*' => ['integer', Rule::exists('departments', 'id')],
-            'reference' => [$level === 'level-3' ? 'required' : 'nullable', 'string'],
+            'reference' => [! $isLegacyImport && $level === 'level-3' ? 'required' : 'nullable', 'string'],
             'nomor_dokumen' => ['nullable', 'string', 'max:100'],
             'nomor_dokumen_suffix' => ['nullable', 'string', 'max:50'],
             'nomor_revisi' => ['nullable', 'string', 'max:50'],
@@ -476,6 +474,8 @@ class ImportedExistingDocumentController extends Controller
         ]);
 
         if (
+            ! $isLegacyImport
+            &&
             filled($validated['nomor_revisi'] ?? null)
             && ! preg_match('/^\d{2}\.\d{2}$/', (string) $validated['nomor_revisi'])
         ) {
@@ -487,22 +487,22 @@ class ImportedExistingDocumentController extends Controller
         $request->merge(['m_document_level_id' => $document->m_document_level_id]);
         $resolvedNomorDokumen = $this->resolveImportedDocumentNumber($request);
 
-        DB::transaction(function () use ($request, $document, $validated, $resolvedNomorDokumen, $level): void {
+        DB::transaction(function () use ($request, $document, $validated, $resolvedNomorDokumen, $level, $isLegacyImport): void {
             $this->updateClaimedImportedDocumentNumber($document, $resolvedNomorDokumen, $request->user()->id);
 
             $document->update([
                 'nama_dokumen' => $validated['nama_dokumen'],
-                'm_proses_bisnis_id' => $validated['m_proses_bisnis_id'],
+                'm_proses_bisnis_id' => $validated['m_proses_bisnis_id'] ?? null,
                 'm_proses_fungsi_id' => $level === 'level-1' ? null : ($validated['m_proses_fungsi_id'] ?? null),
                 'nomor_dokumen' => $resolvedNomorDokumen,
                 'nomor_revisi' => filled($validated['nomor_revisi'] ?? null)
-                    ? Document::formatRevisionNumber($validated['nomor_revisi'])
+                    ? ($isLegacyImport ? (string) $validated['nomor_revisi'] : Document::formatRevisionNumber($validated['nomor_revisi']))
                     : $document->nomor_revisi,
                 'tanggal_terbit' => $validated['tanggal_terbit'] ?? null,
                 'catatan' => $validated['catatan'] ?? null,
             ]);
 
-            $document->departments()->sync($validated['department_ids']);
+            $document->departments()->sync($validated['department_ids'] ?? []);
 
             if ($level === 'level-3') {
                 if (filled($validated['reference'] ?? null)) {
@@ -541,10 +541,16 @@ class ImportedExistingDocumentController extends Controller
                     $request->user()->id,
                 );
             }
+
+            $this->rebuildSameNumberImportedRevisionChain($document->refresh(), $request->user()->id);
         });
 
+        $detailRoute = $document->fresh()?->isMaster()
+            ? 'documents.master.show'
+            : 'documents.existing.imports.show';
+
         return redirect()
-            ->route('documents.master.show', $document)
+            ->route($detailRoute, $document)
             ->with('status', 'Metadata dokumen berhasil diperbarui.');
     }
 
@@ -695,7 +701,11 @@ class ImportedExistingDocumentController extends Controller
             }
 
             if ($isMaster && $allowImportedObsoleteNumberReuse) {
-                $this->linkSameNumberImportedObsoleteToMaster($document, $request->user()->id);
+                $this->rebuildSameNumberImportedRevisionChain($document, $request->user()->id);
+            }
+
+            if (! $isMaster && filled($document->nomor_dokumen)) {
+                $this->rebuildSameNumberImportedRevisionChain($document, $request->user()->id);
             }
         });
 
@@ -754,15 +764,27 @@ class ImportedExistingDocumentController extends Controller
             ]);
         }
 
+        $conflictingMaster = $this->existingMasterNumberSources($documentNumber);
+        if ($conflictingMaster->isNotEmpty()) {
+            return response()->json([
+                'conflict' => true,
+                'blocked' => true,
+                'document_number' => $documentNumber,
+                'count' => $conflictingMaster->count(),
+                'message' => "Nomor dokumen {$documentNumber} sudah digunakan oleh dokumen master. Hapus master imported tersebut terlebih dahulu sebelum import master baru dengan nomor yang sama.",
+            ]);
+        }
+
         $conflictingObsolete = $this->reusableImportedObsoleteNumberSources($documentNumber);
 
         return response()->json([
             'conflict' => $conflictingObsolete->isNotEmpty(),
+            'blocked' => false,
             'document_number' => $documentNumber,
             'count' => $conflictingObsolete->count(),
             'message' => $conflictingObsolete->isEmpty()
                 ? null
-                : "Nomor dokumen {$documentNumber} sudah digunakan oleh {$conflictingObsolete->count()} dokumen obsolete import. Apakah Anda yakin ingin tetap import sebagai master dan menjadikan dokumen obsolete tersebut menunjuk ke master ini?",
+                : "Nomor dokumen {$documentNumber} sudah digunakan oleh {$conflictingObsolete->count()} dokumen obsolete import. Apakah Anda yakin ingin tetap import sebagai master dan menyusun rantai obsolete tersebut sampai ke master ini?",
         ]);
     }
 
@@ -771,17 +793,23 @@ class ImportedExistingDocumentController extends Controller
         abort_unless($document->origin !== Document::ORIGIN_WORKFLOW, 404);
         abort_unless($this->canDeleteImportedExisting($request), 403);
 
-        if ($document->revisions()->exists()) {
+        if ($this->hasNonRechainableRevisions($document)) {
             return redirect()
                 ->back()
                 ->with('delete_warning', [
                     'title' => 'Dokumen belum bisa dihapus',
-                    'message' => 'Dokumen imported ini sudah dipakai sebagai sumber pengajuan revisi atau obsolete.',
+                    'message' => 'Dokumen imported ini sudah dipakai sebagai sumber pengajuan revisi atau obsolete yang tidak bisa disambungkan otomatis.',
                 ]);
         }
 
-        DB::transaction(function () use ($document): void {
+        $documentNumber = $document->nomor_dokumen;
+        $previousDocumentId = $document->revised_from;
+        $userId = $request->user()->id;
+
+        DB::transaction(function () use ($document, $documentNumber, $previousDocumentId, $userId): void {
             $document->loadMissing('files');
+
+            $this->rechainImportedRevisionChildrenBeforeDelete($document, $previousDocumentId);
 
             DB::table('t_document_download_logs')
                 ->where('t_document_id', $document->id)
@@ -801,11 +829,40 @@ class ImportedExistingDocumentController extends Controller
             $document->incomingRelations()->delete();
             $this->releaseImportedDocumentNumber($document);
             $document->delete();
+
+            $anchor = $this->sameNumberImportedChainDocuments($documentNumber)
+                ->first();
+
+            if ($anchor !== null) {
+                $this->rebuildSameNumberImportedRevisionChain($anchor, $userId);
+            }
         });
 
         return redirect()
             ->route('documents.existing.imports.index')
             ->with('status', 'Dokumen imported berhasil dihapus.');
+    }
+
+    private function hasNonRechainableRevisions(Document $document): bool
+    {
+        return $document->revisions()
+            ->where(function ($query) use ($document): void {
+                $query
+                    ->where('nomor_dokumen', '!=', $document->nomor_dokumen)
+                    ->orWhereNull('nomor_dokumen')
+                    ->orWhere('origin', Document::ORIGIN_WORKFLOW)
+                    ->orWhereNotNull('request_type');
+            })
+            ->exists();
+    }
+
+    private function rechainImportedRevisionChildrenBeforeDelete(Document $document, ?int $previousDocumentId): void
+    {
+        $document->revisions()
+            ->where('nomor_dokumen', $document->nomor_dokumen)
+            ->where('origin', '!=', Document::ORIGIN_WORKFLOW)
+            ->whereNull('request_type')
+            ->update(['revised_from' => $previousDocumentId]);
     }
 
     public function file(Document $document, DocumentFile $file): BinaryFileResponse
@@ -1038,6 +1095,34 @@ class ImportedExistingDocumentController extends Controller
         abort_unless($file->t_document_id === $document->id, 404);
     }
 
+    /**
+     * @return Collection<int, Document>
+     */
+    private function existingMasterNumberSources(?string $documentNumber): Collection
+    {
+        if (! filled($documentNumber)) {
+            return collect();
+        }
+
+        $approvedStatusId = StatusDocument::query()
+            ->where('nama_status', StatusDocument::APPROVED)
+            ->value('id');
+
+        if ($approvedStatusId === null) {
+            return collect();
+        }
+
+        return Document::query()
+            ->where('nomor_dokumen', $documentNumber)
+            ->where('m_status_document_id', $approvedStatusId)
+            ->where(function ($query): void {
+                $query
+                    ->whereNull('request_type')
+                    ->orWhere('request_type', '!=', 'obsolete');
+            })
+            ->get();
+    }
+
     private function claimImportedDocumentNumber(Document $document, int $userId, bool $allowReplaceImportedObsoleteRegistry = false): void
     {
         if (! filled($document->nomor_dokumen)) {
@@ -1151,18 +1236,73 @@ class ImportedExistingDocumentController extends Controller
             ->get();
     }
 
-    private function linkSameNumberImportedObsoleteToMaster(Document $master, int $createdBy): void
+    private function rebuildSameNumberImportedRevisionChain(Document $anchor, int $createdBy): void
     {
-        $this->reusableImportedObsoleteNumberSources($master->nomor_dokumen)
-            ->where('id', '!=', $master->id)
-            ->each(function (Document $obsolete) use ($master, $createdBy): void {
-                DocumentRelation::supersedeDocument(
-                    $obsolete,
-                    $master,
-                    $createdBy,
-                    'Digantikan oleh import master dengan nomor dokumen yang sama.',
-                );
-            });
+        if (! filled($anchor->nomor_dokumen)) {
+            return;
+        }
+
+        $documents = $this->sameNumberImportedChainDocuments($anchor->nomor_dokumen)
+            ->get()
+            ->sortBy(fn (Document $document): string => sprintf(
+                '%010d-%d-%010d-%010d',
+                $document->numeric_revision,
+                $document->isMaster() ? 1 : 0,
+                $document->approved_at?->timestamp
+                    ?? $document->obsolete_at?->timestamp
+                    ?? $document->tanggal_terbit?->timestamp
+                    ?? 0,
+                $document->id,
+            ))
+            ->values();
+
+        if ($documents->count() < 2) {
+            return;
+        }
+
+        $previous = null;
+
+        foreach ($documents as $document) {
+            $nextRevisedFrom = $previous?->id;
+
+            if ((int) ($document->revised_from ?? 0) !== (int) ($nextRevisedFrom ?? 0)) {
+                $document->forceFill(['revised_from' => $nextRevisedFrom])->save();
+            }
+
+            $previous = $document;
+        }
+
+        $documents->each(function (Document $document, int $index) use ($documents, $createdBy): void {
+            $next = $documents->get($index + 1);
+
+            if ($next === null) {
+                $document->outgoingRelations()
+                    ->where('relation_type', DocumentRelation::SUPERSEDED_BY)
+                    ->delete();
+
+                return;
+            }
+
+            DocumentRelation::supersedeDocument(
+                $document,
+                $next,
+                $createdBy,
+                'Digantikan oleh versi import berikutnya dengan nomor dokumen yang sama.',
+            );
+        });
+    }
+
+    private function sameNumberImportedChainDocuments(?string $documentNumber): Builder
+    {
+        $statusIds = StatusDocument::query()
+            ->whereIn('nama_status', [StatusDocument::APPROVED, StatusDocument::OBSOLETE])
+            ->pluck('id');
+
+        return Document::query()
+            ->where('nomor_dokumen', $documentNumber)
+            ->where('origin', '!=', Document::ORIGIN_WORKFLOW)
+            ->whereIn('m_status_document_id', $statusIds)
+            ->whereNull('request_type');
     }
 
     private function canDeleteImportedExisting(Request $request): bool
@@ -1177,8 +1317,9 @@ class ImportedExistingDocumentController extends Controller
         }
 
         $approvedStatusId = StatusDocument::query()->where('nama_status', StatusDocument::APPROVED)->value('id');
+        $isMaster = (int) $document->m_status_document_id === (int) $approvedStatusId;
 
-        if (Document::query()
+        if ($isMaster && Document::query()
             ->where('nomor_dokumen', $newDocumentNumber)
             ->where('id', '!=', $document->id)
             ->where('m_status_document_id', $approvedStatusId)
@@ -1198,6 +1339,15 @@ class ImportedExistingDocumentController extends Controller
                 && (int) $existingRegistry->source_id === (int) $document->id;
 
             if (! $isOwnRegistry) {
+                if (! $isMaster && $existingRegistry->source_type === DocumentNumberRegistry::SOURCE_T_DOCUMENT) {
+                    DocumentNumberRegistry::query()
+                        ->where('source_type', DocumentNumberRegistry::SOURCE_T_DOCUMENT)
+                        ->where('source_id', $document->id)
+                        ->delete();
+
+                    return;
+                }
+
                 throw ValidationException::withMessages([
                     'nomor_dokumen' => 'Nomor dokumen sudah digunakan.',
                 ]);
@@ -1259,7 +1409,7 @@ class ImportedExistingDocumentController extends Controller
         return $suffix;
     }
 
-    private function procedureNumberSegmentsFromReference(?string $reference): \Illuminate\Support\Collection
+    private function procedureNumberSegmentsFromReference(?string $reference): Collection
     {
         if (! filled($reference)) {
             return collect();
@@ -1327,7 +1477,6 @@ class ImportedExistingDocumentController extends Controller
 
         return null;
     }
-
 
     /**
      * @return array<string, string>

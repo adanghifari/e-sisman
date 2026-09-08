@@ -174,6 +174,20 @@ return [
             'action' => 'create',
         ],
         [
+            'code' => 'documents.master.imports.edit',
+            'name' => 'Edit Dokumen Imported',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.master.imports.edit',
+            'action' => 'update',
+        ],
+        [
+            'code' => 'documents.master.imports.update',
+            'name' => 'Simpan Edit Dokumen Imported',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.master.imports.update',
+            'action' => 'update',
+        ],
+        [
             'code' => 'documents.obsolete.view',
             'name' => 'Lihat Dokumen Obsolete',
             'module' => 'Manajemen Dokumen',

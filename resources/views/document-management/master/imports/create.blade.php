@@ -553,6 +553,12 @@
                     return true;
                 }
 
+                if (payload.blocked) {
+                    window.alert(payload.message || 'Nomor dokumen sudah digunakan oleh dokumen master.');
+
+                    return false;
+                }
+
                 if (window.confirm(payload.message || 'Nomor dokumen sudah digunakan. Apakah Anda yakin ingin melanjutkan?')) {
                     if (confirmationInput) {
                         confirmationInput.value = '1';

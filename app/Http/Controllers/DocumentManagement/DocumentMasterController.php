@@ -12,7 +12,6 @@ use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
 use App\Models\DocumentRelation;
 use App\Models\StatusDocument;
-use App\Models\User;
 use App\Support\DocumentHistory;
 use App\Support\FinalDocuments\DocumentWatermarkStamp;
 use App\Support\FinalDocuments\DynamicFinalDocumentRenderer;
@@ -158,6 +157,8 @@ class DocumentMasterController extends Controller
                 'revision_desc' => 'Revisi Tertinggi',
             ],
             'canImportMaster' => $request->user()?->hasPermission('documents.master.imports.create') ?? false,
+            'canEditImportedExisting' => $request->user()?->hasPermission('documents.master.imports.edit') ?? false,
+            'canDeleteImportedExisting' => $request->user()?->hasPermission('documents.existing.imports.delete') ?? false,
         ]);
     }
 
@@ -764,12 +765,18 @@ class DocumentMasterController extends Controller
 
         return $obsoleteDocuments
             ->unique('id')
-            ->sortByDesc(fn (Document $doc): int => $doc->obsolete_at?->timestamp ?? $doc->approved_at?->timestamp ?? $doc->tanggal_terbit?->timestamp ?? 0)
+            ->sortByDesc(fn (Document $doc): string => sprintf(
+                '%010d-%010d-%010d',
+                $doc->numeric_revision,
+                $doc->obsolete_at?->timestamp ?? $doc->approved_at?->timestamp ?? $doc->tanggal_terbit?->timestamp ?? 0,
+                $doc->id,
+            ))
             ->values()
             ->map(fn (Document $doc) => (object) [
                 'source_type' => $doc->origin !== Document::ORIGIN_WORKFLOW ? 'imported' : 'workflow',
                 'source_id' => $doc->id,
                 'source' => $doc,
+                'is_imported' => $doc->origin !== Document::ORIGIN_WORKFLOW,
                 'nama_dokumen' => $doc->nama_dokumen,
                 'nomor_dokumen' => $doc->nomor_dokumen ?: $master->nomor_dokumen ?: '-',
                 'nomor_revisi' => $doc->formatted_revision,

@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Attributes\Fillable;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -41,7 +42,9 @@ use Illuminate\Support\Collection;
 class Document extends Model
 {
     public const ORIGIN_WORKFLOW = 'workflow';
+
     public const ORIGIN_IMPORTED_CURRENT = 'imported_current';
+
     public const ORIGIN_IMPORTED_LEGACY = 'imported_legacy';
 
     protected $table = 't_document';
@@ -159,7 +162,7 @@ class Document extends Model
         return $this->origin === self::ORIGIN_IMPORTED_LEGACY ? 'legacy_rule' : 'current_rule';
     }
 
-    public function getTanggalObsoleteAttribute(): ?\Carbon\Carbon
+    public function getTanggalObsoleteAttribute(): ?CarbonInterface
     {
         return $this->obsolete_at;
     }

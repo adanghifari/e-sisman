@@ -128,7 +128,30 @@
                                 <x-ui.status-badge label="Obsolete" tone="red" />
                             </td>
                             <td class="px-2 py-4">
-                                <x-ui.icon-button :href="$document->detail_url" icon="eye" label="Lihat detail" size="sm" />
+                                <div class="flex items-center gap-2">
+                                    <x-ui.icon-button :href="$document->detail_url" icon="eye" label="Lihat detail" size="sm" />
+                                    @if ($document->is_imported && ($canEditImportedExisting ?? false))
+                                        <x-ui.icon-button :href="route('documents.master.imports.edit', $document->source_id)" icon="pencil-square" label="Edit metadata dokumen" size="sm" />
+                                    @endif
+                                    @if ($document->is_imported && ($canDeleteImportedExisting ?? false))
+                                        <form
+                                            method="POST"
+                                            action="{{ route('documents.existing.imports.destroy', $document->source_id) }}"
+                                            onsubmit="return confirm('Hapus dokumen imported ini dari sistem? Relasi ke dokumen lain akan diputus.')"
+                                        >
+                                            @csrf
+                                            @method('DELETE')
+                                            <button
+                                                type="submit"
+                                                class="inline-flex size-9 items-center justify-center rounded-lg border border-red-200 bg-white text-red-600 transition hover:bg-red-50"
+                                                aria-label="Hapus dokumen imported"
+                                                title="Hapus dokumen imported"
+                                            >
+                                                <flux:icon name="trash" class="size-4" />
+                                            </button>
+                                        </form>
+                                    @endif
+                                </div>
                             </td>
                         </tr>
 
@@ -181,7 +204,30 @@
                                                                 <x-ui.status-badge label="Obsolete" tone="red" />
                                                             </td>
                                                             <td class="px-5 py-4">
-                                                                <x-ui.icon-button :href="$child->detail_url" icon="eye" label="Lihat detail obsolete" size="sm" />
+                                                                <div class="flex items-center gap-2">
+                                                                    <x-ui.icon-button :href="$child->detail_url" icon="eye" label="Lihat detail obsolete" size="sm" />
+                                                                    @if ($child->is_imported && ($canEditImportedExisting ?? false))
+                                                                        <x-ui.icon-button :href="route('documents.master.imports.edit', $child->source_id)" icon="pencil-square" label="Edit metadata dokumen" size="sm" />
+                                                                    @endif
+                                                                    @if ($child->is_imported && ($canDeleteImportedExisting ?? false))
+                                                                        <form
+                                                                            method="POST"
+                                                                            action="{{ route('documents.existing.imports.destroy', $child->source_id) }}"
+                                                                            onsubmit="return confirm('Hapus dokumen imported ini dari sistem? Relasi ke dokumen lain akan diputus.')"
+                                                                        >
+                                                                            @csrf
+                                                                            @method('DELETE')
+                                                                            <button
+                                                                                type="submit"
+                                                                                class="inline-flex size-9 items-center justify-center rounded-lg border border-red-200 bg-white text-red-600 transition hover:bg-red-50"
+                                                                                aria-label="Hapus dokumen imported"
+                                                                                title="Hapus dokumen imported"
+                                                                            >
+                                                                                <flux:icon name="trash" class="size-4" />
+                                                                            </button>
+                                                                        </form>
+                                                                    @endif
+                                                                </div>
                                                             </td>
                                                         </tr>
                                                     @endforeach
