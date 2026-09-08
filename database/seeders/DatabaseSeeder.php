@@ -32,7 +32,7 @@ class DatabaseSeeder extends Seeder
         $marketingDepartmentId = DB::table('departments')->where('kode_department', 'PMK')->value('id');
         $hsseDepartmentId = DB::table('departments')->where('kode_department', 'HSSE')->value('id');
         $marineDepartmentId = DB::table('departments')->where('kode_department', 'MOP')->value('id');
-        $strategicDepartmentId = DB::table('departments')->where('kode_department', 'SDV')->value('id');
+        $businessDevelopmentDepartmentId = DB::table('departments')->where('kode_department', 'BDV')->value('id');
 
         User::updateOrCreate(
             ['nik' => '000000'],
@@ -67,7 +67,7 @@ class DatabaseSeeder extends Seeder
         );
 
         $users = [
-            ['nik' => '0000111', 'name' => 'Muhammad Akhdan Ghifari', 'email' => 'akhdan@example.com', 'jabatan' => 'Manager', 'department_id' => $strategicDepartmentId],
+            ['nik' => '0000111', 'name' => 'Muhammad Akhdan Ghifari', 'email' => 'akhdan@example.com', 'jabatan' => 'Manager', 'department_id' => $businessDevelopmentDepartmentId],
             ['nik' => '0000112', 'name' => 'Muhammad Azigha Azhar', 'email' => 'azigha.lestari@example.com', 'jabatan' => 'Manager', 'department_id' => $hcgaDepartmentId],
             ['nik' => '0000113', 'name' => 'Hafiz Fawwaz Aydil', 'email' => 'aydil@example.com', 'jabatan' => 'Business Process Analyst', 'department_id' => $itDepartmentId],
             ['nik' => '0000114', 'name' => 'Nadia Putri', 'email' => 'nadia.putri@example.com', 'jabatan' => 'Quality Assurance Officer', 'department_id' => $hsseDepartmentId],
