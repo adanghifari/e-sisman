@@ -142,26 +142,71 @@
 
             return ctype_digit($suffix) ? (int) $suffix : null;
         };
-        $documentNumberSuggestions = ($documentLevelRecord && in_array($levelKey, ['level-2', 'level-3'], true))
-            ? \App\Models\Document::query()
-                ->select(['m_proses_bisnis_id', 'm_proses_fungsi_id', 'm_status_document_id', 'nomor_revisi', 'nomor_dokumen'])
+        $documentNumberScope = function (?string $documentNumber): ?string {
+            if (! filled($documentNumber)) {
+                return null;
+            }
+
+            $segments = collect(explode('-', $documentNumber))
+                ->map(fn (string $segment): string => trim($segment))
+                ->filter()
+                ->values();
+
+            if ($segments->count() < 2 || ! ctype_digit((string) $segments->last())) {
+                return null;
+            }
+
+            $segments->pop();
+
+            return $segments->implode('-');
+        };
+        $documentNumberSuggestions = [];
+        if ($documentLevelRecord && in_array($levelKey, ['level-2', 'level-3'], true)) {
+            $documentNumbers = \App\Models\Document::query()
                 ->where('m_document_level_id', $documentLevelRecord->id)
                 ->whereNull('revised_from')
                 ->where('nomor_revisi', 0)
                 ->whereNotNull('nomor_dokumen')
                 ->when($draftStatusId, fn ($query) => $query->where('m_status_document_id', '!=', $draftStatusId))
-                ->get()
-                ->groupBy(fn ($document) => $document->m_proses_fungsi_id)
-                ->map(function ($documents) use ($documentNumberSequence) {
-                    $nextSequence = ((int) $documents
-                        ->map(fn ($document) => $documentNumberSequence($document->nomor_dokumen))
-                        ->filter()
-                        ->max()) + 1;
+                ->pluck('nomor_dokumen');
+
+            if (\Illuminate\Support\Facades\Schema::hasTable('document_number_registry')) {
+                $documentNumbers = $documentNumbers->merge(
+                    \App\Models\DocumentNumberRegistry::query()
+                        ->where('scope_identifier', 'like', $documentPrefixes[$levelKey].'-%')
+                        ->pluck('document_number'),
+                );
+            }
+
+            $documentNumberSuggestions = $documentNumbers
+                ->map(fn ($documentNumber) => [
+                    'scope' => $documentNumberScope($documentNumber),
+                    'sequence' => $documentNumberSequence($documentNumber),
+                ])
+                ->filter(fn (array $number): bool => filled($number['scope']) && $number['sequence'] !== null)
+                ->groupBy('scope')
+                ->map(function ($numbers) {
+                    $nextSequence = ((int) $numbers->pluck('sequence')->max()) + 1;
 
                     return str_pad((string) $nextSequence, 2, '0', STR_PAD_LEFT);
                 })
-                ->all()
-            : [];
+                ->mapWithKeys(fn (string $suggestion, string $scope): array => ["scope:{$scope}" => $suggestion])
+                ->all();
+
+            $businessFunctions->each(function ($businessFunction) use (&$documentNumberSuggestions, $levelKey): void {
+                if (! filled($businessFunction->kode)) {
+                    return;
+                }
+
+                $scope = $levelKey === 'level-2'
+                    ? 'PS-'.$businessFunction->kode
+                    : null;
+
+                if ($scope !== null && isset($documentNumberSuggestions["scope:{$scope}"])) {
+                    $documentNumberSuggestions[$businessFunction->id] = $documentNumberSuggestions["scope:{$scope}"];
+                }
+            });
+        }
         $nextLevelOneDocumentNumberSuffix = null;
         if ($levelKey === 'level-1') {
             $manualDocumentNumbers = collect();
@@ -232,6 +277,9 @@
         $documentNumberSuffixDefault = $formSource?->nomor_dokumen
             ? \Illuminate\Support\Str::afterLast($formSource->nomor_dokumen, '-')
             : $revisionDocumentSuffix;
+        if (! $revisionSource && ! $formSource && $levelKey === 'level-1') {
+            $documentNumberSuffixDefault = $nextLevelOneDocumentNumberSuffix;
+        }
         $revisionFormDisplayNumber = $revisionSource
             ? ($formSource?->nomor_lembar_revisi ?: app(\App\Support\DocumentFiles\DocumentFileNumbering::class)->revisionFormNumber($revisionSource))
             : null;
@@ -254,7 +302,7 @@
             ? \App\Models\Document::formatRevisionNumber($resubmissionSource?->nomor_revisi ?? (($latestRevisionNumber ?? $revisionSource->nomor_revisi) + 1))
             : '00.00');
         $selectedBusinessFunction = $businessFunctions->firstWhere('id', (int) $selectedBusinessFunctionId);
-        $documentNumberFunctionCode = $selectedBusinessFunction?->kode ?: 'SMR';
+        $documentNumberFunctionCode = $selectedBusinessFunction?->kode ?: 'XXX';
         $selectedProcedureReference = $procedureReferences->firstWhere('reference_value', $selectedReferenceId);
         $procedureReferenceSegments = fn ($procedure) => collect(explode('-', (string) ($procedure?->procedure_reference_number ?: $procedure?->nomor_dokumen)))
             ->filter()
@@ -419,7 +467,7 @@
                             <input
                                 type="text"
                                 name="nomor_revisi"
-                                value="{{ old('nomor_revisi', $formSource?->formatted_revision ?? ($revisionSource ? $nextRevisionValue : null)) }}"
+                                value="{{ old('nomor_revisi', $formSource?->formatted_revision ?? $nextRevisionValue) }}"
                                 @readonly($revisionSource)
                                 class="h-14 w-full rounded-lg border {{ $revisionSource ? 'border-slate-200 bg-slate-50 text-slate-600' : 'border-slate-300 bg-white text-slate-700 focus:border-sky-400 focus:ring-2 focus:ring-sky-100' }} px-4 text-base font-semibold outline-none transition"
                             >
@@ -1257,12 +1305,13 @@
                         return;
                     }
 
-                    const segment = document.querySelector('[data-document-number-segment="business-function"]');
+                    const form = select.closest('form');
+                    const segment = form?.querySelector('[data-document-number-segment="business-function"]');
                     const selectedOption = select.selectedOptions[0];
                     const functionCode = selectedOption?.dataset.functionCode;
 
-                    if (segment && functionCode) {
-                        segment.value = functionCode;
+                    if (segment) {
+                        segment.value = functionCode || 'XXX';
                     }
                 });
 
@@ -1343,7 +1392,14 @@
                         return;
                     }
 
-                    suffixInput.value = documentNumberSuggestions[functionId] ?? '01';
+                    const numberInputs = Array.from(suffixInput.closest('.grid')?.querySelectorAll('input') || []);
+                    const scope = numberInputs
+                        .slice(0, -1)
+                        .map((input) => input.value.trim())
+                        .filter(Boolean)
+                        .join('-');
+
+                    suffixInput.value = documentNumberSuggestions[`scope:${scope}`] ?? '01';
                 };
 
                 document.querySelectorAll('form').forEach((form) => {
@@ -1468,7 +1524,6 @@
                     if (form) {
                         syncProcedureReferenceOptions(form);
                         syncDocumentNumberSuggestion(form);
-                        syncProcedureReferenceNumberSegments(form);
                     }
                 });
 
@@ -1481,6 +1536,7 @@
 
                     if (form) {
                         syncProcedureReferenceNumberSegments(form);
+                        syncDocumentNumberSuggestion(form);
                     }
                 });
             })();

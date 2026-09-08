@@ -11,6 +11,7 @@ use App\Models\BusinessProcess;
 use App\Models\Department;
 use App\Models\Document;
 use App\Models\DocumentLevel;
+use App\Models\DocumentNumberRegistry;
 use App\Models\DocumentRelation;
 use App\Models\DocumentType;
 use App\Models\Permission;
@@ -303,6 +304,81 @@ class CreateDocumentTest extends TestCase
             ->assertSee('value="003"', false);
     }
 
+    public function test_level_two_create_uses_imported_master_registry_as_next_document_number(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+            'm_proses_bisnis_id' => $businessProcess->id,
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::APPROVED,
+            'nama_status' => 'Disetujui',
+        ]);
+        DocumentType::create(['nama_types' => 'Prosedur']);
+
+        DocumentNumberRegistry::create([
+            'document_number' => 'PS-OPS-03',
+            'scope_identifier' => 'PS-OPS',
+            'source_type' => DocumentNumberRegistry::SOURCE_IMPORTED_EXISTING,
+            'source_id' => 1,
+            'registered_by' => $user->id,
+            'registered_at' => now(),
+        ]);
+
+        $this->actingAs($user)
+            ->get(route('documents.create.level', 'level-2'))
+            ->assertOk()
+            ->assertSee('"scope:PS-OPS":"04"', false)
+            ->assertDontSee('data-user-edited="true"', false);
+
+        $this->actingAs($user)
+            ->from(route('documents.create.level', 'level-2'))
+            ->post(route('documents.store', 'level-2'), [
+                'nama_dokumen' => 'Prosedur Nomor Lama',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'nomor_dokumen_suffix' => '01',
+                'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
+                'submit_action' => 'submit',
+            ])
+            ->assertRedirect(route('documents.create.level', 'level-2'))
+            ->assertSessionHasErrors(['nomor_dokumen_suffix']);
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-2'), [
+                'nama_dokumen' => 'Prosedur Nomor Berikutnya',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'nomor_dokumen_suffix' => '04',
+                'filled_template' => UploadedFile::fake()->create('template-next.pdf', 24, 'application/pdf'),
+                'submit_action' => 'submit',
+            ])
+            ->assertRedirect(route('documents.create'));
+
+        $this->assertDatabaseHas('t_document', [
+            'nama_dokumen' => 'Prosedur Nomor Berikutnya',
+            'nomor_dokumen' => 'PS-OPS-04',
+        ]);
+    }
+
     public function test_create_document_sidebar_stays_active_on_level_forms(): void
     {
         $user = User::factory()->create();
@@ -419,7 +495,7 @@ class CreateDocumentTest extends TestCase
                 'nama_dokumen' => 'Manual SKMBS Submit',
                 'official_preparer_id' => $officialPreparer->id,
                 'nomor_dokumen_suffix' => '002',
-                'nomor_revisi' => '99.99',
+                'nomor_revisi' => '00.00',
                 'tanggal_terbit' => '2026-08-12',
                 'catatan_revisi' => 'Dokumen manual siap diproses.',
                 'imported_document' => UploadedFile::fake()->create('manual-submit.pdf', 24, 'application/pdf'),

@@ -22,6 +22,7 @@ use Illuminate\Http\RedirectResponse;
 use Illuminate\Http\Request;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Schema;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
 use Illuminate\Validation\Rule;
@@ -250,6 +251,10 @@ class DocumentController extends Controller
                     $sameNumberDocuments = $this->lockedDocumentsForNumber($currentDocumentNumber);
                     $resubmittedFromId = $resubmissionSource?->id
                         ?: $this->resubmittedFromIdForReusableNumber($sameNumberDocuments, $draft);
+
+                    if (($documentAttributes['submit_action'] ?? null) === 'submit' && $resubmittedFromId === null) {
+                        $this->assertDocumentNumberFollowsRegistrySequence($currentDocumentNumber);
+                    }
                 }
 
                 $submittedAt = $documentAttributes['submit_action'] === 'submit' ? now() : null;
@@ -1244,6 +1249,36 @@ class DocumentController extends Controller
         if ($numberParts['sequence'] < $setup->v2_start_number) {
             throw ValidationException::withMessages([
                 'nomor_dokumen_suffix' => "Nomor dokumen berada pada reserved range existing. Mulai gunakan nomor {$setup->v2_start_number} untuk scope {$setup->scope_identifier}.",
+            ]);
+        }
+    }
+
+    private function assertDocumentNumberFollowsRegistrySequence(string $documentNumber): void
+    {
+        $numberParts = $this->numberParts($documentNumber);
+
+        if ($numberParts === null || ! Schema::hasTable('document_number_registry')) {
+            return;
+        }
+
+        $latestRegisteredSequence = DocumentNumberRegistry::query()
+            ->where('scope_identifier', $numberParts['scope'])
+            ->pluck('document_number')
+            ->map(fn (string $registeredNumber): ?array => $this->numberParts($registeredNumber))
+            ->filter(fn (?array $registeredParts): bool => $registeredParts !== null
+                && $registeredParts['scope'] === $numberParts['scope'])
+            ->pluck('sequence')
+            ->max();
+
+        if ($latestRegisteredSequence === null) {
+            return;
+        }
+
+        $nextSequence = ((int) $latestRegisteredSequence) + 1;
+
+        if ($numberParts['sequence'] < $nextSequence) {
+            throw ValidationException::withMessages([
+                'nomor_dokumen_suffix' => "Nomor dokumen berada di bawah nomor terakhir. Gunakan nomor {$nextSequence} atau lebih besar untuk scope {$numberParts['scope']}.",
             ]);
         }
     }
