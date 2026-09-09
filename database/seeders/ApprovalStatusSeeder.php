@@ -12,10 +12,18 @@ class ApprovalStatusSeeder extends Seeder
      */
     public function run(): void
     {
-        foreach (['PENDING', 'APPROVED', 'REJECTED', 'TERMINATED'] as $kode_status) {
+        $statuses = [
+            'PENDING' => 'Dalam Review',
+            'WAITING' => 'Menunggu',
+            'APPROVED' => 'Disetujui',
+            'REJECTED' => 'Ditolak',
+            'TERMINATED' => 'Dihentikan',
+        ];
+
+        foreach ($statuses as $kode_status => $nama_status) {
             DB::table('m_approval_status')->updateOrInsert(
                 ['kode_status' => $kode_status],
-                ['nama_status' => $kode_status],
+                ['nama_status' => $nama_status],
             );
         }
     }

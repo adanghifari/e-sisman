@@ -36,11 +36,14 @@ return new class extends Migration
             $table->id();
             $table->string('kode')->unique();
             $table->string('nama_proses_bisnis');
+            $table->boolean('is_active')->default(true);
         });
 
         Schema::create('m_proses_fungsi', function (Blueprint $table) {
             $table->id();
+            $table->string('kode')->unique();
             $table->string('nama_proses_fungsi')->unique();
+            $table->boolean('is_active')->default(true);
         });
 
         Schema::create('user_roles', function (Blueprint $table) {

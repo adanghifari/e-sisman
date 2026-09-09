@@ -18,7 +18,6 @@ return new class extends Migration
             $table->foreignId('m_proses_bisnis_id')->constrained('m_proses_bisnis')->restrictOnDelete();
             $table->foreignId('m_proses_fungsi_id')->constrained('m_proses_fungsi')->restrictOnDelete();
             $table->foreignId('user_id')->constrained('users')->restrictOnDelete();
-            $table->foreignId('reference')->nullable()->constrained('t_document')->restrictOnDelete();
             $table->string('nama_dokumen');
             $table->string('nomor_dokumen')->nullable();
             $table->unsignedInteger('nomor_revisi')->default(0);
@@ -47,7 +46,7 @@ return new class extends Migration
             $table->foreignId('t_document_id')->constrained('t_document')->restrictOnDelete();
             $table->foreignId('m_approval_status_id')->constrained('m_approval_status')->restrictOnDelete();
             $table->foreignId('user_id')->constrained('users')->restrictOnDelete();
-            $table->foreignId('role_id')->constrained('roles')->restrictOnDelete();
+            $table->foreignId('role_id')->nullable()->constrained('roles')->restrictOnDelete();
             $table->foreignId('assigned_by')->constrained('users')->restrictOnDelete();
             $table->timestamp('assigned_at');
             $table->timestamp('responded_at')->nullable();

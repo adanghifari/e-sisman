@@ -5,24 +5,68 @@
     </head>
     <body class="min-h-screen bg-slate-50 text-slate-900">
         @php
-            $menuGroups = config('navigation');
+            $user = auth()->user();
+            $canSeeMenuItem = function (array $item) use ($user): bool {
+                $permission = $item['permission'] ?? null;
+                $route = $item['route'] ?? null;
+
+                if ($permission !== null) {
+                    return $user->hasPermission($permission);
+                }
+
+                if ($route !== null) {
+                    return $user->canAccessRoute($route);
+                }
+
+                return $permission === null && $route === null;
+            };
+            $resolveBadge = function (array $item) use ($user): ?int {
+                if (! $user) {
+                    return null;
+                }
+
+                $badgeKey = $item['badge'] ?? null;
+                $route = $item['route'] ?? null;
+
+                if ($badgeKey === 'needs_process' || $route === 'documents.inbox') {
+                    return app(\App\Http\Controllers\DocumentManagement\DocumentInboxController::class)->needsProcessCount($user);
+                }
+
+                return is_numeric($badgeKey) ? (int) $badgeKey : null;
+            };
+            $menuGroups = collect(config('navigation'))
+                ->map(function (array $items) use ($canSeeMenuItem, $resolveBadge): array {
+                    return collect($items)
+                        ->map(function (array $item) use ($canSeeMenuItem, $resolveBadge): ?array {
+                            if (isset($item['children'])) {
+                                $children = collect($item['children'])
+                                    ->filter($canSeeMenuItem)
+                                    ->map(fn (array $child): array => [...$child, 'badge' => $resolveBadge($child)])
+                                    ->values()
+                                    ->all();
+
+                                return count($children) > 0 ? [...$item, 'children' => $children] : null;
+                            }
+
+                            return $canSeeMenuItem($item) ? [...$item, 'badge' => $resolveBadge($item)] : null;
+                        })
+                        ->filter()
+                        ->values()
+                        ->all();
+                })
+                ->filter(fn (array $items): bool => count($items) > 0)
+                ->all();
         @endphp
 
         <div class="app-shell min-h-screen bg-slate-50 lg:grid lg:grid-cols-[280px_1fr]" data-app-shell>
             <aside class="hidden border-r border-sky-900 bg-sky-950 text-white lg:sticky lg:top-0 lg:flex lg:h-screen lg:flex-col">
                 <div class="sidebar-header flex items-center justify-between gap-3 px-7 py-7">
-                    <a href="{{ route('dashboard') }}" class="flex min-w-0 items-center gap-3" wire:navigate>
-                        <span class="grid size-11 shrink-0 place-items-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
-                            <img
-                                src="{{ asset('image/krakatau_logo.png') }}"
-                                alt="Krakatau International Port"
-                                class="size-8 object-contain"
-                            >
-                        </span>
-                        <span class="sidebar-label grid leading-none">
-                            <span class="text-base font-extrabold uppercase text-white">Krakatau</span>
-                            <span class="mt-1 text-[11px] font-bold uppercase text-white">International Port</span>
-                        </span>
+                    <a href="{{ route('dashboard') }}" class="sidebar-brand ml-3 flex min-w-0 items-center" wire:navigate>
+                        <img
+                            src="{{ asset('image/esisman_logo.png') }}"
+                            alt="E-SISMAN"
+                            class="sidebar-brand-logo h-auto w-[140px] max-w-full object-contain"
+                        >
                     </a>
 
                     <button
@@ -41,14 +85,6 @@
                 </x-ui.scroll-area>
 
                 <div class="sidebar-user border-t border-sky-800 p-5">
-                    <div class="sidebar-label flex justify-center pb-5">
-                        <img
-                            src="{{ asset('image/esisman_logo_tight.png') }}"
-                            alt="E-SISMAN"
-                            class="h-auto w-[96px] max-w-full object-contain"
-                        >
-                    </div>
-
                     <flux:dropdown position="top" align="start">
                         <button
                             type="button"
@@ -91,6 +127,20 @@
                             </form>
                         </flux:menu>
                     </flux:dropdown>
+
+                    <div class="sidebar-kip-brand flex w-full items-center justify-start gap-3 px-2.5 pt-5">
+                        <span class="grid size-10 shrink-0 place-items-center rounded-lg bg-white shadow-sm ring-1 ring-slate-200">
+                            <img
+                                src="{{ asset('image/krakatau_logo.png') }}"
+                                alt="Krakatau International Port"
+                                class="size-7 object-contain"
+                            >
+                        </span>
+                        <span class="sidebar-label grid leading-none">
+                            <span class="text-sm font-extrabold uppercase text-white">Krakatau</span>
+                            <span class="mt-1 text-[10px] font-bold uppercase text-white">International Port</span>
+                        </span>
+                    </div>
                 </div>
             </aside>
 
@@ -131,6 +181,37 @@
                 </main>
             </div>
         </div>
+
+        @if (session('document_success'))
+            <x-ui.success-dialog
+                :title="session('document_success.title')"
+                :message="session('document_success.message')"
+            />
+        @endif
+
+        @if (session('department_warning'))
+            <x-ui.success-dialog
+                variant="warning"
+                :title="session('department_warning.title')"
+                :message="session('department_warning.message')"
+            />
+        @endif
+
+        @if (session('restore_warning'))
+            <x-ui.success-dialog
+                variant="warning"
+                :title="session('restore_warning.title')"
+                :message="session('restore_warning.message')"
+            />
+        @endif
+
+        @if (session('delete_warning'))
+            <x-ui.success-dialog
+                variant="warning"
+                :title="session('delete_warning.title')"
+                :message="session('delete_warning.message')"
+            />
+        @endif
 
         @persist('toast')
             <flux:toast.group>
@@ -179,6 +260,204 @@
                         mobileToggle?.setAttribute('aria-label', 'Tampilkan menu');
                     });
                 });
+            })();
+        </script>
+
+        <script>
+            (() => {
+                const closePicker = (root) => {
+                    root?.querySelector('[data-user-search-panel]')?.classList.add('hidden');
+                    root?.querySelector('[data-user-search-trigger]')?.setAttribute('aria-expanded', 'false');
+                };
+
+                const openPicker = (root) => {
+                    document.querySelectorAll('[data-user-search-select]').forEach((picker) => {
+                        if (picker !== root) {
+                            closePicker(picker);
+                        }
+                    });
+
+                    root?.querySelector('[data-user-search-panel]')?.classList.remove('hidden');
+                    root?.querySelector('[data-user-search-trigger]')?.setAttribute('aria-expanded', 'true');
+
+                    const input = root?.querySelector('[data-user-search-input]');
+                    input?.focus();
+                    input?.select();
+                };
+
+                window.clearUserSearchSelect = (root) => {
+                    if (!root) {
+                        return;
+                    }
+
+                    const value = root.querySelector('[data-user-search-value]');
+                    const initials = root.querySelector('[data-user-search-initials]');
+                    const name = root.querySelector('[data-user-search-name]');
+                    const meta = root.querySelector('[data-user-search-meta]');
+
+                    if (value) {
+                        value.value = '';
+                    }
+
+                    if (initials) {
+                        initials.textContent = '?';
+                        initials.className = 'grid size-8 shrink-0 place-items-center rounded-full bg-slate-100 text-xs font-bold text-slate-500 ring-1 ring-slate-200';
+                    }
+
+                    if (name) {
+                        name.textContent = root.dataset.placeholder || 'Pilih user';
+                    }
+
+                    if (meta) {
+                        meta.textContent = '';
+                        meta.classList.add('hidden');
+                    }
+                };
+
+                window.setUserSearchSelect = (root, user) => {
+                    if (!root || !user) {
+                        return;
+                    }
+
+                    const value = root.querySelector('[data-user-search-value]');
+                    const initials = root.querySelector('[data-user-search-initials]');
+                    const name = root.querySelector('[data-user-search-name]');
+                    const meta = root.querySelector('[data-user-search-meta]');
+
+                    if (value) {
+                        value.value = user.value || user.id || '';
+                    }
+
+                    if (initials) {
+                        initials.textContent = user.initials || '?';
+                        initials.className = 'grid size-8 shrink-0 place-items-center rounded-full bg-sky-50 text-xs font-bold text-sky-700 ring-1 ring-sky-100';
+                    }
+
+                    if (name) {
+                        name.textContent = user.name || root.dataset.placeholder || 'Pilih user';
+                    }
+
+                    if (meta) {
+                        meta.textContent = user.meta || user.title || user.email || '';
+                        meta.classList.toggle('hidden', !meta.textContent);
+                    }
+                };
+
+                const syncPlaceholder = (root) => {
+                    if (!root || root.dataset.placeholder) {
+                        return;
+                    }
+
+                    root.dataset.placeholder = root.querySelector('[data-user-search-name]')?.textContent || 'Pilih user';
+                };
+
+                window.initUserSearchSelect = (root) => {
+                    syncPlaceholder(root);
+                };
+
+                const initUserSearchSelects = () => {
+                    document.querySelectorAll('[data-user-search-select]').forEach(window.initUserSearchSelect);
+                };
+
+                const handleUserSearchClick = (event) => {
+                    const trigger = event.target.closest('[data-user-search-trigger]');
+
+                    if (trigger) {
+                        const root = trigger.closest('[data-user-search-select]');
+                        const panel = root?.querySelector('[data-user-search-panel]');
+
+                        syncPlaceholder(root);
+
+                        if (panel?.classList.contains('hidden')) {
+                            openPicker(root);
+                        } else {
+                            closePicker(root);
+                        }
+
+                        event.preventDefault();
+                        return;
+                    }
+
+                    const option = event.target.closest('[data-user-search-option]');
+
+                    if (option) {
+                        const root = option.closest('[data-user-search-select]');
+                        const value = root?.querySelector('[data-user-search-value]');
+
+                        syncPlaceholder(root);
+                        window.setUserSearchSelect(root, option.dataset);
+
+                        if (value) {
+                            value.dispatchEvent(new Event('input', { bubbles: true }));
+                            value.dispatchEvent(new Event('change', { bubbles: true }));
+                        }
+
+                        closePicker(root);
+
+                        root?.dispatchEvent(new CustomEvent('user-search-select:selected', {
+                            bubbles: true,
+                            detail: { ...option.dataset },
+                        }));
+
+                        if (root?.dataset.clearOnSelect === 'true') {
+                            window.clearUserSearchSelect(root);
+                        }
+
+                        event.preventDefault();
+                        return;
+                    }
+
+                    document.querySelectorAll('[data-user-search-select]').forEach((root) => {
+                        if (!root.contains(event.target)) {
+                            closePicker(root);
+                        }
+                    });
+                };
+
+                const handleUserSearchInput = (event) => {
+                    const input = event.target.closest('[data-user-search-input]');
+
+                    if (!input) {
+                        return;
+                    }
+
+                    const root = input.closest('[data-user-search-select]');
+                    const query = input.value.trim().toLowerCase();
+                    let visibleCount = 0;
+
+                    root?.querySelectorAll('[data-user-search-option]').forEach((option) => {
+                        const isVisible = (option.dataset.search || '').includes(query);
+                        option.classList.toggle('hidden', !isVisible);
+                        visibleCount += isVisible ? 1 : 0;
+                    });
+
+                    root?.querySelector('[data-user-search-empty]')?.classList.toggle('hidden', visibleCount > 0);
+                };
+
+                const handleUserSearchKeydown = (event) => {
+                    if (event.key === 'Escape') {
+                        document.querySelectorAll('[data-user-search-select]').forEach(closePicker);
+                    }
+                };
+
+                document.removeEventListener('click', window.handleUserSearchClick);
+                document.removeEventListener('input', window.handleUserSearchInput);
+                document.removeEventListener('keydown', window.handleUserSearchKeydown);
+                document.removeEventListener('DOMContentLoaded', window.initUserSearchSelects);
+                document.removeEventListener('livewire:navigated', window.initUserSearchSelects);
+
+                window.handleUserSearchClick = handleUserSearchClick;
+                window.handleUserSearchInput = handleUserSearchInput;
+                window.handleUserSearchKeydown = handleUserSearchKeydown;
+                window.initUserSearchSelects = initUserSearchSelects;
+
+                document.addEventListener('click', window.handleUserSearchClick);
+                document.addEventListener('input', window.handleUserSearchInput);
+                document.addEventListener('keydown', window.handleUserSearchKeydown);
+                document.addEventListener('DOMContentLoaded', window.initUserSearchSelects);
+                document.addEventListener('livewire:navigated', window.initUserSearchSelects);
+
+                window.initUserSearchSelects();
             })();
         </script>
     </body>

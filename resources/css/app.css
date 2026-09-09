@@ -61,6 +61,44 @@ select:focus[data-flux-control] {
     @apply outline-hidden ring-2 ring-accent ring-offset-2 ring-offset-accent-foreground;
 }
 
+select option {
+    background-color: #f1f5f9;
+    color: #475569;
+}
+
+select option:checked {
+    background-color: #e2e8f0;
+    color: #0f172a;
+}
+
+select option:disabled {
+    color: #94a3b8;
+}
+
+.ui-data-table tbody > tr:nth-child(even) {
+    background-color: #f8fafc;
+}
+
+.ui-data-table tbody.is-row-group:nth-of-type(odd) > tr:not(.is-child-row) {
+    background-color: #ffffff;
+}
+
+.ui-data-table tbody.is-row-group:nth-of-type(even) > tr:not(.is-child-row) {
+    background-color: #f8fafc;
+}
+
+.ui-data-table tbody > tr:hover {
+    background-color: #f1f5f9;
+}
+
+.ui-data-table tbody > tr.is-child-row {
+    background-color: #f8fafc;
+}
+
+.ui-data-table tbody > tr.is-child-row:hover {
+    background-color: #f1f5f9;
+}
+
 .app-scrollbar,
 .sidebar-scrollbar {
     scrollbar-color: #cbd5e1 transparent;
@@ -141,6 +179,15 @@ select:focus[data-flux-control] {
         padding: 1.25rem 0;
     }
 
+    .app-shell.is-sidebar-collapsed .sidebar-brand {
+        justify-content: center;
+        width: 100%;
+    }
+
+    .app-shell.is-sidebar-collapsed .sidebar-brand-logo {
+        width: 3.5rem;
+    }
+
     .app-shell.is-sidebar-collapsed .sidebar-label {
         display: none;
     }
@@ -175,6 +222,14 @@ select:focus[data-flux-control] {
         width: 2.5rem;
         height: 2.5rem;
         font-size: 1rem;
+    }
+
+    .app-modal-overlay {
+        padding-left: calc(280px + 1rem);
+    }
+
+    .app-shell.is-sidebar-collapsed .app-modal-overlay {
+        padding-left: calc(88px + 1rem);
     }
 }
 

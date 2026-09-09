@@ -3,6 +3,7 @@
 namespace App\Models;
 
 use Illuminate\Database\Eloquent\Attributes\Fillable;
+use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
@@ -15,10 +16,21 @@ use Illuminate\Database\Eloquent\Relations\BelongsTo;
     'assigned_at',
     'responded_at',
     'stages',
+    'm_approval_flow_stage_id',
     'catatan',
+    'stage_name_snapshot',
+    'stage_order_snapshot',
+    'approver_name_snapshot',
+    'approver_position_snapshot',
+    'approver_department_snapshot',
 ])]
 class Approval extends Model
 {
+    private const OFFICIAL_PREPARER_DISPLAY_STAGES = [
+        'TTD Penyusun Resmi',
+        'Disusun Oleh',
+    ];
+
     protected $table = 't_approval';
 
     public $timestamps = false;
@@ -28,7 +40,54 @@ class Approval extends Model
         return [
             'assigned_at' => 'datetime',
             'responded_at' => 'datetime',
+            'stage_order_snapshot' => 'integer',
         ];
+    }
+
+    public function fillResponseSnapshot(?int $stageOrder = null): self
+    {
+        $approver = $this->approver()
+            ->with('department')
+            ->first();
+
+        return $this->fill([
+            'stage_name_snapshot' => $this->stages,
+            'stage_order_snapshot' => $stageOrder,
+            'approver_name_snapshot' => $approver?->name,
+            'approver_position_snapshot' => $approver?->jabatan,
+            'approver_department_snapshot' => $approver?->department?->nama_department,
+        ]);
+    }
+
+    public function scopeForApprovalFlowStage(Builder $query, ApprovalFlowStage $stage): Builder
+    {
+        $stageLabel = $stage->display_label ?: 'Approval';
+
+        return $query->where(function (Builder $query) use ($stage, $stageLabel): void {
+            $query
+                ->where('m_approval_flow_stage_id', $stage->id)
+                ->orWhere(function (Builder $query) use ($stageLabel): void {
+                    $query
+                        ->whereNull('m_approval_flow_stage_id')
+                        ->where('stages', $stageLabel);
+                });
+        });
+    }
+
+    public function shouldHideAsOfficialPreparerDisplay(Document $document): bool
+    {
+        if ($document->official_preparer_id === null || $this->user_id !== $document->official_preparer_id) {
+            return false;
+        }
+
+        $stageNames = [
+            trim((string) $this->stages),
+            trim((string) $this->stage_name_snapshot),
+        ];
+
+        return collect($stageNames)
+            ->filter()
+            ->contains(fn (string $stage): bool => in_array($stage, self::OFFICIAL_PREPARER_DISPLAY_STAGES, true));
     }
 
     public function document(): BelongsTo
@@ -49,6 +108,11 @@ class Approval extends Model
     public function role(): BelongsTo
     {
         return $this->belongsTo(Role::class, 'role_id');
+    }
+
+    public function approvalFlowStage(): BelongsTo
+    {
+        return $this->belongsTo(ApprovalFlowStage::class, 'm_approval_flow_stage_id');
     }
 
     public function assignedBy(): BelongsTo

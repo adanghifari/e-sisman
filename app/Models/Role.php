@@ -11,6 +11,16 @@ class Role extends Model
 {
     public $timestamps = false;
 
+    public function permissions(): BelongsToMany
+    {
+        return $this->belongsToMany(
+            Permission::class,
+            'role_permissions',
+            'role_id',
+            'permission_id',
+        );
+    }
+
     public function users(): BelongsToMany
     {
         return $this->belongsToMany(
