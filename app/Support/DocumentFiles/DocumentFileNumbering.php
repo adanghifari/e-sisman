@@ -194,9 +194,14 @@ class DocumentFileNumbering
         $document->loadMissing('documentLevel', 'revisedFrom.documentLevel');
         $levelSource = $document;
 
-        while ($levelSource->documentLevel?->kode === 'level-4' && $levelSource->revisedFrom !== null) {
-            $levelSource = $levelSource->revisedFrom;
-            $levelSource->loadMissing('documentLevel', 'revisedFrom.documentLevel');
+        while ($levelSource instanceof Document && $levelSource->documentLevel?->kode === 'level-4') {
+            if ($levelSource->revisedFrom !== null) {
+                $levelSource = $levelSource->revisedFrom;
+                $levelSource->loadMissing('documentLevel', 'revisedFrom.documentLevel');
+                continue;
+            }
+
+            break;
         }
 
         $level = $levelSource->documentLevel;

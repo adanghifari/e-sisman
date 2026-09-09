@@ -37,7 +37,7 @@
             type="text"
             name="nomor_dokumen_suffix"
             value="{{ $readonlySuffix ? $defaultValue : old('nomor_dokumen_suffix', $defaultValue) }}"
-            @if (! $readonlySuffix && filled(old('nomor_dokumen_suffix', $defaultValue))) data-user-edited="true" @endif
+            @if (! $readonlySuffix && old('nomor_dokumen_suffix') !== null) data-user-edited="true" @endif
             @readonly($readonlySuffix)
             required
             @class([

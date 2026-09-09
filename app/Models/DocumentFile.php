@@ -24,6 +24,14 @@ use Illuminate\Support\Str;
 ])]
 class DocumentFile extends Model
 {
+    public const TYPE_IMPORTED_DOCUMENT = 'imported_document';
+    public const TYPE_FILLED_TEMPLATE = 'filled_template';
+    public const TYPE_REVISION_CONTENT = 'revision_content';
+    public const TYPE_REVISION_FORM = 'revision_form';
+    public const TYPE_ATTACHMENT = 'attachment';
+    public const IMPORTED_DOCUMENT = self::TYPE_IMPORTED_DOCUMENT;
+    public const ATTACHMENT = self::TYPE_ATTACHMENT;
+
     protected $table = 't_document_files';
 
     public $timestamps = false;

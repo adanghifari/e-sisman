@@ -11,7 +11,6 @@ use App\Models\Document;
 use App\Models\DocumentDownloadLog;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
-use App\Models\ImportedExistingDocument;
 use App\Models\StatusDocument;
 use App\Models\User;
 use Illuminate\Foundation\Testing\RefreshDatabase;
@@ -159,22 +158,22 @@ class DashboardTest extends TestCase
             'nomor_revisi' => 1,
             'request_type' => 'obsolete',
         ]);
-        ImportedExistingDocument::create([
-            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
-            'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
+        Document::create([
+            'origin' => Document::ORIGIN_IMPORTED_LEGACY,
+            'm_status_document_id' => $obsoleteStatus->id,
             'm_document_level_id' => $levelTwo->id,
             'm_document_types_id' => $type->id,
             'm_proses_bisnis_id' => $businessProcess->id,
             'm_proses_fungsi_id' => $businessFunction->id,
-            'uploaded_by' => $user->id,
+            'user_id' => $user->id,
             'nama_dokumen' => 'Imported Terpetakan',
             'nomor_dokumen' => 'PS-IMP-01',
             'nomor_revisi' => '00.00',
         ])->departments()->attach($department);
-        ImportedExistingDocument::create([
-            'document_state' => ImportedExistingDocument::STATE_OBSOLETE,
-            'obsolete_rule_type' => ImportedExistingDocument::LEGACY_RULE,
-            'uploaded_by' => $user->id,
+        Document::create([
+            'origin' => Document::ORIGIN_IMPORTED_LEGACY,
+            'm_status_document_id' => $obsoleteStatus->id,
+            'user_id' => $user->id,
             'nama_dokumen' => 'Imported Legacy Tanpa Mapping',
             'nomor_dokumen' => 'LEGACY-001',
             'nomor_revisi' => '00.00',

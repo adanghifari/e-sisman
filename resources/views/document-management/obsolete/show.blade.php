@@ -1,4 +1,4 @@
-﻿<x-documents.detail-page
+<x-documents.detail-page
     title="Detail Dokumen Obsolete"
     heading="Detail Dokumen Obsolete"
     index-route="documents.obsolete"
@@ -13,9 +13,10 @@
     :content-files="$contentFiles"
     :attachment-files="$attachmentFiles"
     :generated-printout="$generatedPrintout"
-    :show-generated-printout="true"
+    :show-generated-printout="$document->origin === \App\Models\Document::ORIGIN_WORKFLOW"
     :can-preview-generated-printout="$canPreviewGeneratedPrintout"
-    :show-source-files="false"
+    :download-printout-url="$downloadPrintoutUrl ?? null"
+    :show-source-files="$document->origin !== \App\Models\Document::ORIGIN_WORKFLOW"
     :document-history="$documentHistory"
 >
     <x-slot:actions>

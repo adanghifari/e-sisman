@@ -137,6 +137,7 @@
 
             const orderOffsetFor = (root) => {
                 const form = root?.closest('[data-submitted-attachment-form]');
+                
                 const submittedItems = form?.querySelector('[data-submitted-attachment-items]');
 
                 if (!submittedItems || submittedItems.contains(root)) {

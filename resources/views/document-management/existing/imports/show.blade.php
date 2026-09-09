@@ -5,6 +5,26 @@
             :description="$document->nama_dokumen"
         />
 
+        @if ($canDeleteImportedExisting)
+            <div class="flex justify-end">
+                <form
+                    method="POST"
+                    action="{{ route('documents.existing.imports.destroy', $document) }}"
+                    onsubmit="return confirm('Hapus dokumen imported ini dari sistem?')"
+                >
+                    @csrf
+                    @method('DELETE')
+                    <button
+                        type="submit"
+                        class="inline-flex h-10 items-center justify-center gap-2 rounded-lg border border-red-200 bg-white px-4 text-sm font-semibold text-red-600 transition hover:bg-red-50"
+                    >
+                        <flux:icon name="trash" class="size-4" />
+                        Hapus
+                    </button>
+                </form>
+            </div>
+        @endif
+
         <div class="grid gap-6 xl:grid-cols-[1fr_360px]">
             <div class="space-y-6">
                 <x-ui.panel title="Informasi Dokumen">
@@ -65,7 +85,7 @@
                             <div class="flex items-center justify-between gap-4 px-6 py-4">
                                 <div class="min-w-0">
                                     <p class="truncate font-semibold text-slate-800">{{ $file->original_file_name }}</p>
-                                    <p class="mt-1 text-xs font-medium text-slate-500">{{ $file->type_file === \App\Models\ImportedExistingDocumentFile::OBSOLETE_DOCUMENT ? 'File Dokumen' : 'Lampiran' }}</p>
+                                    <p class="mt-1 text-xs font-medium text-slate-500">{{ $file->type_file === \App\Models\DocumentFile::TYPE_IMPORTED_DOCUMENT ? 'File Dokumen' : 'Lampiran' }}</p>
                                 </div>
                                 <div class="flex shrink-0 gap-2">
                                     @if (\Illuminate\Support\Str::of($file->original_file_name)->lower()->endsWith('.pdf'))
@@ -86,7 +106,7 @@
                     <div class="space-y-3">
                         @forelse ($document->outgoingRelations as $relation)
                             @php
-                                $target = $relation->targetImportedDocument ?: $relation->targetDocument;
+                                $target = $relation->targetDocument;
                                 $targetNumber = $target?->nomor_dokumen ?: '-';
                                 $targetName = $target?->nama_dokumen ?: '-';
                             @endphp
@@ -106,8 +126,8 @@
 
                 <x-ui.panel title="Relasi Masuk">
                     <div class="space-y-3">
-                        @forelse ($document->incomingImportedRelations as $relation)
-                            @php($sourceDocument = $relation->sourceImportedDocument ?: $relation->sourceDocument)
+                        @forelse ($document->incomingRelations as $relation)
+                            @php($sourceDocument = $relation->sourceDocument)
                             <div class="rounded-lg border border-slate-200 px-4 py-3">
                                 <p class="text-xs font-semibold uppercase tracking-wide text-slate-500">
                                     {{ $relation->relation_type === \App\Models\DocumentRelation::SUPERSEDED_BY ? 'Menggantikan' : ($relationTypeOptions[$relation->relation_type] ?? $relation->relation_type) }}

@@ -174,6 +174,20 @@ return [
             'action' => 'create',
         ],
         [
+            'code' => 'documents.master.imports.edit',
+            'name' => 'Edit Dokumen Imported',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.master.imports.edit',
+            'action' => 'update',
+        ],
+        [
+            'code' => 'documents.master.imports.update',
+            'name' => 'Simpan Edit Dokumen Imported',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.master.imports.update',
+            'action' => 'update',
+        ],
+        [
             'code' => 'documents.obsolete.view',
             'name' => 'Lihat Dokumen Obsolete',
             'module' => 'Manajemen Dokumen',
@@ -265,11 +279,25 @@ return [
             'action' => 'create',
         ],
         [
+            'code' => 'documents.existing.imports.number-reuse-check',
+            'name' => 'Cek Penggunaan Nomor Dokumen Import',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.existing.imports.number-reuse-check',
+            'action' => 'view',
+        ],
+        [
             'code' => 'documents.existing.imports.detail',
             'name' => 'Lihat Detail Arsip Dokumen Existing',
             'module' => 'Manajemen Dokumen',
             'route' => 'documents.existing.imports.show',
             'action' => 'view',
+        ],
+        [
+            'code' => 'documents.existing.imports.delete',
+            'name' => 'Hapus Dokumen Imported Existing',
+            'module' => 'Manajemen Dokumen',
+            'route' => 'documents.existing.imports.destroy',
+            'action' => 'delete',
         ],
         [
             'code' => 'documents.existing.imports.revision',

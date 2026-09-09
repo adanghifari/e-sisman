@@ -187,11 +187,13 @@ class PdfCompositionTest extends TestCase
                 [
                     'number' => 1,
                     'title' => 'Barcode pengisian daftar hadir safety induction',
+                    'document_number' => 'FMIK-HMK-01-05-02',
                     'path_file' => 'documents/10/attachment-a.pdf',
                 ],
                 [
                     'number' => 2,
                     'title' => 'Sticker safety induction untuk pekerja proyek',
+                    'document_number' => 'FMIK-HMK-01-05-03',
                     'path_file' => 'documents/10/attachment-b.pdf',
                 ],
             ]),
@@ -205,8 +207,12 @@ class PdfCompositionTest extends TestCase
         $this->assertSame(6, $result->bodyPagesCount);
         $this->assertSame('generated_attachment_list', $result->bodyPages[2]['mode']);
         $this->assertSame('attachment', $result->bodyPages[3]['mode']);
-        $this->assertSame('1 dari 6', $result->bodyPages[0]['page_label']);
-        $this->assertSame('6 dari 6', $result->bodyPages[5]['page_label']);
+        $this->assertSame('1 dari 2', $result->bodyPages[0]['page_label']);
+        $this->assertSame('attachment_form', $result->bodyPages[3]['header']);
+        $this->assertSame('1 dari 1', $result->bodyPages[3]['header_page_label']);
+        $this->assertSame('attachment_form', $result->bodyPages[4]['header']);
+        $this->assertSame('1 dari 2', $result->bodyPages[4]['header_page_label']);
+        $this->assertSame('2 dari 2', $result->bodyPages[5]['header_page_label']);
         $this->assertSame(8, $this->pdfPageCount($result->pdf));
     }
 
@@ -225,12 +231,14 @@ class PdfCompositionTest extends TestCase
                 [
                     'number' => 1,
                     'title' => 'Lampiran Valid',
+                    'document_number' => 'FMIK-HMK-01-05-02',
                     'path_file' => 'documents/10/valid-attachment.pdf',
                     'original_file_name' => 'valid-attachment.pdf',
                 ],
                 [
                     'number' => 2,
                     'title' => 'Lampiran Rusak',
+                    'document_number' => 'FMIK-HMK-01-05-03',
                     'path_file' => 'documents/10/broken-attachment.pdf',
                     'original_file_name' => 'broken-attachment.pdf',
                 ],
@@ -245,6 +253,8 @@ class PdfCompositionTest extends TestCase
         $this->assertSame(6, $this->pdfPageCount($result->pdf));
         $this->assertSame('Lampiran Valid', $result->bodyPages[2]['attachment_title']);
         $this->assertSame('attachment_fallback', $result->bodyPages[3]['mode']);
+        $this->assertSame('attachment_form', $result->bodyPages[3]['header']);
+        $this->assertSame('1 dari 1', $result->bodyPages[3]['header_page_label']);
         $this->assertSame('Lampiran Rusak', $result->bodyPages[3]['attachment_title']);
     }
 
@@ -273,6 +283,7 @@ class PdfCompositionTest extends TestCase
                     [
                         'number' => 2,
                         'title' => 'Lampiran Pendukung',
+                        'document_number' => 'FMIK-OPS-01-01-09',
                         'type' => 'attachment',
                         'path_file' => 'documents/10/attachment.pdf',
                     ],
@@ -303,7 +314,7 @@ class PdfCompositionTest extends TestCase
         $this->assertSame('generated_attachment_list', $result->bodyPages[1]['mode']);
         $this->assertSame([
             'Lampiran 1. Form Lembar Revisi (FMIK-OPS-01-01-08)',
-            'Lampiran 2. Lampiran Pendukung',
+            'Lampiran 2. Lampiran Pendukung (FMIK-OPS-01-01-09)',
         ], $result->bodyPages[1]['attachment_titles']);
         $this->assertSame('revision_form', $result->bodyPages[2]['header']);
         $this->assertSame('1 dari 2', $result->bodyPages[2]['header_page_label']);
@@ -311,8 +322,8 @@ class PdfCompositionTest extends TestCase
         $this->assertSame('revision_form', $result->bodyPages[3]['header']);
         $this->assertSame('2 dari 2', $result->bodyPages[3]['header_page_label']);
         $this->assertTrue($result->bodyPages[3]['revision_approval_stamp']);
-        $this->assertSame('standard', $result->bodyPages[4]['header']);
-        $this->assertSame('5 dari 5', $result->bodyPages[4]['header_page_label']);
+        $this->assertSame('attachment_form', $result->bodyPages[4]['header']);
+        $this->assertSame('1 dari 1', $result->bodyPages[4]['header_page_label']);
     }
 
     public function test_revision_approval_moves_to_next_page_when_revision_form_content_is_too_low(): void

@@ -5,8 +5,12 @@
         'level-3' => 'III',
     ];
     $documentTitle = \Illuminate\Support\Str::after($levelConfig['name'], ': ');
-    $pageTitle = 'Edit Metadata Dokumen Master Level '.$levelNumbers[$level].' : '.$documentTitle;
-    $detailRoute = route('documents.master.imported.show', $document);
+    $isImportedMaster = $document->isMaster();
+    $isLegacyImport = $document->origin === \App\Models\Document::ORIGIN_IMPORTED_LEGACY;
+    $pageTitle = 'Edit Metadata Dokumen Imported Level '.$levelNumbers[$level].' : '.$documentTitle;
+    $detailRoute = $isImportedMaster
+        ? route('documents.master.imported.show', $document)
+        : route('documents.existing.imports.show', $document);
     $updateRoute = route('documents.master.imports.update', $document);
 
     $documentPrefixes = [
@@ -51,7 +55,7 @@
                     Edit Metadata Dokumen Level {{ $levelNumbers[$level] }} : {{ $documentTitle }}
                 </h1>
                 <p class="mt-1 text-sm font-medium text-slate-500">
-                    Ubah metadata dokumen master existing yang sudah diimport.
+                    Ubah metadata dokumen imported yang sudah masuk sistem.
                 </p>
             </div>
             <span class="inline-flex h-8 items-center rounded-full bg-amber-50 px-3 text-xs font-bold text-amber-700 ring-1 ring-inset ring-amber-600/20">
@@ -91,7 +95,7 @@
                                 name="nama_dokumen"
                                 value="{{ old('nama_dokumen', $document->nama_dokumen) }}"
                                 placeholder="Masukkan nama dokumen"
-                                required
+                                @unless ($isLegacyImport) required @endunless
                                 @class([
                                     'h-14 w-full rounded-lg bg-white px-4 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:ring-2',
                                     'border border-red-300 focus:border-red-400 focus:ring-red-100' => $errors->has('nama_dokumen'),
@@ -121,7 +125,7 @@
                                 <span class="mb-2 block text-base font-medium text-slate-500">Department</span>
                                 <select
                                     name="department_ids[]"
-                                    required
+                                    @unless ($isLegacyImport) required @endunless
                                     class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                                 >
                                     <option value="">Pilih Department</option>
@@ -167,7 +171,7 @@
                                     :selected="$selectedDepartmentIds"
                                     placeholder="Pilih department"
                                     selected-placeholder="Tambah Department"
-                                    required
+                                    :required="! $isLegacyImport"
                                 />
                                 @error('department_ids')
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
@@ -180,7 +184,7 @@
                                 <span class="mb-2 block text-base font-medium text-slate-500">Dokumen Acuan (Prosedur Level II)</span>
                                 <select
                                     name="reference"
-                                    required
+                                    @unless ($isLegacyImport) required @endunless
                                     class="h-12 w-full rounded-lg border border-slate-300 bg-white px-4 text-base font-medium text-slate-500 outline-none transition focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
                                 >
                                     <option value="">Pilih Dokumen Acuan</option>
@@ -318,11 +322,15 @@
                                 value="{{ old('nomor_revisi', $document->nomor_revisi) }}"
                                 placeholder="__.__"
                                 inputmode="numeric"
-                                pattern="\d{2}\.\d{2}"
-                                title="Gunakan format 00.00"
+                                @unless ($isLegacyImport)
+                                    pattern="\d{2}\.\d{2}"
+                                    title="Gunakan format 00.00"
+                                    data-import-master-revision-mask
+                                @else
+                                    title="Nomor revisi legacy mengikuti dokumen asli"
+                                @endunless
                                 autocomplete="off"
                                 required
-                                data-import-master-revision-mask
                                 @class([
                                     'h-14 w-full rounded-lg bg-white px-4 font-mono text-base font-semibold tracking-normal outline-none transition placeholder:text-slate-400',
                                     'border border-red-300 text-red-700 focus:border-red-400 focus:ring-2 focus:ring-red-100' => $errors->has('nomor_revisi'),
@@ -365,7 +373,9 @@
                             <div class="flex items-center gap-3">
                                 <flux:icon name="arrow-path" class="size-5 text-slate-700" />
                                 <span>Status</span>
-                                <span class="ml-auto rounded-full bg-emerald-100 px-3 py-1 text-xs font-bold text-emerald-700">Master</span>
+                                <span class="ml-auto rounded-full {{ $isImportedMaster ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700' }} px-3 py-1 text-xs font-bold">
+                                    {{ $isImportedMaster ? 'Master' : 'Obsolete' }}
+                                </span>
                             </div>
                         </div>
                     </div>

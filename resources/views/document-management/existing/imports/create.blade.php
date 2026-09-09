@@ -1,5 +1,5 @@
 @php
-    $isMasterImport = ($documentState ?? \App\Models\ImportedExistingDocument::STATE_OBSOLETE) === \App\Models\ImportedExistingDocument::STATE_MASTER;
+    $isMasterImport = ($documentState ?? \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::STATE_OBSOLETE) === \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::STATE_MASTER;
     $legacyOnly = $legacyOnly ?? false;
     $pageTitle = $isMasterImport
         ? 'Import Dokumen Master'
@@ -16,13 +16,22 @@
             :description="$pageDescription"
         />
 
-        <form method="POST" action="{{ $formAction }}" enctype="multipart/form-data" class="space-y-6">
-            @csrf
-            <input type="hidden" name="document_state" value="{{ $documentState ?? \App\Models\ImportedExistingDocument::STATE_OBSOLETE }}">
+        <form
+            method="POST"
+            action="{{ $formAction }}"
+            enctype="multipart/form-data"
+            class="space-y-6"
             @if ($isMasterImport)
-                <input type="hidden" name="obsolete_rule_type" value="{{ \App\Models\ImportedExistingDocument::CURRENT_RULE }}">
+                data-import-master-number-check-url="{{ route('documents.existing.imports.number-reuse-check') }}"
+            @endif
+        >
+            @csrf
+            <input type="hidden" name="document_state" value="{{ $documentState ?? \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::STATE_OBSOLETE }}">
+            <input type="hidden" name="confirm_imported_master_number_reuse" value="0">
+            @if ($isMasterImport)
+                <input type="hidden" name="obsolete_rule_type" value="{{ \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::CURRENT_RULE }}">
             @elseif ($legacyOnly)
-                <input type="hidden" name="obsolete_rule_type" value="{{ \App\Models\ImportedExistingDocument::LEGACY_RULE }}">
+                <input type="hidden" name="obsolete_rule_type" value="{{ \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::LEGACY_RULE }}">
             @endif
 
             @if ($errors->any())
@@ -36,8 +45,8 @@
                     $selectedRuleType = old(
                         'obsolete_rule_type',
                         $isMasterImport
-                            ? \App\Models\ImportedExistingDocument::CURRENT_RULE
-                            : ($legacyOnly ? \App\Models\ImportedExistingDocument::LEGACY_RULE : null),
+                            ? \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::CURRENT_RULE
+                            : ($legacyOnly ? \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::LEGACY_RULE : null),
                     );
                 @endphp
 
@@ -57,10 +66,10 @@
                                     <input
                                         type="radio"
                                         name="obsolete_rule_type"
-                                        value="{{ \App\Models\ImportedExistingDocument::CURRENT_RULE }}"
+                                        value="{{ \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::CURRENT_RULE }}"
                                         class="sr-only"
                                         data-imported-existing-rule-option
-                                        @checked($selectedRuleType === \App\Models\ImportedExistingDocument::CURRENT_RULE)
+                                        @checked($selectedRuleType === \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::CURRENT_RULE)
                                     >
                                     <span class="flex items-start gap-3">
                                         <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-sky-100 text-sky-700">
@@ -77,10 +86,10 @@
                                     <input
                                         type="radio"
                                         name="obsolete_rule_type"
-                                        value="{{ \App\Models\ImportedExistingDocument::LEGACY_RULE }}"
+                                        value="{{ \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::LEGACY_RULE }}"
                                         class="sr-only"
                                         data-imported-existing-rule-option
-                                        @checked($selectedRuleType === \App\Models\ImportedExistingDocument::LEGACY_RULE)
+                                        @checked($selectedRuleType === \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::LEGACY_RULE)
                                     >
                                     <span class="flex items-start gap-3">
                                         <span class="grid size-9 shrink-0 place-items-center rounded-lg bg-slate-100 text-slate-700">
@@ -101,7 +110,12 @@
 
                     <div class="grid gap-4 md:grid-cols-2" data-rule-dependent-fields>
                         <x-ui.input label="Nomor Dokumen" name="nomor_dokumen" :value="old('nomor_dokumen')" />
-                        <x-ui.input label="Nomor Revisi" name="nomor_revisi" :value="old('nomor_revisi')" placeholder="Contoh: 00, 00.01, Rev A, R02" />
+                        <x-ui.input
+                            label="Nomor Revisi"
+                            name="nomor_revisi"
+                            :value="old('nomor_revisi')"
+                            :placeholder="$isMasterImport ? 'Contoh: 00.00' : 'Contoh: 00.00, Rev A, R02'"
+                        />
                         <x-ui.date-input label="Tanggal Terbit" name="tanggal_terbit" :value="old('tanggal_terbit')" />
                         @unless ($isMasterImport)
                             <x-ui.date-input label="Tanggal Obsolete" name="tanggal_obsolete" :value="old('tanggal_obsolete')" />
@@ -327,8 +341,8 @@
                     const legacySections = document.querySelectorAll('[data-legacy-rule-section]');
                     const currentRuleAlwaysVisible = currentRuleFields?.hasAttribute('data-always-visible') || false;
                     const hasSelectedRule = Boolean(selectedRule) || currentRuleAlwaysVisible;
-                    const isCurrentRule = selectedRule === '{{ \App\Models\ImportedExistingDocument::CURRENT_RULE }}';
-                    const isLegacyRule = selectedRule === '{{ \App\Models\ImportedExistingDocument::LEGACY_RULE }}';
+                    const isCurrentRule = selectedRule === '{{ \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::CURRENT_RULE }}';
+                    const isLegacyRule = selectedRule === '{{ \App\Http\Controllers\DocumentManagement\ImportedExistingDocumentController::LEGACY_RULE }}';
                     const shouldShowCurrentRule = currentRuleAlwaysVisible || isCurrentRule;
 
                     dependentFields.forEach((section) => {
@@ -431,8 +445,94 @@
                 });
             };
 
+            const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
+
+            const checkImportedMasterNumberReuse = async (form) => {
+                const url = form.dataset.importMasterNumberCheckUrl;
+
+                if (!url) {
+                    return true;
+                }
+
+                const confirmationInput = form.querySelector('input[name="confirm_imported_master_number_reuse"]');
+
+                if (confirmationInput?.value === '1') {
+                    return true;
+                }
+
+                const payloadData = new FormData();
+                [
+                    'document_state',
+                    'obsolete_rule_type',
+                    'm_document_level_id',
+                    'm_proses_bisnis_id',
+                    'm_proses_fungsi_id',
+                    'reference',
+                    'nomor_dokumen',
+                    'nomor_dokumen_suffix',
+                ].forEach((name) => {
+                    const field = form.querySelector(`[name="${name}"]`);
+                    if (field) {
+                        payloadData.append(name, field.value || '');
+                    }
+                });
+
+                const response = await fetch(url, {
+                    method: 'POST',
+                    headers: {
+                        'Accept': 'application/json',
+                        'X-CSRF-TOKEN': csrfToken,
+                    },
+                    body: payloadData,
+                });
+
+                if (!response.ok) {
+                    return true;
+                }
+
+                const payload = await response.json();
+
+                if (!payload.conflict) {
+                    return true;
+                }
+
+                if (window.confirm(payload.message || 'Nomor dokumen sudah digunakan. Apakah Anda yakin ingin melanjutkan?')) {
+                    if (confirmationInput) {
+                        confirmationInput.value = '1';
+                    }
+
+                    return true;
+                }
+
+                return false;
+            };
+
             document.querySelectorAll('form').forEach((form) => {
                 syncDocumentSearchOptions(form);
+
+                form.addEventListener('submit', async (event) => {
+                    const suffixInput = form.querySelector('input[name="nomor_dokumen_suffix"]');
+                    if (suffixInput) {
+                        const val = suffixInput.value.trim();
+                        if (/^\d{1}$/.test(val)) {
+                            suffixInput.value = val.padStart(2, '0');
+                        }
+                    }
+
+                    if (!form.dataset.importMasterNumberCheckUrl) {
+                        return;
+                    }
+
+                    if (form.querySelector('input[name="confirm_imported_master_number_reuse"]')?.value === '1') {
+                        return;
+                    }
+
+                    event.preventDefault();
+
+                    if (await checkImportedMasterNumberReuse(form)) {
+                        form.requestSubmit();
+                    }
+                });
             });
 
             document.addEventListener('change', (event) => {

@@ -13,7 +13,6 @@ use App\Models\DocumentFile;
 use App\Models\DocumentFinalArtifact;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
-use App\Models\ImportedExistingDocument;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\FinalDocuments\AutoGenerateFinalDocument;
@@ -200,7 +199,7 @@ class FinalDocumentAutoGenerationTest extends TestCase
             ->assertRedirect(route('documents.approval.show', $revision));
 
         $this->assertSame(StatusDocument::APPROVED, $revision->refresh()->status->nama_status);
-        $this->assertSame(ImportedExistingDocument::STATE_OBSOLETE, $source->refresh()->document_state);
+        $this->assertSame(StatusDocument::OBSOLETE, $source->refresh()->status->nama_status);
         $this->assertDatabaseHas('document_final_artifacts', [
             't_document_id' => $revision->id,
             'artifact_type' => DocumentFinalArtifact::TYPE_FINAL_DOCUMENT,
@@ -282,30 +281,31 @@ class FinalDocumentAutoGenerationTest extends TestCase
     }
 
     /**
-     * @return array{0: Document, 1: User, 2: ImportedExistingDocument}
+     * @return array{0: Document, 1: User, 2: Document}
      */
     private function importedExistingRevisionFixture(): array
     {
         $submitter = User::factory()->create();
         $approver = User::factory()->create();
         $base = $this->documentBase();
-        $source = ImportedExistingDocument::query()->create([
-            'document_state' => ImportedExistingDocument::STATE_MASTER,
-            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+        $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
+        $source = Document::query()->create([
+            'origin' => Document::ORIGIN_IMPORTED_CURRENT,
+            'm_status_document_id' => $approvedStatus->id,
             'm_document_level_id' => $base['level']->id,
             'm_document_types_id' => $base['type']->id,
             'm_proses_bisnis_id' => $base['businessProcess']->id,
             'm_proses_fungsi_id' => $base['businessFunction']->id,
-            'uploaded_by' => $submitter->id,
+            'user_id' => $submitter->id,
             'nama_dokumen' => 'Imported Existing Master',
             'nomor_dokumen' => 'PS-SMR-IMP',
-            'nomor_revisi' => 0,
+            'nomor_revisi' => '00.00',
             'tanggal_terbit' => now()->subYear()->toDateString(),
         ]);
         $source->departments()->sync([$base['department']->id]);
 
         $revision = $this->createDocument($submitter, [
-            'imported_existing_source_id' => $source->id,
+            'revised_from' => $source->id,
             'request_type' => 'revision',
             'nama_dokumen' => 'Imported Existing Master Revision',
             'nomor_dokumen' => 'FMPS-SMR-IMP-01',

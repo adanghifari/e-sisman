@@ -207,16 +207,6 @@ class User extends Authenticatable implements PasskeyUser
         return $this->hasMany(DocumentFile::class, 'uploaded_by');
     }
 
-    public function importedExistingDocuments(): HasMany
-    {
-        return $this->hasMany(ImportedExistingDocument::class, 'uploaded_by');
-    }
-
-    public function importedExistingDocumentFiles(): HasMany
-    {
-        return $this->hasMany(ImportedExistingDocumentFile::class, 'uploaded_by');
-    }
-
     public function uploadedDocumentTemplates(): HasMany
     {
         return $this->hasMany(DocumentTemplate::class, 'uploaded_by');
@@ -232,5 +222,10 @@ class User extends Authenticatable implements PasskeyUser
         return Str::length($initials) > 1
             ? Str::substr($initials, 0, 1).Str::substr($initials, -1)
             : $initials;
+    }
+
+    public function needsProcessDocumentCount(): int
+    {
+        return app(\App\Http\Controllers\DocumentManagement\DocumentInboxController::class)->needsProcessCount($this);
     }
 }

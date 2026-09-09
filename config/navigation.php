@@ -6,7 +6,7 @@ return [
     ],
 
     'Manajemen Dokumen' => [
-        ['label' => 'Butuh Diproses', 'route' => 'documents.inbox', 'icon' => 'inbox', 'permission' => 'documents.inbox.view'],
+        ['label' => 'Butuh Diproses', 'route' => 'documents.inbox', 'icon' => 'inbox', 'permission' => 'documents.inbox.view', 'badge' => 'needs_process'],
         ['label' => 'Tambah Dokumen', 'route' => 'documents.create', 'icon' => 'document-plus', 'permission' => 'documents.create.view'],
         ['label' => 'Dokumen Master', 'route' => 'documents.master', 'icon' => 'document-duplicate', 'permission' => 'documents.master.view'],
         ['label' => 'Dokumen Obsolete', 'route' => 'documents.obsolete', 'icon' => 'archive-box-x-mark', 'permission' => 'documents.obsolete.view'],

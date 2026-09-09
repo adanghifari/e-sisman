@@ -41,7 +41,10 @@ class ApprovalSheetPdfRendererTest extends TestCase
         $this->assertStringContainsString('Instruksi Kerja Komunikasi, Konsultasi &amp; Partisipasi', $html);
         $this->assertStringContainsString('IK-HMK-01-05', $html);
         $this->assertStringContainsString('00.00', $html);
-        $this->assertStringContainsString(now()->format('d/m/Y'), $html);
+        $this->assertStringContainsString(now()->format('d - m - Y'), $html);
+        $this->assertStringContainsString('Krakatau International Port', $html);
+        $this->assertStringContainsString('SISTEM MANAJEMEN KBS', $html);
+        $this->assertStringContainsString('Lembar Pengesahan', $html);
         $this->assertStringContainsString('Sistem Dokumentasi PT Krakatau Bandar Samudera berstandar Sistem Manajemen Terintegrasi', $html);
         $this->assertStringContainsString('Direview Legal', $html);
         $this->assertStringContainsString('Disahkan Operasional', $html);

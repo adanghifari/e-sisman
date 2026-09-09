@@ -92,6 +92,39 @@ class DocumentInboxController extends Controller
         ]);
     }
 
+    public function needsProcessCount(Request|User|null $userOrRequest = null): int
+    {
+        if ($userOrRequest instanceof Request) {
+            $request = $userOrRequest;
+            $user = $request->user();
+        } elseif ($userOrRequest instanceof User) {
+            $user = $userOrRequest;
+            $request = request();
+            if ($request->user()?->id !== $user->id) {
+                $request = (clone $request)->setUserResolver(fn () => $user);
+            }
+        } else {
+            $user = auth()->user();
+            $request = request();
+        }
+
+        if (! $user) {
+            return 0;
+        }
+
+        return once(function () use ($request): int {
+            $filters = [
+                'search' => '',
+                'type' => '',
+                'status' => '',
+                'stage' => '',
+                'sort' => 'newest',
+            ];
+
+            return $this->myTasksQuery($request, $filters)->count();
+        });
+    }
+
     /**
      * @return array{needs_process: int, processed_history: int}
      */
@@ -106,7 +139,7 @@ class DocumentInboxController extends Controller
         ];
 
         return [
-            'needs_process' => $this->myTasksQuery($request, $filters)->count(),
+            'needs_process' => $this->needsProcessCount($request),
             'processed_history' => $this->myProcessedHistoryQuery($request, $filters)->count(),
         ];
     }
@@ -717,6 +750,8 @@ class DocumentInboxController extends Controller
         return [
             'id' => $document->id,
             'detail_url' => route('documents.approval.show', $document),
+            'action_url' => route('documents.approval.show', $document),
+            'action_label' => 'Detail',
             'number' => $this->documentDisplayNumber($document),
             'number_badge_label' => $document->request_type === 'obsolete' ? 'Pengajuan Obsolete' : null,
             'number_badge_tone' => $document->request_type === 'obsolete' ? 'red' : null,
@@ -825,6 +860,11 @@ class DocumentInboxController extends Controller
         $row['updated_at_sort'] = $submittedAt?->timestamp ?? 0;
         $row['action'] = 'Lihat';
 
+        if ($this->isContinuableDraft($document, $user)) {
+            $row['action_url'] = route('documents.create.drafts.edit', $document);
+            $row['action_label'] = 'Lanjutkan';
+        }
+
         return $row;
     }
 
@@ -840,6 +880,12 @@ class DocumentInboxController extends Controller
         $row['action'] = 'Lihat';
 
         return $row;
+    }
+
+    private function isContinuableDraft(Document $document, User $user): bool
+    {
+        return $document->user_id === $user->id
+            && $document->status?->nama_status === StatusDocument::DRAFT;
     }
 
     private function asDateTime(mixed $value): ?Carbon

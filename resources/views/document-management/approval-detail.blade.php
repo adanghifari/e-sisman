@@ -37,7 +37,7 @@
             ?? $document->documentLevel?->nama_dokumen
             ?? $document->documentLevel?->nama_level
             ?? '-';
-        $approvalFlowDescription = $levelKey === 'level-4' && $document->revisedFrom?->documentLevel
+        $approvalFlowDescription = $levelKey === 'level-4' && ($document->revisedFrom?->documentLevel || $document->importedExistingSource?->documentLevel)
             ? 'Mengikuti approval flow dokumen induk: '.$approvalFlowLabel
             : 'Approval Flow '.$approvalFlowLabel;
         $contentFileLabels = [

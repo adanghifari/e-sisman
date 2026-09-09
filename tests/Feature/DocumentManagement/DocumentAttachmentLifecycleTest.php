@@ -10,7 +10,6 @@ use App\Models\Document;
 use App\Models\DocumentFile;
 use App\Models\DocumentLevel;
 use App\Models\DocumentType;
-use App\Models\ImportedExistingDocument;
 use App\Models\Permission;
 use App\Models\Role;
 use App\Models\StatusDocument;
@@ -344,14 +343,15 @@ class DocumentAttachmentLifecycleTest extends TestCase
         [$user, $businessProcess, $businessFunction, $department] = $this->baseFixture();
         $level = DocumentLevel::query()->where('kode', 'level-2')->firstOrFail();
         $type = DocumentType::query()->where('nama_types', 'Prosedur')->firstOrFail();
-        $source = ImportedExistingDocument::query()->create([
-            'document_state' => ImportedExistingDocument::STATE_MASTER,
-            'obsolete_rule_type' => ImportedExistingDocument::CURRENT_RULE,
+        $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
+        $source = Document::query()->create([
+            'origin' => Document::ORIGIN_IMPORTED_CURRENT,
+            'm_status_document_id' => $approvedStatus->id,
             'm_document_level_id' => $level->id,
             'm_document_types_id' => $type->id,
             'm_proses_bisnis_id' => $businessProcess->id,
             'm_proses_fungsi_id' => $businessFunction->id,
-            'uploaded_by' => $user->id,
+            'user_id' => $user->id,
             'nama_dokumen' => 'Imported Master Numbering',
             'nomor_dokumen' => 'PS-SMR-120',
             'nomor_revisi' => '00.01',
@@ -359,8 +359,13 @@ class DocumentAttachmentLifecycleTest extends TestCase
         $source->departments()->sync([$department->id]);
 
         $this->actingAs($user)
-            ->post(route('documents.existing.imports.revisions.store', $source), [
+            ->post(route('documents.store', 'level-4'), [
+                'revised_from' => $source->id,
+                'submit_action' => 'submit',
                 'nama_dokumen' => 'Imported Master Numbering Rev',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
                 'official_preparer_id' => $user->id,
                 'revision_content' => UploadedFile::fake()->create('revision-content.pdf', 24, 'application/pdf'),
                 'revision_form' => UploadedFile::fake()->create('revision-form.pdf', 24, 'application/pdf'),

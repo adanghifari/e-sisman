@@ -151,6 +151,25 @@ class DocumentInboxTest extends TestCase
             ->assertSee(StatusDocument::REJECTED);
     }
 
+    public function test_submitter_can_continue_draft_from_processed_history(): void
+    {
+        $submitter = User::factory()->create(['name' => 'Pengaju Draft']);
+        $draftStatus = StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        $draft = $this->createDocument($submitter, [
+            'm_status_document_id' => $draftStatus->id,
+            'nama_dokumen' => 'Draft Riwayat Saya',
+            'nomor_dokumen' => 'PS-SMR-DRAFT',
+        ]);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Draft Riwayat Saya')
+            ->assertSee('Lanjutkan')
+            ->assertSee(route('documents.create.drafts.edit', $draft), false)
+            ->assertDontSee('>Detail</a>', false);
+    }
+
     public function test_rejected_document_detail_does_not_show_correction_button(): void
     {
         $submitter = User::factory()->create();
@@ -2650,5 +2669,42 @@ class DocumentInboxTest extends TestCase
         $user->roles()->attach($role);
 
         return $user->refresh();
+    }
+
+    public function test_sidebar_shows_needs_process_count_badge_for_current_user(): void
+    {
+        $approverA = User::factory()->create(['name' => 'Approver User A']);
+        $approverB = User::factory()->create(['name' => 'Approver User B']);
+        $submitter = User::factory()->create(['name' => 'Pengaju Dokumen']);
+
+        // User A initially has 0 tasks
+        $responseA = $this->actingAs($approverA)->get(route('documents.inbox'));
+        $responseA->assertOk();
+        $responseA->assertSee('Butuh Diproses');
+        $responseA->assertSee('<span class="ml-auto inline-flex items-center justify-center rounded-full px-2 py-0.5 text-xs font-semibold leading-none bg-sky-100 text-sky-800 sidebar-label">', false);
+        $responseA->assertSee('0');
+
+        // Create 2 pending approvals for Approver A
+        $doc1 = $this->createDocument($submitter, ['nama_dokumen' => 'Dokumen 1']);
+        $this->createApproval($doc1, $approverA, ApprovalStatus::PENDING, ['stages' => 'Approval Stage 1']);
+
+        $doc2 = $this->createDocument($submitter, ['nama_dokumen' => 'Dokumen 2']);
+        $this->createApproval($doc2, $approverA, ApprovalStatus::PENDING, ['stages' => 'Approval Stage 2']);
+
+        // Refresh request for Approver A
+        $responseA2 = $this->actingAs($approverA)->get(route('documents.inbox'));
+        $responseA2->assertOk();
+        $responseA2->assertSee('2');
+
+        // On another page (e.g. documents.master), Butuh Diproses is inactive
+        $responseMaster = $this->actingAs($approverA)->get(route('documents.master'));
+        $responseMaster->assertOk();
+        $responseMaster->assertSee('bg-sky-600 text-white', false);
+        $responseMaster->assertSee('2');
+
+        // Approver B has 0 tasks
+        $responseB = $this->actingAs($approverB)->get(route('documents.inbox'));
+        $responseB->assertOk();
+        $responseB->assertSee('0');
     }
 }

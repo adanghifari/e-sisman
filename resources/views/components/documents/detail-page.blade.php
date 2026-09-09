@@ -170,7 +170,6 @@
                                     <div class="border-b border-slate-200 bg-white px-4 py-3">
                                         <div class="min-w-0">
                                             <p class="truncate text-sm font-bold text-slate-900">Printout PDF Final</p>
-                                            <p class="text-xs font-medium text-slate-500">Preview dinamis lengkap dengan lembar pengesahan.</p>
                                         </div>
                                     </div>
 
