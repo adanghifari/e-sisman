@@ -34,6 +34,7 @@ class ApprovalSheetPdfRenderer
         return $this->view->make('final-documents.approval-sheet', [
             'document' => $payload['document'] ?? [],
             'approvalStages' => $payload['approvals'] ?? [],
+            'logoPath' => public_path('image/kopsuratlogo.jpeg'),
         ])->render();
     }
 
@@ -43,6 +44,7 @@ class ApprovalSheetPdfRenderer
         $options->set('isRemoteEnabled', false);
         $options->set('isHtml5ParserEnabled', true);
         $options->set('defaultFont', 'DejaVu Sans');
+        $options->set('chroot', public_path());
 
         return $options;
     }

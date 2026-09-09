@@ -1,9 +1,6 @@
 @php
     $documentType = trim((string) ($document['type'] ?? ''));
     $documentName = trim((string) ($document['name'] ?? ''));
-    $documentNumber = trim((string) ($document['number'] ?? ''));
-    $revisionLabel = trim((string) ($document['revision_label'] ?? $document['revision'] ?? ''));
-    $publishedAt = $document['published_at'] ?? null;
     $qrWriter = new \BaconQrCode\Writer(new \BaconQrCode\Renderer\ImageRenderer(
         new \BaconQrCode\Renderer\RendererStyle\RendererStyle(96, 0),
         new \BaconQrCode\Renderer\Image\SvgImageBackEnd
@@ -18,17 +15,6 @@
 
         return 'data:image/svg+xml;base64,'.base64_encode($svg);
     };
-    $formatDate = static function ($value): string {
-        if (blank($value)) {
-            return '-';
-        }
-
-        try {
-            return \Illuminate\Support\Carbon::parse($value)->format('d/m/Y');
-        } catch (\Throwable) {
-            return (string) $value;
-        }
-    };
     $approvalStages = collect($approvalStages);
 @endphp
 
@@ -39,7 +25,7 @@
     <title>Lembar Pengesahan</title>
     <style>
         @page {
-            margin: 18mm 18mm 20mm;
+            margin: 45mm 9mm 20mm;
         }
 
         * {
@@ -58,39 +44,101 @@
             width: 100%;
         }
 
-        .document-header {
+        .content-header {
+            position: fixed;
+            top: -38mm;
+            left: 0;
+            right: 0;
             width: 100%;
-            margin-bottom: 26pt;
+            height: 30mm;
             border-collapse: collapse;
             table-layout: fixed;
-            font-size: 9pt;
-            line-height: 1.25;
+            color: #767676;
         }
 
-        .document-header td {
-            border: 0.7pt solid #111111;
-            padding: 4pt 5pt;
+        .content-header td {
+            border: 0.6pt solid #777777;
+            padding: 0;
             vertical-align: middle;
         }
 
-        .header-logo {
-            width: 28mm;
+        .header-brand {
+            width: 32.5%;
             text-align: center;
-            font-weight: 700;
+        }
+
+        .header-logo {
+            width: 60mm;
+            height: auto;
+            margin: 6pt auto 4pt;
+        }
+
+        .header-company {
+            border-top: 0.6pt solid #777777;
+            padding-top: 3.5pt;
+            height: 7.5mm;
+            font-size: 9.5pt;
+            line-height: 1.1;
         }
 
         .header-title {
+            width: 33%;
             text-align: center;
             font-weight: 700;
+            line-height: 1.08;
+        }
+
+        .header-title-table {
+            width: 100%;
+            height: 30mm;
+            border-collapse: collapse;
+            table-layout: fixed;
+        }
+
+        .content-header .header-title-table td {
+            border: 0;
+            padding: 0 4pt;
+            text-align: center;
+            vertical-align: middle;
+        }
+
+        .content-header .header-title-table tr:first-child td {
+            border-bottom: 0.6pt solid #777777;
+            height: 15mm;
+        }
+
+        .content-header .header-title-table tr:last-child td {
+            height: 15mm;
+        }
+
+        .header-document-type {
+            font-size: 11pt;
+        }
+
+        .header-system-title {
+            margin-top: 1pt;
+            font-size: 10pt;
+        }
+
+        .header-document-name {
+            font-size: 10.5pt;
+            line-height: 1.12;
+            word-wrap: break-word;
         }
 
         .header-meta-label {
-            width: 22mm;
-            font-weight: 700;
+            width: 13%;
+            padding-left: 5pt !important;
+            font-size: 10.5pt;
+            line-height: 1.2;
         }
 
         .header-meta-value {
-            width: 30mm;
+            width: 21.5%;
+            padding-left: 5pt !important;
+            font-size: 10.5pt;
+            line-height: 1.2;
+            word-wrap: break-word;
         }
 
         h1 {
@@ -194,13 +242,19 @@
 
         .document-footer {
             position: fixed;
-            right: 0;
-            bottom: -10mm;
-            left: 0;
-            border-top: 0.7pt solid #111111;
-            padding-top: 4pt;
-            font-size: 8.5pt;
+            right: 22mm;
+            bottom: -12mm;
+            left: 22mm;
+            color: #666666;
+            font-size: 8pt;
+            line-height: 1.2;
             text-align: center;
+        }
+
+        .footer-line {
+            border-top: 0.45pt solid #4f5cff;
+            height: 0;
+            margin: 0 0 2pt;
         }
 
         .empty-approver {
@@ -211,35 +265,15 @@
     </style>
 </head>
 <body>
-    <footer class="document-footer">
-        Sistem Dokumentasi PT Krakatau Bandar Samudera berstandar Sistem Manajemen Terintegrasi
-    </footer>
+    @include('final-documents.partials.content-header', [
+        'document' => $document,
+        'page' => ['label' => 'Lembar Pengesahan'],
+        'logoPath' => $logoPath,
+    ])
+
+    @include('final-documents.partials.content-footer')
 
     <main class="approval-sheet">
-        <table class="document-header">
-            <tr>
-                <td class="header-logo" rowspan="4">KBS</td>
-                <td class="header-title" rowspan="4">
-                    {{ $documentType ?: '-' }}<br>
-                    {{ $documentName ?: '-' }}
-                </td>
-                <td class="header-meta-label">No. Dok</td>
-                <td class="header-meta-value">{{ $documentNumber ?: '-' }}</td>
-            </tr>
-            <tr>
-                <td class="header-meta-label">Revisi</td>
-                <td class="header-meta-value">{{ $revisionLabel !== '' ? $revisionLabel : '-' }}</td>
-            </tr>
-            <tr>
-                <td class="header-meta-label">Tgl. Terbit</td>
-                <td class="header-meta-value">{{ $formatDate($publishedAt) }}</td>
-            </tr>
-            <tr>
-                <td class="header-meta-label">Halaman</td>
-                <td class="header-meta-value">Lembar Pengesahan</td>
-            </tr>
-        </table>
-
         <h1>LEMBAR PENGESAHAN</h1>
 
         <div class="intro">

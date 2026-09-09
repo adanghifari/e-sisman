@@ -89,7 +89,7 @@ class FinalPdfComposer
                 payload: $payload,
                 mode: $mode,
                 bodyPageOffset: 0,
-                totalBodyPages: $totalBodyPages,
+                totalBodyPages: $bodyPageCount,
             );
 
             if ($bodyPages['count'] < 1) {
@@ -102,8 +102,6 @@ class FinalPdfComposer
                     $pdf,
                     $payload,
                     $attachments,
-                    $bodyPages['count'],
-                    $totalBodyPages,
                 );
             $attachmentPages = $attachments === []
                 ? ['count' => 0, 'pages' => []]
@@ -257,8 +255,6 @@ class FinalPdfComposer
         Fpdi $pdf,
         array $payload,
         array $attachments,
-        int $bodyPageOffset,
-        int $totalBodyPages,
     ): array {
         $pageWidth = 210.0;
         $pageHeight = 297.0;
@@ -266,10 +262,8 @@ class FinalPdfComposer
         $chunks = array_chunk($attachments, 22);
 
         foreach ($chunks as $chunkIndex => $chunk) {
-            $bodyPageNumber = $bodyPageOffset + $chunkIndex + 1;
             $printedAttachmentTitles = [];
             $pdf->AddPage('P', [$pageWidth, $pageHeight]);
-            $this->stampBodyHeaderFooter($pdf, $payload, $bodyPageNumber, $totalBodyPages, $pageWidth, $pageHeight);
             $this->stampWatermark($pdf, $payload, $pageWidth, $pageHeight);
 
             $x = self::HORIZONTAL_MARGIN + 8;
@@ -300,10 +294,10 @@ class FinalPdfComposer
                 'page_height' => $pageHeight,
                 'orientation' => 'P',
                 'mode' => 'generated_attachment_list',
-                'header' => 'standard',
+                'header' => 'none',
                 'attachment_titles' => $printedAttachmentTitles,
                 'placement' => null,
-                'page_label' => "{$bodyPageNumber} dari {$totalBodyPages}",
+                'page_label' => null,
             ];
         }
 
@@ -381,20 +375,6 @@ class FinalPdfComposer
                 $orientation = (string) $size['orientation'];
                 $bodyPageNumber = $bodyPageOffset + $appendedPages + 1;
 
-                $pdf->AddPage($orientation, [$pageWidth, $pageHeight]);
-                $header = $this->stampAttachmentHeaderFooter(
-                    $pdf,
-                    $payload,
-                    $attachment,
-                    $bodyPageNumber,
-                    $totalBodyPages,
-                    $pageWidth,
-                    $pageHeight,
-                    $pageNumber,
-                    $effectivePageCount,
-                );
-                $this->stampAttachmentTitle($pdf, $attachment, $pageWidth);
-
                 $stampsRevisionApprovals = $this->attachmentHeaderType($attachment) === 'revision_form'
                     && $pageNumber === $pageCount
                     && ! ($attachment['revision_approval_page_break'] ?? false)
@@ -423,8 +403,7 @@ class FinalPdfComposer
                     ),
                 );
 
-                $this->stampWatermark($pdf, $payload, $pageWidth, $pageHeight);
-
+                $pdf->AddPage($orientation, [$pageWidth, $pageHeight]);
                 $pdf->useImportedPage(
                     $template,
                     $placement->x,
@@ -432,6 +411,20 @@ class FinalPdfComposer
                     $placement->width,
                     $placement->height,
                 );
+
+                $this->stampWatermark($pdf, $payload, $pageWidth, $pageHeight);
+                $header = $this->stampAttachmentHeaderFooter(
+                    $pdf,
+                    $payload,
+                    $attachment,
+                    $bodyPageNumber,
+                    $totalBodyPages,
+                    $pageWidth,
+                    $pageHeight,
+                    $pageNumber,
+                    $effectivePageCount,
+                );
+                $this->stampAttachmentTitleIfNeeded($pdf, $attachment, $pageWidth);
 
                 if ($stampsRevisionApprovals) {
                     $this->stampRevisionApprovalSection(
@@ -491,7 +484,7 @@ class FinalPdfComposer
                         $pageCount + 1,
                         $effectivePageCount,
                     );
-                    $this->stampAttachmentTitle($pdf, $attachment, $pageWidth);
+                    $this->stampAttachmentTitleIfNeeded($pdf, $attachment, $pageWidth);
                     $this->stampRevisionApprovalSection(
                         $pdf,
                         $payload,
@@ -557,7 +550,7 @@ class FinalPdfComposer
             $attachmentPageNumber,
             $attachmentPageCount,
         );
-        $this->stampAttachmentTitle($pdf, $attachment, $pageWidth);
+        $this->stampAttachmentTitleIfNeeded($pdf, $attachment, $pageWidth);
 
         $x = self::HORIZONTAL_MARGIN + 8;
         $y = self::BODY_CONTENT_TOP + 20;
@@ -1016,6 +1009,18 @@ class FinalPdfComposer
     }
 
     /**
+     * @param  array<string, mixed>  $attachment
+     */
+    private function stampAttachmentTitleIfNeeded(Fpdi $pdf, array $attachment, float $pageWidth): void
+    {
+        if ($this->attachmentHeaderType($attachment) === 'attachment_form') {
+            return;
+        }
+
+        $this->stampAttachmentTitle($pdf, $attachment, $pageWidth);
+    }
+
+    /**
      * @param  array<string, mixed>  $payload
      * @param  array<string, mixed>  $attachment
      */
@@ -1043,9 +1048,16 @@ class FinalPdfComposer
             return 'revision_form';
         }
 
-        $this->stampBodyHeaderFooter($pdf, $payload, $currentPage, $totalBodyPages, $pageWidth, $pageHeight);
+        $this->stampAttachmentFormHeaderFooter(
+            $pdf,
+            $attachment,
+            $attachmentPageNumber,
+            $attachmentPageCount,
+            $pageWidth,
+            $pageHeight,
+        );
 
-        return 'standard';
+        return 'attachment_form';
     }
 
     /**
@@ -1053,7 +1065,7 @@ class FinalPdfComposer
      */
     private function attachmentHeaderType(array $attachment): string
     {
-        return ($attachment['type'] ?? null) === 'revision_form' ? 'revision_form' : 'standard';
+        return ($attachment['type'] ?? null) === 'revision_form' ? 'revision_form' : 'attachment_form';
     }
 
     /**
@@ -1066,7 +1078,7 @@ class FinalPdfComposer
         int $attachmentPageNumber,
         int $attachmentPageCount,
     ): string {
-        if ($this->attachmentHeaderType($attachment) === 'revision_form') {
+        if (in_array($this->attachmentHeaderType($attachment), ['revision_form', 'attachment_form'], true)) {
             return "{$attachmentPageNumber} dari {$attachmentPageCount}";
         }
 
@@ -1162,10 +1174,58 @@ class FinalPdfComposer
         float $pageWidth,
         float $pageHeight,
     ): void {
+        $document = $payload['document'] ?? [];
+        $revisionFormNumber = $this->value($document['revision_form_number'] ?? ($document['number'] ?? null));
+
+        $this->stampFormLikeHeaderFooter(
+            $pdf,
+            $revisionFormNumber,
+            'FORM LEMBAR REVISI',
+            $currentPage,
+            $totalPages,
+            $pageWidth,
+            $pageHeight,
+            'revision form header/footer stamp',
+        );
+    }
+
+    /**
+     * @param  array<string, mixed>  $attachment
+     */
+    private function stampAttachmentFormHeaderFooter(
+        Fpdi $pdf,
+        array $attachment,
+        int $currentPage,
+        int $totalPages,
+        float $pageWidth,
+        float $pageHeight,
+    ): void {
+        $this->stampFormLikeHeaderFooter(
+            $pdf,
+            $this->value($attachment['document_number'] ?? null),
+            $this->upper('Form Lampiran: '.$this->value($attachment['title'] ?? null)),
+            $currentPage,
+            $totalPages,
+            $pageWidth,
+            $pageHeight,
+            'attachment form header/footer stamp',
+        );
+    }
+
+    private function stampFormLikeHeaderFooter(
+        Fpdi $pdf,
+        string $documentNumber,
+        string $formTitle,
+        int $currentPage,
+        int $totalPages,
+        float $pageWidth,
+        float $pageHeight,
+        string $errorContext,
+    ): void {
         $contentWidth = $pageWidth - (self::HORIZONTAL_MARGIN * 2);
 
         if ($contentWidth < self::MIN_STAMP_WIDTH || $pageHeight < 90.0) {
-            throw new PdfCompositionException('Page is too small for revision form header/footer stamp.');
+            throw new PdfCompositionException("Page is too small for {$errorContext}.");
         }
 
         $x = self::HORIZONTAL_MARGIN;
@@ -1174,8 +1234,6 @@ class FinalPdfComposer
         $centerWidth = $contentWidth * 0.335;
         $rightWidth = $contentWidth - $leftWidth - $centerWidth;
         $halfHeight = self::HEADER_HEIGHT / 2;
-        $document = $payload['document'] ?? [];
-        $revisionFormNumber = $this->value($document['revision_form_number'] ?? ($document['number'] ?? null));
 
         $pdf->SetDrawColor(0, 0, 0);
         $pdf->SetTextColor(0, 0, 0);
@@ -1195,11 +1253,11 @@ class FinalPdfComposer
         $pdf->SetFont('helvetica', 'B', 10);
         $pdf->MultiCell($centerWidth, 6, 'DOKUMEN LEVEL 4', 0, 'C', false, 1, $centerX, $y + 6.7);
         $pdf->SetFont('helvetica', 'B', 9.5);
-        $pdf->MultiCell($centerWidth, 6, 'FORM LEMBAR REVISI', 0, 'C', false, 1, $centerX, $y + $halfHeight + 6.7);
+        $pdf->MultiCell($centerWidth, 6, $formTitle, 0, 'C', false, 1, $centerX, $y + $halfHeight + 5.2);
 
         $rightX = $centerX + $centerWidth;
         $pdf->SetFont('helvetica', '', 10.5);
-        $pdf->MultiCell($rightWidth, 7, 'No. Dok.  :  '.$revisionFormNumber, 0, 'L', false, 1, $rightX + 3, $y + 5.8);
+        $pdf->MultiCell($rightWidth, 7, 'No. Dok.  :  '.$documentNumber, 0, 'L', false, 1, $rightX + 3, $y + 5.8);
         $pdf->MultiCell($rightWidth, 7, 'Halaman  :  '.$currentPage.' dari '.$totalPages, 0, 'L', false, 1, $rightX + 3, $y + $halfHeight + 5.8);
 
         $this->stampFooter($pdf, $pageWidth, $pageHeight);

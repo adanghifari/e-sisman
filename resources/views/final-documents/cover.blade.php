@@ -184,7 +184,7 @@
             position: absolute;
             right: 0;
             bottom: 0;
-            width: 62mm;
+            width: 75mm;
         }
 
         .bottom-table td {
@@ -193,10 +193,15 @@
             font-size: 10pt;
             font-weight: 700;
             line-height: 1.25;
+            white-space: nowrap;
         }
 
         .bottom-label {
-            width: 27mm;
+            width: 28mm;
+        }
+
+        .bottom-value {
+            width: 47mm;
         }
     </style>
 </head>
@@ -272,11 +277,11 @@
             <table class="bottom-table">
                 <tr>
                     <td class="bottom-label">REVISI</td>
-                    <td>: {{ $revisionLabel !== '' ? $revisionLabel : '-' }}</td>
+                    <td class="bottom-value">: {{ $revisionLabel !== '' ? $revisionLabel : '-' }}</td>
                 </tr>
                 <tr>
                     <td class="bottom-label">TGL TERBIT</td>
-                    <td>: {{ $formatDate($publishedAt) }}</td>
+                    <td class="bottom-value">: {{ $formatDate($publishedAt) }}</td>
                 </tr>
             </table>
         </div>

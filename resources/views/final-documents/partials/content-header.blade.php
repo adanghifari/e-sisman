@@ -6,6 +6,8 @@
     $publishedAt = $document['published_at'] ?? null;
     $currentPage = $page['current_page'] ?? null;
     $totalPages = $page['total_pages'] ?? null;
+    $usePageCounter = (bool) ($page['use_page_counter'] ?? false);
+    $pageLabel = trim((string) ($page['label'] ?? ''));
     $formatDate = static function ($value): string {
         if (blank($value)) {
             return '-';
@@ -17,9 +19,11 @@
             return (string) $value;
         }
     };
-    $pageText = filled($currentPage) && filled($totalPages)
-        ? "{$currentPage} dari {$totalPages}"
-        : '-';
+    $pageText = match (true) {
+        $pageLabel !== '' => $pageLabel,
+        ! $usePageCounter && filled($currentPage) && filled($totalPages) => "{$currentPage} dari {$totalPages}",
+        default => '-',
+    };
 @endphp
 
 <table class="content-header">
@@ -60,6 +64,12 @@
     </tr>
     <tr>
         <td class="header-meta-label">Halaman</td>
-        <td class="header-meta-value">: {{ $pageText }}</td>
+        <td class="header-meta-value">
+            @if ($usePageCounter)
+                :<span class="header-page-counter"></span>
+            @else
+                : {{ $pageText }}
+            @endif
+        </td>
     </tr>
 </table>
