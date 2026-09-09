@@ -750,6 +750,8 @@ class DocumentInboxController extends Controller
         return [
             'id' => $document->id,
             'detail_url' => route('documents.approval.show', $document),
+            'action_url' => route('documents.approval.show', $document),
+            'action_label' => 'Detail',
             'number' => $this->documentDisplayNumber($document),
             'number_badge_label' => $document->request_type === 'obsolete' ? 'Pengajuan Obsolete' : null,
             'number_badge_tone' => $document->request_type === 'obsolete' ? 'red' : null,
@@ -858,6 +860,11 @@ class DocumentInboxController extends Controller
         $row['updated_at_sort'] = $submittedAt?->timestamp ?? 0;
         $row['action'] = 'Lihat';
 
+        if ($this->isContinuableDraft($document, $user)) {
+            $row['action_url'] = route('documents.create.drafts.edit', $document);
+            $row['action_label'] = 'Lanjutkan';
+        }
+
         return $row;
     }
 
@@ -873,6 +880,12 @@ class DocumentInboxController extends Controller
         $row['action'] = 'Lihat';
 
         return $row;
+    }
+
+    private function isContinuableDraft(Document $document, User $user): bool
+    {
+        return $document->user_id === $user->id
+            && $document->status?->nama_status === StatusDocument::DRAFT;
     }
 
     private function asDateTime(mixed $value): ?Carbon

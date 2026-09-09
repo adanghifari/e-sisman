@@ -151,6 +151,25 @@ class DocumentInboxTest extends TestCase
             ->assertSee(StatusDocument::REJECTED);
     }
 
+    public function test_submitter_can_continue_draft_from_processed_history(): void
+    {
+        $submitter = User::factory()->create(['name' => 'Pengaju Draft']);
+        $draftStatus = StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        $draft = $this->createDocument($submitter, [
+            'm_status_document_id' => $draftStatus->id,
+            'nama_dokumen' => 'Draft Riwayat Saya',
+            'nomor_dokumen' => 'PS-SMR-DRAFT',
+        ]);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.inbox', ['tab' => 'processed-history']))
+            ->assertOk()
+            ->assertSee('Draft Riwayat Saya')
+            ->assertSee('Lanjutkan')
+            ->assertSee(route('documents.create.drafts.edit', $draft), false)
+            ->assertDontSee('>Detail</a>', false);
+    }
+
     public function test_rejected_document_detail_does_not_show_correction_button(): void
     {
         $submitter = User::factory()->create();
