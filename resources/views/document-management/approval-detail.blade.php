@@ -42,14 +42,17 @@
             : 'Approval Flow '.$approvalFlowLabel;
         $contentFileLabels = [
             'filled_template' => 'Template Dokumen',
+            'filled_template_word' => 'Template Dokumen Word',
             'imported_document' => 'Dokumen Import',
             'revision_content' => 'Dokumen Revisi',
+            'revision_content_word' => 'Dokumen Revisi Word',
             'revision_form' => 'Lembar Revisi',
+            'revision_form_word' => 'Lembar Revisi Word',
             'revision_before' => 'Semula',
             'revision_after' => 'Menjadi',
         ];
         $revisionMainFiles = $levelKey === 'level-4'
-            ? collect(['revision_form', 'revision_content'])
+            ? collect(['revision_form', 'revision_form_word', 'revision_content', 'revision_content_word'])
                 ->map(fn ($type) => $contentFiles
                     ->where('type_file', $type)
                     ->sortByDesc('id')
@@ -59,9 +62,40 @@
             : collect();
         $otherContentFiles = $levelKey === 'level-4'
             ? $contentFiles
-                ->reject(fn ($file) => in_array($file->type_file, ['revision_content', 'revision_form'], true))
+                ->reject(fn ($file) => in_array($file->type_file, ['revision_content', 'revision_content_word', 'revision_form', 'revision_form_word'], true))
                 ->values()
             : $contentFiles;
+        $revisionFileGroups = $levelKey === 'level-4'
+            ? collect([
+                [
+                    'title' => 'Lembar Revisi',
+                    'description' => 'File PDF dan Word lembar revisi yang diajukan user.',
+                    'pdf_label' => 'Upload Lembar Revisi PDF',
+                    'word_label' => 'Upload Lembar Revisi Word',
+                    'pdf' => $contentFiles->where('type_file', 'revision_form')->sortByDesc('id')->first(),
+                    'word' => $contentFiles->where('type_file', 'revision_form_word')->sortByDesc('id')->first(),
+                ],
+                [
+                    'title' => 'Dokumen Revisi',
+                    'description' => 'File PDF dan Word dokumen revisi yang diajukan user.',
+                    'pdf_label' => 'Upload Dokumen Revisi PDF',
+                    'word_label' => 'Upload Dokumen Revisi Word',
+                    'pdf' => $contentFiles->where('type_file', 'revision_content')->sortByDesc('id')->first(),
+                    'word' => $contentFiles->where('type_file', 'revision_content_word')->sortByDesc('id')->first(),
+                ],
+            ])->filter(fn (array $group): bool => $group['pdf'] !== null || $group['word'] !== null)->values()
+            : collect();
+        $templatePdfFile = $levelKey !== 'level-4'
+            ? $contentFiles->where('type_file', 'filled_template')->sortByDesc('id')->first()
+            : null;
+        $templateWordFile = $levelKey !== 'level-4'
+            ? $contentFiles->where('type_file', 'filled_template_word')->sortByDesc('id')->first()
+            : null;
+        $standaloneContentFiles = $levelKey !== 'level-4'
+            ? $contentFiles
+                ->reject(fn ($file) => in_array($file->type_file, ['filled_template', 'filled_template_word'], true))
+                ->values()
+            : collect();
         $readonlyInput = 'h-14 w-full rounded-lg border border-slate-200 bg-slate-50 px-4 text-base font-semibold text-slate-600 outline-none';
         $departmentOptions = collect($departments ?? [])
             ->map(fn ($department) => [
@@ -74,6 +108,8 @@
             $file->id,
         ])->filter()->implode('-');
         $metadataEditorStartsOpen = old('_update_scope') === 'metadata';
+        $fileEditorStartsOpen = old('_update_scope') === 'files'
+            && collect($errors->getMessages())->keys()->contains(fn ($key) => str_starts_with($key, 'replacement_files.'));
     @endphp
 
     <div class="space-y-8">
@@ -318,42 +354,84 @@
                                     </p>
                                 @endforelse
                             @elseif ($levelKey === 'level-4')
-                            @if ($revisionMainFiles->isNotEmpty())
-                                <div class="grid gap-4 2xl:grid-cols-2">
-                                    @foreach ($revisionMainFiles as $file)
-                                        <section class="min-w-0 overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                            <div class="min-h-20 border-b border-slate-200 bg-white px-4 py-3">
-                                                <form method="POST" action="{{ route('documents.approval.update-submitted', $document) }}" enctype="multipart/form-data" class="flex flex-wrap items-start justify-between gap-3" data-submitted-file-form>
-                                                    @csrf
-                                                    <input type="hidden" name="_update_scope" value="files">
+                            @if ($revisionFileGroups->isNotEmpty())
+                                @foreach ($revisionFileGroups as $revisionFileGroup)
+                                    <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                        <form method="POST" action="{{ route('documents.approval.update-submitted', $document) }}" enctype="multipart/form-data" data-submitted-file-form>
+                                            @csrf
+                                            <input type="hidden" name="_update_scope" value="files">
+
+                                            <div class="border-b border-slate-200 bg-white px-4 py-3">
+                                                <div class="flex flex-wrap items-start justify-between gap-3">
                                                     <div class="min-w-0">
-                                                        <p class="text-sm font-bold text-slate-900">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
-                                                        <p class="mt-1 truncate text-xs font-semibold text-slate-500" data-selected-file-name>{{ $file->original_file_name }}</p>
+                                                        <p class="truncate text-sm font-bold text-slate-900">{{ $revisionFileGroup['title'] }}</p>
+                                                        <p class="text-xs font-medium text-slate-500">{{ $revisionFileGroup['description'] }}</p>
                                                     </div>
                                                     @if ($canUpdateSubmittedDocument)
-                                                        <div class="flex shrink-0 flex-wrap gap-2" data-file-readonly-action>
+                                                        <div class="{{ $fileEditorStartsOpen ? 'hidden' : 'flex' }} shrink-0 flex-wrap gap-2" data-file-readonly-action>
                                                             <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-edit-open>Edit</button>
                                                         </div>
-                                                        <div class="hidden shrink-0 flex-wrap gap-2" data-file-edit-control>
+                                                        <div class="{{ $fileEditorStartsOpen ? 'flex' : 'hidden' }} shrink-0 flex-wrap gap-2" data-file-edit-control>
                                                             <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 transition hover:border-red-200 hover:bg-red-100" data-file-edit-cancel aria-label="Batal edit">
                                                                 <flux:icon name="x-mark" class="size-4" />
                                                             </button>
-                                                            <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700">Download</a>
-                                                            <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>Perbarui</button>
                                                             <button type="submit" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700">Save</button>
                                                         </div>
-                                                        <input type="file" name="replacement_files[{{ $file->id }}]" accept=".pdf,application/pdf" class="sr-only" data-file-picker-input>
                                                     @endif
-                                                </form>
+                                                </div>
+
+                                                @if ($fileEditorStartsOpen)
+                                                    <div class="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
+                                                        {{ collect($errors->getMessages())->filter(fn ($messages, $key) => str_starts_with($key, 'replacement_files.'))->flatten()->first() }}
+                                                    </div>
+                                                @endif
                                             </div>
 
-                                            <x-documents.lazy-pdf-preview
-                                                :src="route('documents.approval.files.preview', [$document, $file, 'v' => $filePreviewVersion($file)]).'#toolbar=0&view=FitH&navpanes=0'"
-                                                height-class="h-[620px] 2xl:h-[72vh]"
-                                            />
-                                        </section>
-                                    @endforeach
-                                </div>
+                                            <div class="grid gap-4 p-4 lg:grid-cols-2">
+                                                @foreach ([['file' => $revisionFileGroup['pdf'], 'label' => $revisionFileGroup['pdf_label'], 'icon' => asset('image/icon_PDF.webp'), 'accept' => '.pdf,application/pdf'], ['file' => $revisionFileGroup['word'], 'label' => $revisionFileGroup['word_label'], 'icon' => asset('image/icon_word.webp'), 'accept' => '.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document']] as $revisionFile)
+                                                    @php
+                                                        $file = $revisionFile['file'];
+                                                        $fileErrorKey = $file ? "replacement_files.{$file->id}" : null;
+                                                    @endphp
+                                                    <div class="min-w-0 rounded-lg border {{ $fileErrorKey && $errors->has($fileErrorKey) ? 'border-red-200 bg-red-50/20' : 'border-slate-200 bg-white' }}" data-file-edit-item>
+                                                        <div class="flex min-h-20 items-start justify-between gap-3 px-4 py-3">
+                                                            <div class="flex min-w-0 items-start gap-3">
+                                                                <span class="grid size-10 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm">
+                                                                    <img src="{{ $revisionFile['icon'] }}" alt="{{ $revisionFile['label'] }}" class="max-h-full max-w-full object-contain">
+                                                                </span>
+                                                                <span class="min-w-0">
+                                                                    <span class="block text-xs font-bold uppercase tracking-wide text-slate-500">{{ $revisionFile['label'] }}</span>
+                                                                    <span class="mt-1 block truncate text-sm font-bold text-slate-900" data-selected-file-name data-original-file-name="{{ $file?->original_file_name }}">{{ $file?->original_file_name ?? 'Belum ada file' }}</span>
+                                                                </span>
+                                                            </div>
+
+                                                            @if ($canUpdateSubmittedDocument && $file)
+                                                                <div class="{{ $fileEditorStartsOpen ? 'flex' : 'hidden' }} shrink-0 flex-wrap gap-2" data-file-edit-control>
+                                                                    <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700">Download</a>
+                                                                    <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>Perbarui</button>
+                                                                </div>
+                                                                <input type="file" name="replacement_files[{{ $file->id }}]" accept="{{ $revisionFile['accept'] }}" class="sr-only" data-file-picker-input>
+                                                            @endif
+                                                        </div>
+
+                                                        @if ($fileErrorKey)
+                                                            @error($fileErrorKey)
+                                                                <p class="border-t border-red-100 px-4 py-2 text-xs font-semibold text-red-600">{{ $message }}</p>
+                                                            @enderror
+                                                        @endif
+                                                    </div>
+                                                @endforeach
+                                            </div>
+
+                                            @if ($revisionFileGroup['pdf'])
+                                                <x-documents.lazy-pdf-preview
+                                                    :src="route('documents.approval.files.preview', [$document, $revisionFileGroup['pdf'], 'v' => $filePreviewVersion($revisionFileGroup['pdf'])]).'#toolbar=0&view=FitH&navpanes=0'"
+                                                    height-class="h-[620px] 2xl:h-[72vh]"
+                                                />
+                                            @endif
+                                        </form>
+                                    </section>
+                                @endforeach
                             @endif
 
                             @foreach ($otherContentFiles as $file)
@@ -387,46 +465,123 @@
                                 </section>
                             @endforeach
 
-                            @if ($revisionMainFiles->isEmpty() && $otherContentFiles->isEmpty())
+                            @if ($revisionFileGroups->isEmpty() && $otherContentFiles->isEmpty())
                                 <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
                                     Belum ada file isi dokumen.
                                 </p>
                             @endif
                         @else
-                        @forelse ($contentFiles as $file)
-                            <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
-                                <div class="border-b border-slate-200 bg-white px-4 py-3">
-                                    <form method="POST" action="{{ route('documents.approval.update-submitted', $document) }}" enctype="multipart/form-data" class="flex flex-wrap items-start justify-between gap-3" data-submitted-file-form>
+                            @if ($templatePdfFile || $templateWordFile)
+                                <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                    <form method="POST" action="{{ route('documents.approval.update-submitted', $document) }}" enctype="multipart/form-data" data-submitted-file-form>
                                         @csrf
                                         <input type="hidden" name="_update_scope" value="files">
-                                        <div class="min-w-0">
-                                            <p class="truncate text-sm font-bold text-slate-900" data-selected-file-name>{{ $file->original_file_name }}</p>
-                                            <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+
+                                        <div class="border-b border-slate-200 bg-white px-4 py-3">
+                                            <div class="flex flex-wrap items-start justify-between gap-3">
+                                                <div class="min-w-0">
+                                                    <p class="truncate text-sm font-bold text-slate-900">Template Dokumen yang Sudah Diisi</p>
+                                                    <p class="text-xs font-medium text-slate-500">File PDF dan Word yang diajukan user.</p>
+                                                </div>
+                                                @if ($canUpdateSubmittedDocument)
+                                                    <div class="{{ $fileEditorStartsOpen ? 'hidden' : 'flex' }} shrink-0 flex-wrap gap-2" data-file-readonly-action>
+                                                        <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-edit-open>Edit</button>
+                                                    </div>
+                                                    <div class="{{ $fileEditorStartsOpen ? 'flex' : 'hidden' }} shrink-0 flex-wrap gap-2" data-file-edit-control>
+                                                        <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 transition hover:border-red-200 hover:bg-red-100" data-file-edit-cancel aria-label="Batal edit">
+                                                            <flux:icon name="x-mark" class="size-4" />
+                                                        </button>
+                                                        <button type="submit" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700">Save</button>
+                                                    </div>
+                                                @endif
+                                            </div>
+
+                                            @if ($fileEditorStartsOpen)
+                                                <div class="mt-3 rounded-lg border border-red-100 bg-red-50 px-3 py-2 text-sm font-semibold text-red-600">
+                                                    {{ collect($errors->getMessages())->filter(fn ($messages, $key) => str_starts_with($key, 'replacement_files.'))->flatten()->first() }}
+                                                </div>
+                                            @endif
                                         </div>
-                                        @if ($canUpdateSubmittedDocument)
-                                            <div class="flex shrink-0 flex-wrap gap-2" data-file-readonly-action>
-                                                <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-edit-open>Edit</button>
-                                            </div>
-                                            <div class="hidden shrink-0 flex-wrap gap-2" data-file-edit-control>
-                                                <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 transition hover:border-red-200 hover:bg-red-100" data-file-edit-cancel aria-label="Batal edit">
-                                                    <flux:icon name="x-mark" class="size-4" />
-                                                </button>
-                                                <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700">Download</a>
-                                                <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>Perbarui</button>
-                                                <button type="submit" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700">Save</button>
-                                            </div>
-                                            <input type="file" name="replacement_files[{{ $file->id }}]" accept=".pdf,application/pdf" class="sr-only" data-file-picker-input>
+
+                                        <div class="grid gap-4 p-4 lg:grid-cols-2">
+                                            @foreach ([['file' => $templatePdfFile, 'label' => 'Upload Template Terisi PDF', 'icon' => asset('image/icon_PDF.webp'), 'accept' => '.pdf,application/pdf', 'can_preview' => true], ['file' => $templateWordFile, 'label' => 'Upload Template Terisi Word', 'icon' => asset('image/icon_word.webp'), 'accept' => '.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document', 'can_preview' => false]] as $templateFile)
+                                                @php
+                                                    $file = $templateFile['file'];
+                                                    $fileErrorKey = $file ? "replacement_files.{$file->id}" : null;
+                                                @endphp
+                                                <div class="min-w-0 rounded-lg border {{ $fileErrorKey && $errors->has($fileErrorKey) ? 'border-red-200 bg-red-50/20' : 'border-slate-200 bg-white' }}" data-file-edit-item>
+                                                    <div class="flex min-h-20 items-start justify-between gap-3 px-4 py-3">
+                                                        <div class="flex min-w-0 items-start gap-3">
+                                                            <span class="grid size-10 shrink-0 place-items-center rounded-lg border border-slate-200 bg-white p-1.5 shadow-sm">
+                                                                <img src="{{ $templateFile['icon'] }}" alt="{{ $templateFile['label'] }}" class="max-h-full max-w-full object-contain">
+                                                            </span>
+                                                            <span class="min-w-0">
+                                                                <span class="block text-xs font-bold uppercase tracking-wide text-slate-500">{{ $templateFile['label'] }}</span>
+                                                                <span class="mt-1 block truncate text-sm font-bold text-slate-900" data-selected-file-name data-original-file-name="{{ $file?->original_file_name }}">{{ $file?->original_file_name ?? 'Belum ada file' }}</span>
+                                                            </span>
+                                                        </div>
+
+                                                        @if ($canUpdateSubmittedDocument && $file)
+                                                            <div class="{{ $fileEditorStartsOpen ? 'flex' : 'hidden' }} shrink-0 flex-wrap gap-2" data-file-edit-control>
+                                                                <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700">Download</a>
+                                                                <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>Perbarui</button>
+                                                            </div>
+                                                            <input type="file" name="replacement_files[{{ $file->id }}]" accept="{{ $templateFile['accept'] }}" class="sr-only" data-file-picker-input>
+                                                        @endif
+                                                    </div>
+
+                                                    @if ($fileErrorKey)
+                                                        @error($fileErrorKey)
+                                                            <p class="border-t border-red-100 px-4 py-2 text-xs font-semibold text-red-600">{{ $message }}</p>
+                                                        @enderror
+                                                    @endif
+                                                </div>
+                                            @endforeach
+                                        </div>
+
+                                        @if ($templatePdfFile)
+                                            <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $templatePdfFile, 'v' => $filePreviewVersion($templatePdfFile)]).'#toolbar=0&view=FitH&navpanes=0'" />
                                         @endif
                                     </form>
-                                </div>
+                                </section>
+                            @endif
 
-                                <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file, 'v' => $filePreviewVersion($file)]).'#toolbar=0&view=FitH&navpanes=0'" />
-                            </section>
-                        @empty
-                            <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
-                                Belum ada file isi dokumen.
-                            </p>
-                        @endforelse
+                            @foreach ($standaloneContentFiles as $file)
+                                <section class="overflow-hidden rounded-lg border border-slate-200 bg-slate-50">
+                                    <div class="border-b border-slate-200 bg-white px-4 py-3">
+                                        <form method="POST" action="{{ route('documents.approval.update-submitted', $document) }}" enctype="multipart/form-data" class="flex flex-wrap items-start justify-between gap-3" data-submitted-file-form>
+                                            @csrf
+                                            <input type="hidden" name="_update_scope" value="files">
+                                            <div class="min-w-0">
+                                                <p class="truncate text-sm font-bold text-slate-900" data-selected-file-name data-original-file-name="{{ $file->original_file_name }}">{{ $file->original_file_name }}</p>
+                                                <p class="text-xs font-medium text-slate-500">{{ $contentFileLabels[$file->type_file] ?? strtoupper(str_replace('_', ' ', $file->type_file)) }}</p>
+                                            </div>
+                                            @if ($canUpdateSubmittedDocument)
+                                                <div class="flex shrink-0 flex-wrap gap-2" data-file-readonly-action>
+                                                    <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-edit-open>Edit</button>
+                                                </div>
+                                                <div class="hidden shrink-0 flex-wrap gap-2" data-file-edit-control>
+                                                    <button type="button" class="inline-flex h-9 w-9 items-center justify-center rounded-lg border border-red-100 bg-red-50 text-red-600 transition hover:border-red-200 hover:bg-red-100" data-file-edit-cancel aria-label="Batal edit">
+                                                        <flux:icon name="x-mark" class="size-4" />
+                                                    </button>
+                                                    <a href="{{ route('documents.approval.files.show', [$document, $file]) }}" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700">Download</a>
+                                                    <button type="button" class="inline-flex h-9 items-center justify-center rounded-lg border border-slate-200 bg-white px-3 text-xs font-bold text-slate-600 transition hover:border-sky-300 hover:bg-sky-50 hover:text-sky-700" data-file-picker-button>Perbarui</button>
+                                                    <button type="submit" class="inline-flex h-9 items-center justify-center rounded-lg bg-sky-600 px-3 text-xs font-bold text-white transition hover:bg-sky-700">Save</button>
+                                                </div>
+                                                <input type="file" name="replacement_files[{{ $file->id }}]" accept=".pdf,application/pdf" class="sr-only" data-file-picker-input>
+                                            @endif
+                                        </form>
+                                    </div>
+
+                                    <x-documents.lazy-pdf-preview :src="route('documents.approval.files.preview', [$document, $file, 'v' => $filePreviewVersion($file)]).'#toolbar=0&view=FitH&navpanes=0'" />
+                                </section>
+                            @endforeach
+
+                            @if (! $templatePdfFile && ! $templateWordFile && $standaloneContentFiles->isEmpty())
+                                <p class="rounded-lg border border-dashed border-slate-200 px-4 py-8 text-center text-sm font-medium text-slate-500">
+                                    Belum ada file isi dokumen.
+                                </p>
+                            @endif
                             @endif
                         </div>
                     </x-documents.form-section>
@@ -1211,8 +1366,10 @@
                     const attachmentForm = editButton.closest('[data-submitted-attachment-form]');
 
                     container?.querySelector('[data-file-readonly-action]')?.classList.add('hidden');
-                    container?.querySelector('[data-file-edit-control]')?.classList.remove('hidden');
-                    container?.querySelector('[data-file-edit-control]')?.classList.add('flex');
+                    container?.querySelectorAll('[data-file-edit-control]').forEach((element) => {
+                        element.classList.remove('hidden');
+                        element.classList.add('flex');
+                    });
 
                     const titleInput = container?.querySelector('[data-attachment-title-input]');
 
@@ -1242,22 +1399,24 @@
                     const attachmentForm = cancelButton.closest('[data-submitted-attachment-form]');
                     const attachmentEditor = cancelButton.closest('[data-attachment-editor]');
                     const readonlyAction = container?.querySelector('[data-file-readonly-action]');
-                    const editControl = container?.querySelector('[data-file-edit-control]');
-                    const fileInput = container?.querySelector('[data-file-picker-input]');
+                    const editControls = container?.querySelectorAll('[data-file-edit-control]');
                     const titleInput = container?.querySelector('[data-attachment-title-input]');
-                    const name = container?.querySelector('[data-selected-file-name]');
 
-                    editControl?.classList.add('hidden');
-                    editControl?.classList.remove('flex');
+                    editControls?.forEach((element) => {
+                        element.classList.add('hidden');
+                        element.classList.remove('flex');
+                    });
                     readonlyAction?.classList.remove('hidden');
 
-                    if (fileInput) {
+                    container?.querySelectorAll('[data-file-picker-input]').forEach((fileInput) => {
                         fileInput.value = '';
-                    }
+                    });
 
-                    if (name?.dataset.originalFileName) {
-                        name.textContent = name.dataset.originalFileName;
-                    }
+                    container?.querySelectorAll('[data-selected-file-name]').forEach((name) => {
+                        if (name.dataset.originalFileName) {
+                            name.textContent = name.dataset.originalFileName;
+                        }
+                    });
 
                     if (titleInput) {
                         titleInput.readOnly = true;
@@ -1306,7 +1465,7 @@
                     return;
                 }
 
-                const container = button.closest('form, [data-existing-attachment-row]');
+                const container = button.closest('[data-file-edit-item], [data-existing-attachment-row], form');
                 container?.querySelector('[data-file-picker-input]')?.click();
             });
 
@@ -1370,7 +1529,7 @@
                     return;
                 }
 
-                const container = input.closest('form, [data-existing-attachment-row]');
+                const container = input.closest('[data-file-edit-item], [data-existing-attachment-row], form');
                 const name = container?.querySelector('[data-selected-file-name]');
 
                 if (name) {

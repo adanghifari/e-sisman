@@ -349,14 +349,29 @@ class DocumentController extends Controller
                     $this->storeDocumentFile($document, $request->file('filled_template'), 'filled_template', $request->user()->id);
                 }
 
+                if ($request->hasFile('filled_template_word')) {
+                    $this->replaceSingleDocumentFile($document, 'filled_template_word');
+                    $this->storeDocumentFile($document, $request->file('filled_template_word'), 'filled_template_word', $request->user()->id);
+                }
+
                 if ($request->hasFile('revision_content')) {
                     $this->replaceSingleDocumentFile($document, 'revision_content');
                     $this->storeDocumentFile($document, $request->file('revision_content'), 'revision_content', $request->user()->id);
                 }
 
+                if ($request->hasFile('revision_content_word')) {
+                    $this->replaceSingleDocumentFile($document, 'revision_content_word');
+                    $this->storeDocumentFile($document, $request->file('revision_content_word'), 'revision_content_word', $request->user()->id);
+                }
+
                 if ($request->hasFile('revision_form')) {
                     $this->replaceSingleDocumentFile($document, 'revision_form');
                     $this->storeDocumentFile($document, $request->file('revision_form'), 'revision_form', $request->user()->id);
+                }
+
+                if ($request->hasFile('revision_form_word')) {
+                    $this->replaceSingleDocumentFile($document, 'revision_form_word');
+                    $this->storeDocumentFile($document, $request->file('revision_form_word'), 'revision_form_word', $request->user()->id);
                 }
 
                 $this->storeAttachmentFiles($request, $document);
@@ -589,7 +604,9 @@ class DocumentController extends Controller
                 'nomor_dokumen_suffix' => $this->documentNumberSuffixRules(true),
                 'tanggal_terbit' => ['nullable', 'date'],
                 'revision_content' => [$requiresSubmittedFile && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'revision_content', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
+                'revision_content_word' => [$requiresSubmittedFile && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'revision_content_word', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:doc,docx', 'max:10240'],
                 'revision_form' => [$requiresSubmittedFile && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'revision_form', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
+                'revision_form_word' => [$requiresSubmittedFile && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'revision_form_word', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:doc,docx', 'max:10240'],
                 'attachments' => ['nullable', 'array', 'max:10'],
                 'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
                 'attachment_titles' => ['nullable', 'array', 'max:10'],
@@ -625,6 +642,7 @@ class DocumentController extends Controller
             'nomor_dokumen_suffix' => $this->documentNumberSuffixRules($isDraftAction),
             'tanggal_terbit' => ['nullable', 'date'],
             'filled_template' => [$requiresSubmittedFile && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'filled_template', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
+            'filled_template_word' => [$requiresSubmittedFile && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'filled_template_word', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:doc,docx', 'max:10240'],
             'attachments' => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
             'attachment_titles' => ['nullable', 'array', 'max:10'],
@@ -667,8 +685,11 @@ class DocumentController extends Controller
             'draft_id' => ['nullable', 'integer', Rule::exists('t_document', 'id')],
             'imported_document' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
             'filled_template' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
+            'filled_template_word' => ['nullable', 'file', 'mimes:doc,docx', 'max:10240'],
             'revision_content' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
+            'revision_content_word' => ['nullable', 'file', 'mimes:doc,docx', 'max:10240'],
             'revision_form' => ['nullable', 'file', 'mimes:pdf', 'max:10240'],
+            'revision_form_word' => ['nullable', 'file', 'mimes:doc,docx', 'max:10240'],
             'attachments' => ['nullable', 'array', 'max:10'],
             'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
             'attachment_titles' => ['nullable', 'array', 'max:10'],
@@ -810,7 +831,7 @@ class DocumentController extends Controller
 
     private function storeAutosaveFiles(Request $request, Document $document): void
     {
-        foreach (['imported_document', 'filled_template', 'revision_content', 'revision_form'] as $type) {
+        foreach (['imported_document', 'filled_template', 'filled_template_word', 'revision_content', 'revision_content_word', 'revision_form', 'revision_form_word'] as $type) {
             if (! $request->hasFile($type)) {
                 continue;
             }

@@ -7,6 +7,8 @@
     'maxFiles' => null,
     'maxFileSizeKb' => null,
     'existingFiles' => collect(),
+    'fileTypeBadge' => null,
+    'fileTypeIcon' => null,
 ])
 
 @php
@@ -19,7 +21,19 @@
     @if ($maxFiles) data-max-files="{{ $maxFiles }}" @endif
     @if ($maxFileSizeKb) data-max-file-size-kb="{{ $maxFileSizeKb }}" @endif
 >
-    <span class="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500">{{ $label }}</span>
+    <span class="mb-1.5 flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
+        <span>{{ $label }}</span>
+
+        @if ($fileTypeIcon || $fileTypeBadge)
+            <span class="inline-flex size-7 items-center justify-center rounded-md border border-slate-200 bg-white p-1 shadow-sm">
+                @if ($fileTypeIcon)
+                    <img src="{{ $fileTypeIcon }}" alt="{{ $fileTypeBadge ?: 'Tipe file' }}" class="max-h-full max-w-full object-contain">
+                @else
+                    <span class="text-[9px] font-extrabold text-slate-600">{{ $fileTypeBadge }}</span>
+                @endif
+            </span>
+        @endif
+    </span>
 
     <label
         for="{{ $inputId }}"
@@ -43,9 +57,9 @@
 
     <div
         @class([
-            'mt-3 rounded-lg border border-slate-200 bg-white p-4',
+            'mt-3 rounded-lg border border-slate-200 bg-white p-2',
             'hidden' => collect($existingFiles)->isEmpty(),
-            'grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-5' => collect($existingFiles)->isNotEmpty(),
+            'grid grid-cols-1 gap-2' => collect($existingFiles)->isNotEmpty(),
         ])
         data-file-upload-list
     >
@@ -59,17 +73,19 @@
                     ? number_format($sizeKb / 1024, 1).' MB'
                     : $sizeKb.' KB';
             @endphp
-            <div class="group relative min-w-0 rounded-lg border border-slate-200 bg-white p-3 text-center transition hover:border-sky-200 hover:shadow-sm" data-existing-file-item>
+            <div class="group relative flex min-w-0 items-center gap-3 rounded-lg border border-slate-200 bg-white p-2 pr-10 text-left transition hover:border-sky-200 hover:shadow-sm" data-existing-file-item>
                 <input type="hidden" value="{{ $file['id'] ?? '' }}" data-existing-file-id>
                 <div @class([
-                    'relative mx-auto flex h-20 w-16 items-center justify-center rounded-md border text-sm font-bold shadow-sm',
+                    'flex h-10 w-8 shrink-0 items-center justify-center rounded-md border text-[10px] font-bold shadow-sm',
                     'border-red-100 bg-red-50 text-red-600' => $isPdf,
                     'border-sky-100 bg-sky-50 text-sky-700' => ! $isPdf,
                 ])>
                     {{ $isPdf ? 'PDF' : 'DOC' }}
                 </div>
-                <span class="mt-3 block truncate text-sm font-semibold text-red-700">{{ $file['name'] ?? '-' }}</span>
-                <span class="mt-1 block text-xs text-slate-500">{{ $formattedSize }}</span>
+                <span class="min-w-0">
+                    <span class="block truncate text-sm font-semibold text-slate-700">{{ $file['name'] ?? '-' }}</span>
+                    <span class="mt-0.5 block text-xs text-slate-500">{{ $formattedSize }}</span>
+                </span>
                 <button type="button" class="absolute right-2 top-2 inline-flex size-7 items-center justify-center rounded-full border border-red-200 bg-white text-sm font-bold text-red-600 opacity-0 shadow-sm transition hover:bg-red-50 group-hover:opacity-100 focus:opacity-100" data-existing-file-remove aria-label="Hapus {{ $file['name'] ?? 'file' }}">x</button>
             </div>
         @endforeach
@@ -145,7 +161,7 @@
 
                 if (list) {
                     list.innerHTML = '';
-                    list.className = 'mt-3 hidden rounded-lg border border-slate-200 bg-white p-4';
+                    list.className = 'mt-3 hidden rounded-lg border border-slate-200 bg-white p-2';
                 }
             };
 
@@ -210,33 +226,36 @@
                 if (list) {
                     list.querySelectorAll('[data-selected-file-item]').forEach((item) => item.remove());
                     const hasExistingFiles = list.querySelector('[data-existing-file-item]') !== null;
-                    list.className = 'mt-3 hidden rounded-lg border border-slate-200 bg-white p-4';
+                    list.className = 'mt-3 hidden rounded-lg border border-slate-200 bg-white p-2';
 
                     if (files.length > 0 || hasExistingFiles) {
                         list.classList.remove('hidden');
-                        list.classList.add('grid', 'grid-cols-2', 'gap-4', 'sm:grid-cols-3', 'lg:grid-cols-5');
+                        list.classList.add('grid', 'grid-cols-1', 'gap-2');
                     }
 
                     files.forEach((file, index) => {
                         const extension = file.name.split('.').pop()?.toLowerCase() || 'file';
                         const isPdf = extension === 'pdf';
                         const item = document.createElement('div');
-                        item.className = 'group relative min-w-0 rounded-lg border border-slate-200 bg-white p-3 text-center transition hover:border-sky-200 hover:shadow-sm';
+                        item.className = 'group relative flex min-w-0 items-center gap-3 rounded-lg border border-slate-200 bg-white p-2 pr-10 text-left transition hover:border-sky-200 hover:shadow-sm';
                         item.dataset.selectedFileItem = '';
 
                         const icon = document.createElement('div');
                         icon.className = [
-                            'relative mx-auto flex h-20 w-16 items-center justify-center rounded-md border text-sm font-bold shadow-sm',
+                            'flex h-10 w-8 shrink-0 items-center justify-center rounded-md border text-[10px] font-bold shadow-sm',
                             isPdf ? 'border-red-100 bg-red-50 text-red-600' : 'border-sky-100 bg-sky-50 text-sky-700',
                         ].join(' ');
                         icon.textContent = isPdf ? 'PDF' : 'DOC';
 
+                        const details = document.createElement('span');
+                        details.className = 'min-w-0';
+
                         const name = document.createElement('span');
-                        name.className = 'mt-3 block truncate text-sm font-semibold text-red-700';
+                        name.className = 'block truncate text-sm font-semibold text-slate-700';
                         name.textContent = file.name;
 
                         const meta = document.createElement('span');
-                        meta.className = 'mt-1 block text-xs text-slate-500';
+                        meta.className = 'mt-0.5 block text-xs text-slate-500';
                         meta.textContent = formatFileSize(file);
 
                         const removeButton = document.createElement('button');
@@ -252,7 +271,8 @@
                             input.dispatchEvent(new Event('change', { bubbles: true }));
                         });
 
-                        item.append(icon, name, meta, removeButton);
+                        details.append(name, meta);
+                        item.append(icon, details, removeButton);
                         list.append(item);
                     });
                 }
@@ -294,7 +314,7 @@
                 list?.classList.toggle('hidden', !hasFiles);
 
                 if (!hasFiles) {
-                    list?.classList.remove('grid', 'grid-cols-2', 'gap-4', 'sm:grid-cols-3', 'lg:grid-cols-5');
+                    list?.classList.remove('grid', 'grid-cols-1', 'gap-2');
                 }
             };
 
