@@ -523,6 +523,12 @@
                         return;
                     }
 
+                    if (form.dataset.importMasterNumberCheckPassed === 'true') {
+                        delete form.dataset.importMasterNumberCheckPassed;
+
+                        return;
+                    }
+
                     if (form.querySelector('input[name="confirm_imported_master_number_reuse"]')?.value === '1') {
                         return;
                     }
@@ -530,7 +536,12 @@
                     event.preventDefault();
 
                     if (await checkImportedMasterNumberReuse(form)) {
-                        form.requestSubmit();
+                        form.dataset.importMasterNumberCheckPassed = 'true';
+                        if (event.submitter) {
+                            form.requestSubmit(event.submitter);
+                        } else {
+                            form.requestSubmit();
+                        }
                     }
                 });
             });
