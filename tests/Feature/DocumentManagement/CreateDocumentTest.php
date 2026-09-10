@@ -252,6 +252,8 @@ class CreateDocumentTest extends TestCase
             ->assertDontSee('Level Dokumen:')
             ->assertSee('Penyusun Pemilik Proses')
             ->assertSee('Template Dokumen yang Sudah Diisi')
+            ->assertSee('Upload Template Terisi PDF')
+            ->assertSee('Upload Template Terisi Word')
             ->assertSee('Level Two User');
     }
 
@@ -355,6 +357,7 @@ class CreateDocumentTest extends TestCase
                 'official_preparer_id' => $user->id,
                 'nomor_dokumen_suffix' => '01',
                 'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
+                'filled_template_word' => UploadedFile::fake()->create('template.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
                 'submit_action' => 'submit',
             ])
             ->assertRedirect(route('documents.create.level', 'level-2'))
@@ -369,6 +372,7 @@ class CreateDocumentTest extends TestCase
                 'official_preparer_id' => $user->id,
                 'nomor_dokumen_suffix' => '04',
                 'filled_template' => UploadedFile::fake()->create('template-next.pdf', 24, 'application/pdf'),
+                'filled_template_word' => UploadedFile::fake()->create('template-next.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
                 'submit_action' => 'submit',
             ])
             ->assertRedirect(route('documents.create'));
@@ -1213,6 +1217,10 @@ class CreateDocumentTest extends TestCase
             ->assertSee('Dokumen Revisi')
             ->assertSee('1. Lembar Revisi')
             ->assertSee('2. Dokumen Revisi')
+            ->assertSee('Upload Lembar Revisi PDF')
+            ->assertSee('Upload Lembar Revisi Word')
+            ->assertSee('Upload Dokumen Revisi PDF')
+            ->assertSee('Upload Dokumen Revisi Word')
             ->assertSee('Penyusun Pemilik Proses')
             ->assertSee('Pilih Penyusun Resmi')
             ->assertSee('FMPS')
@@ -1255,7 +1263,9 @@ class CreateDocumentTest extends TestCase
                 'official_preparer_id' => $officialPreparer->id,
                 'nomor_dokumen_suffix' => '999',
                 'revision_content' => UploadedFile::fake()->create('dokumen-revisi.pdf', 24, 'application/pdf'),
+                'revision_content_word' => UploadedFile::fake()->create('dokumen-revisi.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
                 'revision_form' => UploadedFile::fake()->create('lembar-revisi.pdf', 24, 'application/pdf'),
+                'revision_form_word' => UploadedFile::fake()->create('lembar-revisi.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
                 'submit_action' => 'submit',
             ])
             ->assertRedirect(route('documents.create'));
@@ -1277,7 +1287,9 @@ class CreateDocumentTest extends TestCase
         $this->assertTrue($revision->departments()->whereKey($sourceDepartment->id)->exists());
         $this->assertFalse($revision->departments()->whereKey($otherDepartment->id)->exists());
         $this->assertTrue($revision->files()->where('type_file', 'revision_content')->exists());
+        $this->assertTrue($revision->files()->where('type_file', 'revision_content_word')->exists());
         $this->assertTrue($revision->files()->where('type_file', 'revision_form')->exists());
+        $this->assertTrue($revision->files()->where('type_file', 'revision_form_word')->exists());
 
         $this->actingAs($submitter)
             ->get(route('documents.approval.show', $revision))
@@ -1285,7 +1297,9 @@ class CreateDocumentTest extends TestCase
             ->assertSee('Dokumen Revisi')
             ->assertSee('Lembar Revisi')
             ->assertSee('dokumen-revisi.pdf')
+            ->assertSee('dokumen-revisi.docx')
             ->assertSee('lembar-revisi.pdf')
+            ->assertSee('lembar-revisi.docx')
             ->assertDontSee('Assign Approver');
 
         $this->actingAs($submitter)
@@ -1363,7 +1377,9 @@ class CreateDocumentTest extends TestCase
                 'official_preparer_id' => $officialPreparer->id,
                 'nomor_dokumen_suffix' => '999',
                 'revision_content' => UploadedFile::fake()->create('dokumen-revisi-2.pdf', 24, 'application/pdf'),
+                'revision_content_word' => UploadedFile::fake()->create('dokumen-revisi-2.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
                 'revision_form' => UploadedFile::fake()->create('lembar-revisi-2.pdf', 24, 'application/pdf'),
+                'revision_form_word' => UploadedFile::fake()->create('lembar-revisi-2.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
                 'submit_action' => 'submit',
             ])
             ->assertRedirect(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
@@ -2146,6 +2162,7 @@ class CreateDocumentTest extends TestCase
                 'official_preparer_id' => $user->id,
                 'nomor_dokumen_suffix' => '001',
                 'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
+                'filled_template_word' => UploadedFile::fake()->create('template.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
                 'submit_action' => 'submit',
             ])
             ->assertRedirect(route('documents.create.level', 'level-3'))
@@ -2195,6 +2212,7 @@ class CreateDocumentTest extends TestCase
                 'official_preparer_id' => $user->id,
                 'nomor_dokumen_suffix' => '001',
                 'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
+                'filled_template_word' => UploadedFile::fake()->create('template.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
                 'submit_action' => 'submit',
             ])
             ->assertRedirect(route('documents.create.level', 'level-2'))
@@ -2729,6 +2747,112 @@ class CreateDocumentTest extends TestCase
             ->assertSessionHasErrors(['filled_template']);
     }
 
+    public function test_filled_template_word_upload_is_stored_with_document(): void
+    {
+        Storage::fake('local');
+
+        $user = User::factory()->create();
+        $businessProcess = BusinessProcess::create([
+            'kode' => 'SMR',
+            'nama_proses_bisnis' => 'Sistem Manajemen Risiko',
+        ]);
+        $businessFunction = BusinessFunction::create([
+            'kode' => 'OPS',
+            'nama_proses_fungsi' => 'Operasional',
+        ]);
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+
+        StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        DocumentType::create(['nama_types' => 'IK']);
+
+        $this->actingAs($user)
+            ->post(route('documents.store', 'level-3'), [
+                'nama_dokumen' => 'Instruksi Kerja Pengujian',
+                'm_proses_bisnis_id' => $businessProcess->id,
+                'm_proses_fungsi_id' => $businessFunction->id,
+                'department_ids' => [$department->id],
+                'official_preparer_id' => $user->id,
+                'nomor_dokumen_suffix' => '001',
+                'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
+                'filled_template_word' => UploadedFile::fake()->create('template.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                'submit_action' => 'draft',
+            ])
+            ->assertRedirect(route('documents.create.drafts'));
+
+        $this->assertDatabaseHas('t_document_files', [
+            'type_file' => 'filled_template',
+            'original_file_name' => 'template.pdf',
+        ]);
+        $this->assertDatabaseHas('t_document_files', [
+            'type_file' => 'filled_template_word',
+            'original_file_name' => 'template.docx',
+        ]);
+    }
+
+    public function test_initial_document_submit_requires_pdf_and_word_template_files(): void
+    {
+        Storage::fake('local');
+
+        [$user, $businessProcess, $businessFunction, $department] = $this->initialResubmissionFixture();
+
+        $this->actingAs($user)
+            ->from(route('documents.create.level', 'level-2'))
+            ->post(route('documents.store', 'level-2'), $this->initialSubmitPayload($businessProcess, $businessFunction, $department, '001', [
+                'filled_template_word' => null,
+            ]))
+            ->assertRedirect(route('documents.create.level', 'level-2'))
+            ->assertSessionHasErrors(['filled_template_word']);
+    }
+
+    public function test_revision_word_uploads_are_stored_with_revision_document(): void
+    {
+        Storage::fake('local');
+
+        [$source, $submitter, $officialPreparer] = $this->revisionCreationFixture();
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-4'), $this->revisionSubmitPayload($source, $officialPreparer, [
+                'revision_content_word' => UploadedFile::fake()->create('dokumen-revisi.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                'revision_form_word' => UploadedFile::fake()->create('lembar-revisi.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+            ]))
+            ->assertRedirect(route('documents.create'));
+
+        $revision = Document::query()
+            ->where('nama_dokumen', 'Prosedur Revisi Baru')
+            ->firstOrFail();
+
+        $this->assertDatabaseHas('t_document_files', [
+            't_document_id' => $revision->id,
+            'type_file' => 'revision_content_word',
+            'original_file_name' => 'dokumen-revisi.docx',
+        ]);
+        $this->assertDatabaseHas('t_document_files', [
+            't_document_id' => $revision->id,
+            'type_file' => 'revision_form_word',
+            'original_file_name' => 'lembar-revisi.docx',
+        ]);
+    }
+
+    public function test_revision_submit_requires_pdf_and_word_for_revision_sections(): void
+    {
+        Storage::fake('local');
+
+        [$source, $submitter, $officialPreparer] = $this->revisionCreationFixture();
+
+        $this->actingAs($submitter)
+            ->from(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
+            ->post(route('documents.store', 'level-4'), $this->revisionSubmitPayload($source, $officialPreparer, [
+                'revision_content_word' => null,
+                'revision_form_word' => null,
+            ]))
+            ->assertRedirect(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
+            ->assertSessionHasErrors(['revision_content_word', 'revision_form_word']);
+    }
+
     public function test_attachments_must_be_pdf_documents(): void
     {
         Storage::fake('local');
@@ -2934,6 +3058,7 @@ class CreateDocumentTest extends TestCase
             'official_preparer_id' => User::query()->firstOrFail()->id,
             'nomor_dokumen_suffix' => $suffix,
             'filled_template' => UploadedFile::fake()->create('template.pdf', 24, 'application/pdf'),
+            'filled_template_word' => UploadedFile::fake()->create('template.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
             'submit_action' => 'submit',
         ], $overrides);
     }
@@ -3035,7 +3160,9 @@ class CreateDocumentTest extends TestCase
             'official_preparer_id' => $officialPreparer->id,
             'nomor_dokumen_suffix' => '999',
             'revision_content' => UploadedFile::fake()->create('dokumen-revisi.pdf', 24, 'application/pdf'),
+            'revision_content_word' => UploadedFile::fake()->create('dokumen-revisi.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
             'revision_form' => UploadedFile::fake()->create('lembar-revisi.pdf', 24, 'application/pdf'),
+            'revision_form_word' => UploadedFile::fake()->create('lembar-revisi.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
             'submit_action' => 'submit',
         ], $overrides);
     }

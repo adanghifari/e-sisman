@@ -45,7 +45,9 @@
                         'imported_document' => 'Dokumen Import',
                         'existing_document' => 'Dokumen Existing',
                         'revision_content' => 'Dokumen Revisi',
+                        'revision_content_word' => 'Dokumen Revisi Word',
                         'revision_form' => 'Lembar Revisi',
+                        'revision_form_word' => 'Lembar Revisi Word',
                         'attachment' => 'Lampiran',
     ];
     $documentFiles = $document->files ?? collect();

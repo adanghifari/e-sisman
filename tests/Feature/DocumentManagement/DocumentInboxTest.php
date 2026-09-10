@@ -1035,6 +1035,17 @@ class DocumentInboxTest extends TestCase
             'stored_file_name' => 'isi.pdf',
             'file_size' => 24,
         ]);
+        Storage::disk('local')->put("documents/{$document->id}/isi.docx", 'DOCX');
+        DocumentFile::create([
+            't_document_id' => $document->id,
+            'type_file' => 'filled_template_word',
+            'path_file' => "documents/{$document->id}/isi.docx",
+            'uploaded_by' => $submitter->id,
+            'updated_at' => now(),
+            'original_file_name' => 'isi.docx',
+            'stored_file_name' => 'isi.docx',
+            'file_size' => 24,
+        ]);
 
         $this->actingAs($approver)
             ->get(route('documents.inbox', ['tab' => 'needs-process']))
@@ -1048,6 +1059,12 @@ class DocumentInboxTest extends TestCase
             ->assertSee('Dokumen Detail Approval')
             ->assertSee('PS-SMR-DETAIL')
             ->assertSee('Isi Dokumen')
+            ->assertSee('Template Dokumen yang Sudah Diisi')
+            ->assertSee('Upload Template Terisi PDF')
+            ->assertSee('Upload Template Terisi Word')
+            ->assertSee('isi.pdf')
+            ->assertSee('isi.docx')
+            ->assertSee('Lihat Dokumen')
             ->assertSee('Lampiran')
             ->assertSee('Riwayat Dokumen')
             ->assertSee('Diajukan')
@@ -1101,6 +1118,56 @@ class DocumentInboxTest extends TestCase
             ->where('user_id', $secondApprover->id)
             ->where('stages', 'Manager')
             ->exists());
+    }
+
+    public function test_revision_approval_detail_groups_pdf_and_word_files(): void
+    {
+        $this->ensureApprovalStatuses();
+
+        Storage::fake('local');
+
+        $approver = User::factory()->create();
+        $submitter = User::factory()->create();
+        $level = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $document = $this->createDocument($submitter, [
+            'm_document_level_id' => $level->id,
+            'nama_dokumen' => 'Dokumen Revisi Detail',
+            'nomor_dokumen' => 'PS-SMR-REV',
+            'nomor_lembar_revisi' => 'FMPS-SMR-REV-01',
+            'request_type' => 'revision',
+        ]);
+        $this->createApproval($document, $approver, ApprovalStatus::PENDING);
+
+        foreach ([
+            ['revision_form', 'lembar-revisi.pdf', '%PDF-1.4'],
+            ['revision_form_word', 'lembar-revisi.docx', 'DOCX'],
+            ['revision_content', 'dokumen-revisi.pdf', '%PDF-1.4'],
+            ['revision_content_word', 'dokumen-revisi.docx', 'DOCX'],
+        ] as [$type, $name, $content]) {
+            Storage::disk('local')->put("documents/{$document->id}/{$name}", $content);
+            DocumentFile::create([
+                't_document_id' => $document->id,
+                'type_file' => $type,
+                'path_file' => "documents/{$document->id}/{$name}",
+                'uploaded_by' => $submitter->id,
+                'updated_at' => now(),
+                'original_file_name' => $name,
+                'stored_file_name' => $name,
+                'file_size' => 24,
+            ]);
+        }
+
+        $this->actingAs($approver)
+            ->get(route('documents.approval.show', $document))
+            ->assertOk()
+            ->assertSee('Upload Lembar Revisi PDF')
+            ->assertSee('Upload Lembar Revisi Word')
+            ->assertSee('Upload Dokumen Revisi PDF')
+            ->assertSee('Upload Dokumen Revisi Word')
+            ->assertSee('lembar-revisi.pdf')
+            ->assertSee('lembar-revisi.docx')
+            ->assertSee('dokumen-revisi.pdf')
+            ->assertSee('dokumen-revisi.docx');
     }
 
     public function test_duplicate_stage_names_keep_separate_approver_assignments(): void

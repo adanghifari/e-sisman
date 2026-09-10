@@ -29,6 +29,7 @@ use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Str;
+use Illuminate\Validation\ValidationException;
 use Illuminate\Validation\Rule;
 use Symfony\Component\HttpFoundation\BinaryFileResponse;
 use Symfony\Component\HttpFoundation\Response;
@@ -86,9 +87,12 @@ class DocumentApprovalController extends Controller
             'departments' => Department::query()->active()->orderBy('nama_department')->get(),
             'contentFiles' => $document->files->whereIn('type_file', [
                 'filled_template',
+                'filled_template_word',
                 'imported_document',
                 'revision_content',
+                'revision_content_word',
                 'revision_form',
+                'revision_form_word',
                 'revision_before',
                 'revision_after',
             ])->values(),
@@ -332,6 +336,7 @@ class DocumentApprovalController extends Controller
         abort_unless($this->canUpdateSubmittedDocument($request, $document), 403);
 
         $validated = $request->validate($this->submittedDocumentUpdateRules($document));
+        $this->validateSubmittedReplacementFileTypes($request, $document);
 
         DB::transaction(function () use ($request, $document, $validated): void {
             $document = Document::query()
@@ -731,7 +736,7 @@ class DocumentApprovalController extends Controller
             'tanggal_terbit' => ['nullable', 'date'],
             'nomor_dokumen_suffix' => ['nullable', 'string', 'max:50', 'regex:/^[A-Za-z0-9]+$/'],
             'replacement_files' => ['nullable', 'array'],
-            'replacement_files.*' => ['file', 'mimes:pdf', 'max:10240'],
+            'replacement_files.*' => ['file', 'mimes:pdf,doc,docx', 'max:10240'],
             'replacement_attachments' => ['nullable', 'array'],
             'replacement_attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
             'attachments' => ['nullable', 'array', 'max:10'],
@@ -782,7 +787,7 @@ class DocumentApprovalController extends Controller
         foreach ($request->file('replacement_files', []) as $fileId => $uploadedFile) {
             $file = $document->files()
                 ->whereKey($fileId)
-                ->whereIn('type_file', ['filled_template', 'imported_document', 'revision_content', 'revision_form'])
+                ->whereIn('type_file', ['filled_template', 'filled_template_word', 'imported_document', 'revision_content', 'revision_content_word', 'revision_form', 'revision_form_word'])
                 ->first();
 
             if ($file === null) {
@@ -791,6 +796,68 @@ class DocumentApprovalController extends Controller
 
             $type = $file->type_file;
             $this->replaceSubmittedFileRecord($file, $uploadedFile, $type, $request->user()->id);
+        }
+    }
+
+    private function validateSubmittedReplacementFileTypes(Request $request, Document $document): void
+    {
+        $replacementTypes = collect();
+
+        foreach ($request->file('replacement_files', []) as $fileId => $uploadedFile) {
+            $file = $document->files()
+                ->whereKey($fileId)
+                ->whereIn('type_file', ['filled_template', 'filled_template_word', 'imported_document', 'revision_content', 'revision_content_word', 'revision_form', 'revision_form_word'])
+                ->first();
+
+            if ($file === null) {
+                continue;
+            }
+
+            $extension = strtolower($uploadedFile->getClientOriginalExtension());
+            $isWordFile = in_array($file->type_file, ['filled_template_word', 'revision_content_word', 'revision_form_word'], true);
+            $isValid = $isWordFile
+                ? in_array($extension, ['doc', 'docx'], true)
+                : $extension === 'pdf';
+
+            if (! $isValid) {
+                throw ValidationException::withMessages([
+                    "replacement_files.{$fileId}" => $isWordFile
+                        ? 'File Word harus berformat DOC atau DOCX.'
+                        : 'File dokumen harus berformat PDF.',
+                ]);
+            }
+
+            $replacementTypes->put($file->type_file, (string) $fileId);
+        }
+
+        $pairedTypes = [
+            ['filled_template', 'filled_template_word', 'Jika memperbarui template PDF atau Word, kedua file PDF dan Word wajib diperbarui bersama.'],
+            ['revision_content', 'revision_content_word', 'Jika memperbarui dokumen revisi PDF atau Word, kedua file PDF dan Word wajib diperbarui bersama.'],
+            ['revision_form', 'revision_form_word', 'Jika memperbarui lembar revisi PDF atau Word, kedua file PDF dan Word wajib diperbarui bersama.'],
+        ];
+
+        $pairedFiles = $document->files()
+            ->whereIn('type_file', collect($pairedTypes)->flatMap(fn (array $pair): array => [$pair[0], $pair[1]])->all())
+            ->latest('id')
+            ->get()
+            ->unique('type_file')
+            ->keyBy('type_file');
+
+        foreach ($pairedTypes as [$pdfType, $wordType, $message]) {
+            if (! $pairedFiles->has($pdfType) || ! $pairedFiles->has($wordType)) {
+                continue;
+            }
+
+            $hasPdfReplacement = $replacementTypes->has($pdfType);
+            $hasWordReplacement = $replacementTypes->has($wordType);
+
+            if (($hasPdfReplacement || $hasWordReplacement) && ! ($hasPdfReplacement && $hasWordReplacement)) {
+                $missingFileId = $pairedFiles->get($hasPdfReplacement ? $wordType : $pdfType)->id;
+
+                throw ValidationException::withMessages([
+                    "replacement_files.{$missingFileId}" => $message,
+                ]);
+            }
         }
     }
 

@@ -241,6 +241,136 @@ class DocumentAssignmentAccessTest extends TestCase
         $this->assertSame('PS-QA-01', $contentFile->document_number);
     }
 
+    public function test_submitted_word_content_file_replacement_updates_file_record(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill(['nomor_dokumen' => 'PS-QA-01'])->save();
+        $contentFile = $this->documentFile($document, 'filled_template', 'template-lama.pdf', 'PS-QA-01');
+        $wordFile = $this->documentFile($document, 'filled_template_word', 'template-lama.docx', 'PS-QA-01');
+
+        $response = $this
+            ->actingAs($admin)
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'replacement_files' => [
+                    $contentFile->id => UploadedFile::fake()->create('template-baru.pdf', 20, 'application/pdf'),
+                    $wordFile->id => UploadedFile::fake()->create('template-baru.docx', 20, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                ],
+            ]);
+
+        $response->assertRedirect(route('documents.approval.show', $document));
+        $contentFile->refresh();
+        $wordFile->refresh();
+        $this->assertSame('template-baru.pdf', $contentFile->original_file_name);
+        $this->assertSame('template-baru.docx', $wordFile->original_file_name);
+        $this->assertSame('PS-QA-01', $wordFile->document_number);
+    }
+
+    public function test_submitted_template_pair_replacement_requires_pdf_and_word_together(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill(['nomor_dokumen' => 'PS-QA-01'])->save();
+        $contentFile = $this->documentFile($document, 'filled_template', 'template-lama.pdf', 'PS-QA-01');
+        $wordFile = $this->documentFile($document, 'filled_template_word', 'template-lama.docx', 'PS-QA-01');
+
+        $this
+            ->actingAs($admin)
+            ->from(route('documents.approval.show', $document))
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'replacement_files' => [
+                    $contentFile->id => UploadedFile::fake()->create('template-baru.pdf', 20, 'application/pdf'),
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document))
+            ->assertSessionHasErrors(["replacement_files.{$wordFile->id}"]);
+    }
+
+    public function test_submitted_revision_pairs_replacement_requires_pdf_and_word_together(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill(['nomor_dokumen' => 'PS-QA-01'])->save();
+        $revisionContent = $this->documentFile($document, 'revision_content', 'dokumen-revisi.pdf', 'PS-QA-01');
+        $revisionContentWord = $this->documentFile($document, 'revision_content_word', 'dokumen-revisi.docx', 'PS-QA-01');
+        $revisionForm = $this->documentFile($document, 'revision_form', 'lembar-revisi.pdf', 'FMPS-QA-01-01');
+        $revisionFormWord = $this->documentFile($document, 'revision_form_word', 'lembar-revisi.docx', 'FMPS-QA-01-01');
+
+        $this
+            ->actingAs($admin)
+            ->from(route('documents.approval.show', $document))
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'replacement_files' => [
+                    $revisionContent->id => UploadedFile::fake()->create('dokumen-revisi-baru.pdf', 20, 'application/pdf'),
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document))
+            ->assertSessionHasErrors(["replacement_files.{$revisionContentWord->id}"]);
+
+        $this
+            ->actingAs($admin)
+            ->from(route('documents.approval.show', $document))
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'replacement_files' => [
+                    $revisionFormWord->id => UploadedFile::fake()->create('lembar-revisi-baru.docx', 20, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document))
+            ->assertSessionHasErrors(["replacement_files.{$revisionForm->id}"]);
+    }
+
+    public function test_submitted_pdf_content_file_replacement_rejects_word_file(): void
+    {
+        Storage::fake('local');
+        $this->ensureApprovalStatuses();
+        $department = Department::create([
+            'kode_department' => 'QA',
+            'nama_department' => 'Quality Assurance',
+        ]);
+        $admin = $this->documentControlAdmin($department);
+        $this->grantPermission($admin, 'documents.approval.update-submitted', 'Edit Dokumen Sebelum Assign Approver', 'documents.approval.update-submitted', 'update');
+        $document = $this->proposedDocumentForDepartments([$department]);
+        $document->forceFill(['nomor_dokumen' => 'PS-QA-01'])->save();
+        $contentFile = $this->documentFile($document, 'filled_template', 'template-lama.pdf', 'PS-QA-01');
+
+        $this
+            ->actingAs($admin)
+            ->from(route('documents.approval.show', $document))
+            ->post(route('documents.approval.update-submitted', $document), [
+                '_update_scope' => 'files',
+                'replacement_files' => [
+                    $contentFile->id => UploadedFile::fake()->create('template-baru.docx', 20, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                ],
+            ])
+            ->assertRedirect(route('documents.approval.show', $document))
+            ->assertSessionHasErrors(["replacement_files.{$contentFile->id}"]);
+    }
+
     public function test_submitted_attachment_delete_renumbers_remaining_attachments_from_02(): void
     {
         Storage::fake('local');

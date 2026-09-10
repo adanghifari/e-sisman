@@ -735,60 +735,135 @@
                                     title="1. Lembar Revisi"
                                     tone="sky"
                                 >
-                                    <x-ui.file-upload
-                                        label="Upload Lembar Revisi"
-                                        name="revision_form"
-                                        accept=".pdf,application/pdf"
-                                        hint="Upload form/lembar revisi yang menjelaskan perubahan. Format PDF, maksimal 10 MB."
-                                        :max-files="1"
-                                        :max-file-size-kb="10240"
-                                        :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_form', collect())->isEmpty()"
-                                        :existing-files="$existingFilePayload('revision_form')"
-                                    />
+                                    <div class="grid gap-4 lg:grid-cols-2">
+                                        <div>
+                                            <x-ui.file-upload
+                                                label="Upload Lembar Revisi PDF"
+                                                name="revision_form"
+                                                accept=".pdf,application/pdf"
+                                                hint="Format PDF."
+                                                file-type-badge="PDF"
+                                                :file-type-icon="asset('image/icon_PDF.webp')"
+                                                :max-files="1"
+                                                :max-file-size-kb="10240"
+                                                :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_form', collect())->isEmpty()"
+                                                :existing-files="$existingFilePayload('revision_form')"
+                                            />
 
-                                    @error('revision_form')
-                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                    @enderror
+                                            @error('revision_form')
+                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                            @enderror
+                                        </div>
+
+                                        <div>
+                                            <x-ui.file-upload
+                                                label="Upload Lembar Revisi Word"
+                                                name="revision_form_word"
+                                                accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                                hint="Format Word."
+                                                file-type-badge="WORD"
+                                                :file-type-icon="asset('image/icon_word.webp')"
+                                                :max-files="1"
+                                                :max-file-size-kb="10240"
+                                                :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_form_word', collect())->isEmpty()"
+                                                :existing-files="$existingFilePayload('revision_form_word')"
+                                            />
+
+                                            @error('revision_form_word')
+                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                            @enderror
+                                        </div>
+                                    </div>
                                 </x-documents.upload-toggle-card>
 
                                 <x-documents.upload-toggle-card
                                     title="2. Dokumen Revisi"
                                     tone="sky"
                                 >
-                                    <x-ui.file-upload
-                                        label="Upload Dokumen Revisi"
-                                        name="revision_content"
-                                        accept=".pdf,application/pdf"
-                                        hint="Upload dokumen utama yang sudah direvisi. Format PDF, maksimal 10 MB."
-                                        :max-files="1"
-                                        :max-file-size-kb="10240"
-                                        :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content', collect())->isEmpty()"
-                                        :existing-files="$existingFilePayload('revision_content')"
-                                    />
+                                    <div class="grid gap-4 lg:grid-cols-2">
+                                        <div>
+                                            <x-ui.file-upload
+                                                label="Upload Dokumen Revisi PDF"
+                                                name="revision_content"
+                                                accept=".pdf,application/pdf"
+                                                hint="Format PDF."
+                                                file-type-badge="PDF"
+                                                :file-type-icon="asset('image/icon_PDF.webp')"
+                                                :max-files="1"
+                                                :max-file-size-kb="10240"
+                                                :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content', collect())->isEmpty()"
+                                                :existing-files="$existingFilePayload('revision_content')"
+                                            />
 
-                                    @error('revision_content')
-                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                    @enderror
+                                            @error('revision_content')
+                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                            @enderror
+                                        </div>
+
+                                        <div>
+                                            <x-ui.file-upload
+                                                label="Upload Dokumen Revisi Word"
+                                                name="revision_content_word"
+                                                accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                                hint="Format Word."
+                                                file-type-badge="WORD"
+                                                :file-type-icon="asset('image/icon_word.webp')"
+                                                :max-files="1"
+                                                :max-file-size-kb="10240"
+                                                :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content_word', collect())->isEmpty()"
+                                                :existing-files="$existingFilePayload('revision_content_word')"
+                                            />
+
+                                            @error('revision_content_word')
+                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                            @enderror
+                                        </div>
+                                    </div>
                                 </x-documents.upload-toggle-card>
                             @else
                                 <x-documents.upload-toggle-card
                                     title="Template Dokumen yang Sudah Diisi"
                                     tone="sky"
                                 >
-                                    <x-ui.file-upload
-                                        label="Upload Template Terisi"
-                                        name="filled_template"
-                                        accept=".pdf,application/pdf"
-                                        hint="Format PDF."
-                                        :max-files="1"
-                                        :max-file-size-kb="10240"
-                                        :required="$draftFilesByType->get('filled_template', collect())->isEmpty()"
-                                        :existing-files="$existingFilePayload('filled_template')"
-                                    />
+                                    <div class="grid gap-4 lg:grid-cols-2">
+                                        <div>
+                                            <x-ui.file-upload
+                                                label="Upload Template Terisi PDF"
+                                                name="filled_template"
+                                                accept=".pdf,application/pdf"
+                                                hint="Format PDF."
+                                                file-type-badge="PDF"
+                                                :file-type-icon="asset('image/icon_PDF.webp')"
+                                                :max-files="1"
+                                                :max-file-size-kb="10240"
+                                                :required="$draftFilesByType->get('filled_template', collect())->isEmpty()"
+                                                :existing-files="$existingFilePayload('filled_template')"
+                                            />
 
-                                    @error('filled_template')
-                                        <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                    @enderror
+                                            @error('filled_template')
+                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                            @enderror
+                                        </div>
+
+                                        <div>
+                                            <x-ui.file-upload
+                                                label="Upload Template Terisi Word"
+                                                name="filled_template_word"
+                                                accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                                hint="Format Word."
+                                                file-type-badge="WORD"
+                                                :file-type-icon="asset('image/icon_word.webp')"
+                                                :max-files="1"
+                                                :max-file-size-kb="10240"
+                                                :required="$draftFilesByType->get('filled_template_word', collect())->isEmpty()"
+                                                :existing-files="$existingFilePayload('filled_template_word')"
+                                            />
+
+                                            @error('filled_template_word')
+                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                            @enderror
+                                        </div>
+                                    </div>
                                 </x-documents.upload-toggle-card>
                             @endif
 

@@ -27,7 +27,9 @@ class DocumentFile extends Model
     public const TYPE_IMPORTED_DOCUMENT = 'imported_document';
     public const TYPE_FILLED_TEMPLATE = 'filled_template';
     public const TYPE_REVISION_CONTENT = 'revision_content';
+    public const TYPE_REVISION_CONTENT_WORD = 'revision_content_word';
     public const TYPE_REVISION_FORM = 'revision_form';
+    public const TYPE_REVISION_FORM_WORD = 'revision_form_word';
     public const TYPE_ATTACHMENT = 'attachment';
     public const IMPORTED_DOCUMENT = self::TYPE_IMPORTED_DOCUMENT;
     public const ATTACHMENT = self::TYPE_ATTACHMENT;
