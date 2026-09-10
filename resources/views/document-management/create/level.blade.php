@@ -74,6 +74,7 @@
             ? $revisionSource->revisedFrom
             : $revisionSource;
         $revisionSourceLevelKey = $revisionSourceMaster?->documentLevel?->kode;
+        $isLevelOneRevision = $levelKey === 'level-4' && $revisionSourceLevelKey === 'level-1';
         $levelFourPrefix = match ($revisionSourceLevelKey) {
             'level-1' => 'FMSM',
             'level-2' => 'FMPS',
@@ -731,95 +732,136 @@
                             @enderror
 
                             @if ($levelKey === 'level-4')
-                                <x-documents.upload-toggle-card
-                                    title="1. Lembar Revisi"
-                                    tone="sky"
-                                >
-                                    <div class="grid gap-4 lg:grid-cols-2">
-                                        <div>
-                                            <x-ui.file-upload
-                                                label="Upload Lembar Revisi PDF"
-                                                name="revision_form"
-                                                accept=".pdf,application/pdf"
-                                                hint="Format PDF."
-                                                file-type-badge="PDF"
-                                                :file-type-icon="asset('image/icon_PDF.webp')"
-                                                :max-files="1"
-                                                :max-file-size-kb="10240"
-                                                :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_form', collect())->isEmpty()"
-                                                :existing-files="$existingFilePayload('revision_form')"
-                                            />
+                                @if ($isLevelOneRevision)
+                                    <x-documents.upload-toggle-card
+                                        title="Dokumen Revisi"
+                                        tone="sky"
+                                    >
+                                        <div class="space-y-5">
+                                            <div>
+                                                <x-ui.file-upload
+                                                    label="Upload Dokumen Revisi PDF"
+                                                    name="revision_content"
+                                                    accept=".pdf,application/pdf"
+                                                    hint="Format PDF."
+                                                    file-type-badge="PDF"
+                                                    :file-type-icon="asset('image/icon_PDF.webp')"
+                                                    :max-files="1"
+                                                    :max-file-size-kb="10240"
+                                                    :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content', collect())->isEmpty()"
+                                                    :existing-files="$existingFilePayload('revision_content')"
+                                                />
 
-                                            @error('revision_form')
-                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                            @enderror
+                                                @error('revision_content')
+                                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                                @enderror
+                                            </div>
+
+                                            <label class="block">
+                                                <span class="mb-2 block text-base font-medium text-slate-500">Catatan</span>
+                                                <textarea
+                                                    name="catatan_revisi"
+                                                    rows="5"
+                                                    placeholder="Tambahkan catatan revisi"
+                                                    class="w-full resize-none rounded-lg border border-slate-300 bg-white px-4 py-3 text-base font-medium text-slate-700 outline-none transition placeholder:text-slate-400 focus:border-sky-400 focus:ring-2 focus:ring-sky-100"
+                                                >{{ old('catatan_revisi', $formSource?->catatan_revisi) }}</textarea>
+                                                @error('catatan_revisi')
+                                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                                @enderror
+                                            </label>
                                         </div>
+                                    </x-documents.upload-toggle-card>
+                                @else
+                                    <x-documents.upload-toggle-card
+                                        title="1. Lembar Revisi"
+                                        tone="sky"
+                                    >
+                                        <div class="grid gap-4 lg:grid-cols-2">
+                                            <div>
+                                                <x-ui.file-upload
+                                                    label="Upload Lembar Revisi PDF"
+                                                    name="revision_form"
+                                                    accept=".pdf,application/pdf"
+                                                    hint="Format PDF."
+                                                    file-type-badge="PDF"
+                                                    :file-type-icon="asset('image/icon_PDF.webp')"
+                                                    :max-files="1"
+                                                    :max-file-size-kb="10240"
+                                                    :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_form', collect())->isEmpty()"
+                                                    :existing-files="$existingFilePayload('revision_form')"
+                                                />
 
-                                        <div>
-                                            <x-ui.file-upload
-                                                label="Upload Lembar Revisi Word"
-                                                name="revision_form_word"
-                                                accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                                                hint="Format Word."
-                                                file-type-badge="WORD"
-                                                :file-type-icon="asset('image/icon_word.webp')"
-                                                :max-files="1"
-                                                :max-file-size-kb="10240"
-                                                :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_form_word', collect())->isEmpty()"
-                                                :existing-files="$existingFilePayload('revision_form_word')"
-                                            />
+                                                @error('revision_form')
+                                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                                @enderror
+                                            </div>
 
-                                            @error('revision_form_word')
-                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                            @enderror
+                                            <div>
+                                                <x-ui.file-upload
+                                                    label="Upload Lembar Revisi Word"
+                                                    name="revision_form_word"
+                                                    accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                                    hint="Format Word."
+                                                    file-type-badge="WORD"
+                                                    :file-type-icon="asset('image/icon_word.webp')"
+                                                    :max-files="1"
+                                                    :max-file-size-kb="10240"
+                                                    :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_form_word', collect())->isEmpty()"
+                                                    :existing-files="$existingFilePayload('revision_form_word')"
+                                                />
+
+                                                @error('revision_form_word')
+                                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                                @enderror
+                                            </div>
                                         </div>
-                                    </div>
-                                </x-documents.upload-toggle-card>
+                                    </x-documents.upload-toggle-card>
 
-                                <x-documents.upload-toggle-card
-                                    title="2. Dokumen Revisi"
-                                    tone="sky"
-                                >
-                                    <div class="grid gap-4 lg:grid-cols-2">
-                                        <div>
-                                            <x-ui.file-upload
-                                                label="Upload Dokumen Revisi PDF"
-                                                name="revision_content"
-                                                accept=".pdf,application/pdf"
-                                                hint="Format PDF."
-                                                file-type-badge="PDF"
-                                                :file-type-icon="asset('image/icon_PDF.webp')"
-                                                :max-files="1"
-                                                :max-file-size-kb="10240"
-                                                :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content', collect())->isEmpty()"
-                                                :existing-files="$existingFilePayload('revision_content')"
-                                            />
+                                    <x-documents.upload-toggle-card
+                                        title="2. Dokumen Revisi"
+                                        tone="sky"
+                                    >
+                                        <div class="grid gap-4 lg:grid-cols-2">
+                                            <div>
+                                                <x-ui.file-upload
+                                                    label="Upload Dokumen Revisi PDF"
+                                                    name="revision_content"
+                                                    accept=".pdf,application/pdf"
+                                                    hint="Format PDF."
+                                                    file-type-badge="PDF"
+                                                    :file-type-icon="asset('image/icon_PDF.webp')"
+                                                    :max-files="1"
+                                                    :max-file-size-kb="10240"
+                                                    :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content', collect())->isEmpty()"
+                                                    :existing-files="$existingFilePayload('revision_content')"
+                                                />
 
-                                            @error('revision_content')
-                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                            @enderror
+                                                @error('revision_content')
+                                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                                @enderror
+                                            </div>
+
+                                            <div>
+                                                <x-ui.file-upload
+                                                    label="Upload Dokumen Revisi Word"
+                                                    name="revision_content_word"
+                                                    accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                                                    hint="Format Word."
+                                                    file-type-badge="WORD"
+                                                    :file-type-icon="asset('image/icon_word.webp')"
+                                                    :max-files="1"
+                                                    :max-file-size-kb="10240"
+                                                    :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content_word', collect())->isEmpty()"
+                                                    :existing-files="$existingFilePayload('revision_content_word')"
+                                                />
+
+                                                @error('revision_content_word')
+                                                    <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
+                                                @enderror
+                                            </div>
                                         </div>
-
-                                        <div>
-                                            <x-ui.file-upload
-                                                label="Upload Dokumen Revisi Word"
-                                                name="revision_content_word"
-                                                accept=".doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-                                                hint="Format Word."
-                                                file-type-badge="WORD"
-                                                :file-type-icon="asset('image/icon_word.webp')"
-                                                :max-files="1"
-                                                :max-file-size-kb="10240"
-                                                :required="old('submit_action') === 'submit' && $draftFilesByType->get('revision_content_word', collect())->isEmpty()"
-                                                :existing-files="$existingFilePayload('revision_content_word')"
-                                            />
-
-                                            @error('revision_content_word')
-                                                <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
-                                            @enderror
-                                        </div>
-                                    </div>
-                                </x-documents.upload-toggle-card>
+                                    </x-documents.upload-toggle-card>
+                                @endif
                             @else
                                 <x-documents.upload-toggle-card
                                     title="Template Dokumen yang Sudah Diisi"
@@ -867,6 +909,7 @@
                                 </x-documents.upload-toggle-card>
                             @endif
 
+                            @if (! $isLevelOneRevision)
                             <div class="rounded-lg border border-slate-200 bg-white px-4 py-4">
                                 <div class="mb-4 flex flex-wrap items-start justify-between gap-4">
                                     <span class="min-w-0">
@@ -1005,6 +1048,7 @@
                                     <span class="mt-2 block text-sm font-semibold text-red-500">{{ $message }}</span>
                                 @enderror
                             </div>
+                            @endif
                         </div>
                     </x-documents.form-section>
                 </div>

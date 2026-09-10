@@ -306,6 +306,93 @@ class CreateDocumentTest extends TestCase
             ->assertSee('value="003"', false);
     }
 
+    public function test_level_one_master_can_be_submitted_as_revision_request(): void
+    {
+        Storage::fake('local');
+
+        $submitter = User::factory()->create(['email' => 'developer@example.com']);
+        $officialPreparer = User::factory()->create();
+        $manualLevel = DocumentLevel::query()->where('kode', 'level-1')->firstOrFail();
+        $approvedStatus = StatusDocument::create(['nama_status' => StatusDocument::APPROVED]);
+        StatusDocument::create(['nama_status' => StatusDocument::DRAFT]);
+        StatusDocument::create(['nama_status' => StatusDocument::PROPOSED]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::APPROVED,
+            'nama_status' => 'Disetujui',
+        ]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::PENDING,
+            'nama_status' => 'Menunggu',
+        ]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::WAITING,
+            'nama_status' => 'Menunggu Giliran',
+        ]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::REJECTED,
+            'nama_status' => 'Ditolak',
+        ]);
+        ApprovalStatus::create([
+            'kode_status' => ApprovalStatus::TERMINATED,
+            'nama_status' => 'Dihentikan',
+        ]);
+        DocumentType::create(['nama_types' => 'Manual']);
+        DocumentType::create(['nama_types' => 'Form']);
+
+        $source = Document::create([
+            'm_document_level_id' => $manualLevel->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => DocumentType::query()->where('nama_types', 'Manual')->firstOrFail()->id,
+            'user_id' => $submitter->id,
+            'official_preparer_id' => $officialPreparer->id,
+            'nama_dokumen' => 'Manual Sistem Revisi',
+            'nomor_dokumen' => 'SM-010',
+            'nomor_revisi' => '00.00',
+            'tanggal_terbit' => '2026-09-10',
+            'approved_at' => now(),
+        ]);
+
+        $this->actingAs($submitter)
+            ->get(route('documents.create.level', ['level-4', 'revised_from' => $source->id]))
+            ->assertOk()
+            ->assertSee('Dokumen Level IV: Form Manual')
+            ->assertSee('Import Dokumen Level I: Manual SKMBS')
+            ->assertSee('FMSM')
+            ->assertSee('010')
+            ->assertSee('00.01');
+
+        $this->actingAs($submitter)
+            ->post(route('documents.store', 'level-4'), [
+                'revised_from' => $source->id,
+                'nama_dokumen' => 'Manual Sistem Revisi',
+                'official_preparer_id' => $officialPreparer->id,
+                'nomor_dokumen_suffix' => '999',
+                'revision_content' => UploadedFile::fake()->create('manual-revisi.pdf', 24, 'application/pdf'),
+                'revision_content_word' => UploadedFile::fake()->create('manual-revisi.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                'revision_form' => UploadedFile::fake()->create('lembar-revisi.pdf', 24, 'application/pdf'),
+                'revision_form_word' => UploadedFile::fake()->create('lembar-revisi.docx', 24, 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'),
+                'submit_action' => 'submit',
+            ])
+            ->assertRedirect(route('documents.create'));
+
+        $revision = Document::query()
+            ->where('revised_from', $source->id)
+            ->where('request_type', 'revision')
+            ->firstOrFail();
+
+        $this->assertSame('level-4', $revision->documentLevel->kode);
+        $this->assertSame('Form', $revision->documentType->nama_types);
+        $this->assertSame('SM-010', $revision->nomor_dokumen);
+        $this->assertSame('FMSM-010-01', $revision->nomor_lembar_revisi);
+        $this->assertSame('00.01', $revision->nomor_revisi);
+        $this->assertSame(StatusDocument::PROPOSED, $revision->status->nama_status);
+        $this->assertNull($revision->m_proses_bisnis_id);
+        $this->assertNull($revision->m_proses_fungsi_id);
+        $this->assertSame([], $revision->departments()->pluck('departments.id')->all());
+        $this->assertTrue($revision->files()->where('type_file', 'revision_content')->exists());
+        $this->assertTrue($revision->files()->where('type_file', 'revision_form')->exists());
+    }
+
     public function test_level_two_create_uses_imported_master_registry_as_next_document_number(): void
     {
         Storage::fake('local');

@@ -16,6 +16,7 @@ use App\Models\DocumentType;
 use App\Models\StatusDocument;
 use App\Models\User;
 use App\Support\FinalDocuments\AutoGenerateFinalDocument;
+use App\Support\FinalDocuments\PdfDocumentContext;
 use Illuminate\Foundation\Testing\RefreshDatabase;
 use Illuminate\Support\Facades\Storage;
 use setasign\Fpdi\Tcpdf\Fpdi;
@@ -102,6 +103,61 @@ class FinalDocumentAutoGenerationTest extends TestCase
             ->firstOrFail();
 
         $this->assertSame(StatusDocument::APPROVED, $document->refresh()->status->nama_status);
+        $this->assertSame(DocumentFinalArtifact::STATUS_GENERATED, $artifact->generation_status);
+        $this->assertSame(2, $this->pageCount(Storage::disk('local')->path($artifact->path_file)));
+    }
+
+    public function test_level_one_revision_final_document_skips_approval_sheet_after_approval(): void
+    {
+        $submitter = User::factory()->create();
+        $approver = User::factory()->create();
+        $approvedStatus = StatusDocument::findByName(StatusDocument::APPROVED);
+        $manualLevel = DocumentLevel::query()->where('kode', 'level-1')->firstOrFail();
+        $formLevel = DocumentLevel::query()->where('kode', 'level-4')->firstOrFail();
+        $manualType = DocumentType::query()->firstOrCreate(['nama_types' => 'Manual']);
+        $formType = DocumentType::query()->firstOrCreate(['nama_types' => 'Form']);
+
+        $source = $this->createDocument($submitter, [
+            'm_document_level_id' => $manualLevel->id,
+            'm_status_document_id' => $approvedStatus->id,
+            'm_document_types_id' => $manualType->id,
+            'm_proses_bisnis_id' => null,
+            'm_proses_fungsi_id' => null,
+            'nama_dokumen' => 'Manual Revisi Tanpa Lembar Pengesahan',
+            'nomor_dokumen' => 'SM-002',
+            'nomor_revisi' => '00.00',
+            'approved_at' => now()->subDay(),
+        ]);
+        $source->departments()->detach();
+
+        $revision = $this->createDocument($submitter, [
+            'm_document_level_id' => $formLevel->id,
+            'm_document_types_id' => $formType->id,
+            'revised_from' => $source->id,
+            'request_type' => 'revision',
+            'nama_dokumen' => 'Manual Revisi Tanpa Lembar Pengesahan',
+            'nomor_dokumen' => 'SM-002',
+            'nomor_lembar_revisi' => 'FMSM-002-01',
+            'nomor_revisi' => '00.01',
+        ]);
+        $revision->departments()->detach();
+        $this->createFlow($source, ['Verifikator Manual']);
+        $this->createApproval($revision, $approver, ApprovalStatus::PENDING, 'Verifikator Manual');
+        $this->storeDocumentFile($revision, 'revision_content', $this->pdfBinary(['Manual Revision Body']));
+
+        $this->assertSame(PdfDocumentContext::FINAL_DOCUMENT_WITHOUT_APPROVAL_SHEET, PdfDocumentContext::finalFor($revision));
+
+        $this->actingAs($approver)
+            ->post(route('documents.approval.approve', $revision))
+            ->assertRedirect(route('documents.approval.show', $revision));
+
+        $artifact = DocumentFinalArtifact::query()
+            ->where('t_document_id', $revision->id)
+            ->where('artifact_type', DocumentFinalArtifact::TYPE_FINAL_DOCUMENT)
+            ->firstOrFail();
+
+        $this->assertSame(StatusDocument::APPROVED, $revision->refresh()->status->nama_status);
+        $this->assertSame(StatusDocument::OBSOLETE, $source->refresh()->status->nama_status);
         $this->assertSame(DocumentFinalArtifact::STATUS_GENERATED, $artifact->generation_status);
         $this->assertSame(2, $this->pageCount(Storage::disk('local')->path($artifact->path_file)));
     }

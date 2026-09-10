@@ -12,11 +12,20 @@ enum PdfDocumentContext: string
 
     public static function finalFor(Document $document): self
     {
-        $document->loadMissing('documentLevel');
-
-        return $document->documentLevel?->kode === 'level-1'
+        return self::effectiveLevelKey($document) === 'level-1'
             ? self::FINAL_DOCUMENT_WITHOUT_APPROVAL_SHEET
             : self::FINAL_DOCUMENT;
+    }
+
+    public static function effectiveLevelKey(Document $document): ?string
+    {
+        $document->loadMissing('documentLevel', 'revisedFrom.documentLevel');
+
+        if ($document->documentLevel?->kode === 'level-4' && $document->revisedFrom?->documentLevel !== null) {
+            return $document->revisedFrom->documentLevel->kode;
+        }
+
+        return $document->documentLevel?->kode;
     }
 
     public function includesApprovalSheet(): bool

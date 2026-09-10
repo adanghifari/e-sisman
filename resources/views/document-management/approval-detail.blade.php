@@ -8,16 +8,19 @@
             'level-4' => 'IV',
         ];
         $isLevelOne = $levelKey === 'level-1';
+        $finalDocumentContext = \App\Support\FinalDocuments\PdfDocumentContext::finalFor($document);
+        $finalWithoutApprovalSheet = $finalDocumentContext === \App\Support\FinalDocuments\PdfDocumentContext::FINAL_DOCUMENT_WITHOUT_APPROVAL_SHEET;
+        $isEffectiveLevelOne = \App\Support\FinalDocuments\PdfDocumentContext::effectiveLevelKey($document) === 'level-1';
         $statusCode = $activeApproval?->status?->kode_status ?? $document->status?->nama_status ?? '-';
         $statusLabel = $activeApproval?->status?->nama_status ?? $document->status?->nama_status ?? '-';
         $isObsoleteRequest = $document->request_type === 'obsolete';
         $showSourceFiles = $document->status?->nama_status === \App\Models\StatusDocument::PROPOSED;
         $printoutTitle = $showSourceFiles ? 'Printout PDF Sementara' : 'Printout PDF Final';
         $printoutDescription = $showSourceFiles
-            ? ($isLevelOne
+            ? ($finalWithoutApprovalSheet
                 ? 'Preview dinamis. Versi final akan memakai cover, kop, footer, dan lampiran tanpa lembar pengesahan.'
                 : 'Preview dinamis. Lembar pengesahan akan tersedia setelah semua approval selesai.')
-            : ($isLevelOne
+            : ($finalWithoutApprovalSheet
                 ? 'Versi final lengkap dengan cover, kop, footer, dan lampiran tanpa lembar pengesahan.'
                 : 'Versi final lengkap dengan cover, kop, footer, lembar pengesahan, dan lampiran.');
         $printoutVersion = collect([
@@ -66,7 +69,18 @@
                 ->values()
             : $contentFiles;
         $revisionFileGroups = $levelKey === 'level-4'
-            ? collect([
+            ? ($isEffectiveLevelOne
+                ? collect([
+                    [
+                        'title' => 'Dokumen Revisi',
+                        'description' => 'File PDF dokumen revisi yang diajukan user.',
+                        'pdf_label' => 'Upload Dokumen Revisi PDF',
+                        'word_label' => null,
+                        'pdf' => $contentFiles->where('type_file', 'revision_content')->sortByDesc('id')->first(),
+                        'word' => null,
+                    ],
+                ])
+                : collect([
                 [
                     'title' => 'Lembar Revisi',
                     'description' => 'File PDF dan Word lembar revisi yang diajukan user.',
@@ -83,7 +97,7 @@
                     'pdf' => $contentFiles->where('type_file', 'revision_content')->sortByDesc('id')->first(),
                     'word' => $contentFiles->where('type_file', 'revision_content_word')->sortByDesc('id')->first(),
                 ],
-            ])->filter(fn (array $group): bool => $group['pdf'] !== null || $group['word'] !== null)->values()
+            ]))->filter(fn (array $group): bool => $group['pdf'] !== null || $group['word'] !== null)->values()
             : collect();
         $templatePdfFile = $levelKey !== 'level-4'
             ? $contentFiles->where('type_file', 'filled_template')->sortByDesc('id')->first()
@@ -304,6 +318,18 @@
                             <div class="rounded-lg border border-red-100 bg-red-50 px-4 py-4">
                                 <p class="text-sm font-semibold leading-6 text-red-900">
                                     {{ $document->catatan_revisi ?: '-' }}
+                                </p>
+                            </div>
+                        </div>
+                    </x-documents.form-section>
+                @endif
+
+                @if (! $isObsoleteRequest && $isLevelOne && filled($document->catatan_revisi))
+                    <x-documents.form-section title="Catatan Dokumen" icon="document-text">
+                        <div class="px-6 py-6">
+                            <div class="rounded-lg border border-slate-200 bg-slate-50 px-4 py-4">
+                                <p class="whitespace-pre-line text-sm font-semibold leading-6 text-slate-700">
+                                    {{ $document->catatan_revisi }}
                                 </p>
                             </div>
                         </div>

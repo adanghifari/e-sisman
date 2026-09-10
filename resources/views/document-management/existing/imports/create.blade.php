@@ -40,6 +40,8 @@
                 </div>
             @endif
 
+            <div class="hidden rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold leading-6 text-red-700" data-import-master-number-error></div>
+
             <x-ui.panel title="Identitas Dokumen" description="{{ $legacyOnly ? 'Isi identitas arsip sesuai dokumen lama.' : 'Mulai dari nama dokumen, lalu pilih ketentuan arsip yang sesuai.' }}">
                 @php
                     $selectedRuleType = old(
@@ -447,6 +449,29 @@
 
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
+            const showImportedMasterNumberError = (form, message) => {
+                const errorBox = form.querySelector('[data-import-master-number-error]');
+
+                if (!errorBox) {
+                    return;
+                }
+
+                errorBox.textContent = message;
+                errorBox.classList.remove('hidden');
+                errorBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            };
+
+            const clearImportedMasterNumberError = (form) => {
+                const errorBox = form.querySelector('[data-import-master-number-error]');
+
+                if (!errorBox) {
+                    return;
+                }
+
+                errorBox.textContent = '';
+                errorBox.classList.add('hidden');
+            };
+
             const checkImportedMasterNumberReuse = async (form) => {
                 const url = form.dataset.importMasterNumberCheckUrl;
 
@@ -459,6 +484,8 @@
                 if (confirmationInput?.value === '1') {
                     return true;
                 }
+
+                clearImportedMasterNumberError(form);
 
                 const payloadData = new FormData();
                 [
@@ -494,6 +521,12 @@
 
                 if (!payload.conflict) {
                     return true;
+                }
+
+                if (payload.blocked) {
+                    showImportedMasterNumberError(form, payload.message || 'Nomor dokumen sudah digunakan oleh dokumen master.');
+
+                    return false;
                 }
 
                 if (window.confirm(payload.message || 'Nomor dokumen sudah digunakan. Apakah Anda yakin ingin melanjutkan?')) {
@@ -689,4 +722,3 @@
         })();
     </script>
 </x-layouts::app>
-

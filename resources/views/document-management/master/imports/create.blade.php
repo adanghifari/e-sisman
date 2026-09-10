@@ -91,6 +91,8 @@
                     </div>
                 @endif
 
+                <div class="hidden rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm font-semibold leading-6 text-red-700" data-import-master-number-error></div>
+
                 {{-- Informasi Dokumen --}}
                 <x-documents.form-section title="Informasi Dokumen">
                     <div class="grid gap-5 px-6 py-6 md:grid-cols-2">
@@ -504,6 +506,29 @@
 
             const csrfToken = document.querySelector('meta[name="csrf-token"]')?.content || '';
 
+            const showImportedMasterNumberError = (form, message) => {
+                const errorBox = form.querySelector('[data-import-master-number-error]');
+
+                if (!errorBox) {
+                    return;
+                }
+
+                errorBox.textContent = message;
+                errorBox.classList.remove('hidden');
+                errorBox.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            };
+
+            const clearImportedMasterNumberError = (form) => {
+                const errorBox = form.querySelector('[data-import-master-number-error]');
+
+                if (!errorBox) {
+                    return;
+                }
+
+                errorBox.textContent = '';
+                errorBox.classList.add('hidden');
+            };
+
             const checkImportedMasterNumberReuse = async (form) => {
                 const url = form.dataset.importMasterNumberCheckUrl;
 
@@ -516,6 +541,8 @@
                 if (confirmationInput?.value === '1') {
                     return true;
                 }
+
+                clearImportedMasterNumberError(form);
 
                 const payloadData = new FormData();
                 [
@@ -554,7 +581,7 @@
                 }
 
                 if (payload.blocked) {
-                    window.alert(payload.message || 'Nomor dokumen sudah digunakan oleh dokumen master.');
+                    showImportedMasterNumberError(form, payload.message || 'Nomor dokumen sudah digunakan oleh dokumen master.');
 
                     return false;
                 }

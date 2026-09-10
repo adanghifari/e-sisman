@@ -593,20 +593,24 @@ class DocumentController extends Controller
         }
 
         if ($level === 'level-4') {
+            $isRevisionRequest = request()->filled('revised_from') || request()->filled('imported_source') || $draft?->revised_from !== null || $resubmissionSource?->revised_from !== null;
+            $isLevelOneRevisionRequest = $this->isLevelOneRevisionRequest($draft, $resubmissionSource);
+
             return [
                 'nama_dokumen' => [$isDraftAction ? 'nullable' : 'required', 'string', 'max:255'],
-                'm_proses_bisnis_id' => [$isDraftAction ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
-                'm_proses_fungsi_id' => [$isDraftAction ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
+                'm_proses_bisnis_id' => [$isDraftAction || $isRevisionRequest ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_bisnis', 'id')],
+                'm_proses_fungsi_id' => [$isDraftAction || $isRevisionRequest ? 'nullable' : 'required', 'integer', Rule::exists('m_proses_fungsi', 'id')],
                 'reference' => ['nullable', 'string', 'max:255'],
-                'department_ids' => [$isDraftAction ? 'nullable' : 'required', 'array', 'min:1'],
+                'department_ids' => [$isDraftAction || $isRevisionRequest ? 'nullable' : 'required', 'array', 'min:1'],
                 'department_ids.*' => ['required', 'integer', Rule::exists('departments', 'id')],
                 'official_preparer_id' => [$submitAction === 'submit' ? 'required' : 'nullable', 'integer', Rule::exists('users', 'id')],
                 'nomor_dokumen_suffix' => $this->documentNumberSuffixRules(true),
                 'tanggal_terbit' => ['nullable', 'date'],
+                'catatan_revisi' => ['nullable', 'string', 'max:1000'],
                 'revision_content' => [$requiresSubmittedFile && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'revision_content', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
-                'revision_content_word' => [$requiresSubmittedFile && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'revision_content_word', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:doc,docx', 'max:10240'],
-                'revision_form' => [$requiresSubmittedFile && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'revision_form', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
-                'revision_form_word' => [$requiresSubmittedFile && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'revision_form_word', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:doc,docx', 'max:10240'],
+                'revision_content_word' => [$requiresSubmittedFile && ! $isLevelOneRevisionRequest && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'revision_content_word', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:doc,docx', 'max:10240'],
+                'revision_form' => [$requiresSubmittedFile && ! $isLevelOneRevisionRequest && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'revision_form', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:pdf', 'max:10240'],
+                'revision_form_word' => [$requiresSubmittedFile && ! $isLevelOneRevisionRequest && ! $this->documentHasReusableFile($draft, $resubmissionSource, 'revision_form_word', $removedExistingFileIds) ? 'required' : 'nullable', 'file', 'mimes:doc,docx', 'max:10240'],
                 'attachments' => ['nullable', 'array', 'max:10'],
                 'attachments.*' => ['file', 'mimes:pdf', 'max:10240'],
                 'attachment_titles' => ['nullable', 'array', 'max:10'],
@@ -660,6 +664,28 @@ class DocumentController extends Controller
             'existing_attachment_orders' => ['nullable', 'array'],
             'existing_attachment_orders.*' => ['nullable', 'integer', 'min:1', 'max:10'],
         ];
+    }
+
+    private function isLevelOneRevisionRequest(?Document $draft = null, ?Document $resubmissionSource = null): bool
+    {
+        $source = $draft?->revisedFrom ?: $resubmissionSource?->revisedFrom;
+
+        if ($source !== null) {
+            $source->loadMissing('documentLevel');
+
+            return $source->documentLevel?->kode === 'level-1';
+        }
+
+        $sourceId = request('revised_from') ?: request('imported_source');
+
+        if (! filled($sourceId)) {
+            return false;
+        }
+
+        return Document::query()
+            ->whereKey($sourceId)
+            ->whereHas('documentLevel', fn ($query) => $query->where('kode', 'level-1'))
+            ->exists();
     }
 
     /**
